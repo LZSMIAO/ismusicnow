@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { Converter } from 'opencc-js';
 import type { Collection, DownloadJob, MusicEntity, MusicSearchKind, Provider, Track } from '../types.js';
 import type { CachedMusic } from './bot-cache.js';
 import { rejectedFileId } from './bot-cache.js';
@@ -20,6 +21,12 @@ interface Dependencies {
   getTrack: (provider: Provider, id: string) => Promise<Track>;
   cache: (track: Track) => Promise<CachedMusic | undefined>;
   metadata: (track: Track) => Promise<Track>;
+}
+const neteaseSearchText = Converter({ from: 'tw', to: 'cn' });
+function cachedInlineAudio(record: CachedMusic): boolean {
+  // CachedAudio is MP3-only. A FLAC accepted by sendAudio is still rejected
+  // here, and one unsupported result rejects the entire inline response.
+  return /mp3|mpeg.*layer[ -]?3/i.test(record.audio?.codec || '') && !record.audio?.lossless;
 }
 const providers: Provider[] = ['netease', 'spotify', 'ytm'];
 const kinds: MusicSearchKind[] = ['track', 'album', 'artist', 'playlist'];
@@ -105,18 +112,19 @@ export class BotInline {
     rows.push([{ text: botText(ui, 'share'), switch_inline_query: track.sourceUrl }]);
     return { inline_keyboard: rows };
   }
-  private article(track: Track, visible: Track, ui: BotLanguage, userId: number, record?: CachedMusic) {
-    const description = [visible.artists.join(' / '), visible.album, botText(ui, record ? 'inlineReady' : 'inlineAcquire')].filter(Boolean).join(' · ');
+  private article(track: Track, visible: Track, ui: BotLanguage, userId: number, record?: CachedMusic, privateOnly = false) {
+    const description = [visible.artists.join(' / '), visible.album, botText(ui, record && !privateOnly ? 'inlineReady' : 'inlineAcquire')].filter(Boolean).join(' · ');
     const text = record ? musicCaption(visible, job(record, track), ui, this.deps.username()) :
       `<b>「${escapeHtml(shortText(visible.title, 100))}」</b> — ${escapeHtml(shortText(visible.artists.join(' / '), 120))}\n<blockquote expandable>${escapeHtml(botText(ui, 'album'))}：${escapeHtml(shortText(visible.album, 120))}\n${source(track.provider)}</blockquote>`;
     return { type: 'article', id: `${track.provider}:${track.id}`, title: shortText(visible.title, 100), description: shortText(description, 250), ...thumbnail(track.cover), input_message_content: content(text),
-      reply_markup: this.keyboard(visible, ui, record ? { callback_data: `ix:${userId}:${codes[track.provider]}:${track.id}` } : { url: this.privateUrl(track) }) };
+      reply_markup: this.keyboard(visible, ui, record && !privateOnly ? { callback_data: `ix:${userId}:${codes[track.provider]}:${track.id}` } : { url: this.privateUrl(track) }) };
   }
   private async trackResult(track: Track, ui: BotLanguage, names: AlbumLanguage | undefined, userId: number) {
     const [visible, record] = await Promise.all([this.visible(track, names), this.deps.cache(track)]);
     const firstNames = track.provider === 'netease' && !names;
-    const fallback = this.article(track, visible, ui, userId, firstNames ? undefined : record);
-    if (!record || firstNames) return { result: fallback, fallback };
+    const privateOnly = record?.kind === 'audio' && !cachedInlineAudio(record);
+    const fallback = this.article(track, visible, ui, userId, firstNames ? undefined : record, privateOnly);
+    if (!record || firstNames || privateOnly) return { result: fallback, fallback };
     const shared = { id: fallback.id, caption: musicCaption(visible, job(record, track), ui, this.deps.username()), parse_mode: 'HTML', reply_markup: this.keyboard(visible, ui) };
     return { result: record.kind === 'audio' ? { type: 'audio', audio_file_id: record.fileId, ...shared } :
       { type: 'document', document_file_id: record.fileId, title: fallback.title, description: fallback.description, ...shared }, fallback };
@@ -140,7 +148,11 @@ export class BotInline {
     const cached = this.queries.get(key);
     if (cached) return cached.value;
     if (this.queries.size >= 32) throw new ServiceError('RATE_LIMIT', 'Inline search busy');
-    const value = input.albums ? this.deps.albums(input.input) : this.deps.resolve(input.input, input.provider, input.kind);
+    // NetEase indexes Chinese names in SC. Normalize search terms only;
+    // platform links and source/display metadata keep their original text.
+    const search = input.provider === 'netease' && !parseMusicLink(input.input) && !/[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(input.input)
+      ? neteaseSearchText(input.input) : input.input;
+    const value = input.albums ? this.deps.albums(input.input) : this.deps.resolve(search, input.provider, input.kind);
     const entry = { until: now + 30_000, value };
     this.queries.set(key, entry);
     void value.catch(() => { if (this.queries.get(key) === entry) this.queries.delete(key); });
@@ -179,11 +191,19 @@ export class BotInline {
         // Some Telegram audio formats are accepted in chats but not in cached
         // inline results. A text result can still insert the original file_id.
         if (!fallback || !(rejectedFileId(error) || error instanceof TelegramRequestError && error.errorCode === 400 && /file type|audio|document/i.test(error.description))) throw error;
-        await this.deps.telegram('answerInlineQuery', { ...base, results: forInlineChat(fallback, query.chat_type), next_offset: response.next_offset });
+        await this.deps.telegram('answerInlineQuery', { ...base, results: forInlineChat(fallback, query.chat_type), next_offset: response.next_offset, button: { text: botText(ui, 'settings'), start_parameter: 'inline_settings' } });
       }
     } catch (error) {
       if (this.latest.get(query.from.id) !== query.id) return;
-      if (error instanceof TelegramRequestError) return; // Expired query: never retry it or notify an unrelated chat.
+      if (error instanceof TelegramRequestError) {
+        if (!/query (is )?too old|query[_ ]id[_ ]invalid|query ID is invalid/i.test(error.description)) {
+          // Only Telegram's error category is logged; never include a query,
+          // user, payload, file_id or credential in diagnostics.
+          console.error('Telegram Inline response rejected:', error.errorCode,
+            error.description.replace(/https?:\/\/\S+/g, '[URL]').replace(/[\w-]{30,}/g, '[reference]').slice(0, 180));
+        }
+        return;
+      }
       await this.deps.telegram('answerInlineQuery', { ...base, results: this.choices('', 'netease', ui, botError(ui, publicError(error).code)), next_offset: '', button: { text: botText(ui, 'settings'), start_parameter: 'inline_settings' } }).catch(() => {});
     } finally { if (timer) clearTimeout(timer); if (this.latest.get(query.from.id) === query.id) this.latest.delete(query.from.id); }
   }
@@ -199,7 +219,7 @@ export class BotInline {
     try {
       const track = await this.deps.getTrack(codeProviders[match[2]!]!, match[3]!);
       const [record, visible] = await Promise.all([this.deps.cache(track), this.visible(track, names)]);
-      if (!record) {
+      if (!record || record.kind === 'audio' && !cachedInlineAudio(record)) {
         await this.deps.telegram('editMessageText', { inline_message_id: callback.inline_message_id, text: `${escapeHtml(visible.title)}\n${escapeHtml(botText(ui, 'inlinePrivate'))}`, parse_mode: 'HTML', reply_markup: markup(visible, { url: this.privateUrl(track) }) }); return;
       }
       await this.deps.telegram('editMessageMedia', { inline_message_id: callback.inline_message_id,

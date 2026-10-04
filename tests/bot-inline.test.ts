@@ -7,7 +7,7 @@ import type { Collection, Track } from '../src/lib/types.js';
 import type { AlbumLanguage } from '../src/lib/server/bot-settings.js';
 import { botLanguages, botText } from '../src/lib/server/bot-i18n.js';
 const track: Track = { id: '123', provider: 'netease', title: '人是猫', artists: ['张卡斯', '洛天依'], album: '音乐', artistIds: ['999'], albumUrl: 'https://music.163.com/album?id=555', cover: 'https://p1.music.126.net/a.jpg', durationMs: 136000, sourceUrl: 'https://music.163.com/song?id=123' };
-const audio: CachedMusic = { fileId: 'telegram-original-file', kind: 'audio', duration: 136, bytes: 1000, audioSource: 'netease', audio: { codec: 'FLAC', lossless: true } };
+const audio: CachedMusic = { fileId: 'telegram-original-file', kind: 'audio', duration: 136, bytes: 1000, audioSource: 'netease', audio: { codec: 'MPEG 1 Layer 3', lossless: false } };
 const collection: Collection = { kind: 'search', title: 'query', provider: 'netease', tracks: [track], total: 1, query: '床', warnings: [] };
 function harness(options: { names?: AlbumLanguage; record?: CachedMusic; resolve?: () => Promise<Collection>; timeout?: number } = {}) {
   const calls: { method: string; body: any }[] = [], searches: { input: string; provider: string; kind: string }[] = [];
@@ -133,4 +133,37 @@ test('channel browsing uses a destination chooser rather than an unsupported cur
   const buttons = h.calls[0]!.body.results[0].reply_markup.inline_keyboard.flat();
   assert.ok(!buttons.some((button: any) => button.switch_inline_query_current_chat));
   assert.ok(buttons.some((button: any) => button.switch_inline_query_chosen_chat?.allow_channel_chats));
+});
+
+
+test('FLAC and unknown cached audio never invalidate an inline page or trigger a download', async () => {
+  for (const metadata of [{ codec: 'FLAC', lossless: true }, undefined]) {
+    const h = harness({ names: 'zh-Hant', record: { ...audio, audio: metadata } });
+    await h.inline.answer(query('塵'));
+    assert.equal(h.searches[0]!.input, '尘');
+    assert.equal(h.calls.length, 1);
+    const result = h.calls[0]!.body.results[0];
+    assert.equal(result.type, 'article');
+    assert.equal(result.reply_markup.inline_keyboard[0][0].url, 'https://t.me/muismbot?start=in_n_123');
+    assert.ok(!result.reply_markup.inline_keyboard.flat().some((b: any) => b.callback_data));
+    await h.inline.callback({ id: 'cb', from: { id: 42 }, inline_message_id: 'older-card', data: 'ix:42:n:123' });
+    assert.equal(h.calls.at(-1)!.method, 'editMessageText');
+    assert.ok(!h.calls.some(c => c.method === 'editMessageMedia' || c.method === 'sendAudio'));
+  }
+  const h = harness();
+  await h.inline.answer(query('spotify 塵'));
+  assert.equal(h.searches[0]!.input, '塵');
+  await h.inline.answer(query('塵と光'));
+  assert.equal(h.searches[1]!.input, '塵と光');
+  await h.inline.answer(query(track.sourceUrl));
+  assert.equal(h.searches[2]!.input, track.sourceUrl);
+});
+
+
+test('mixed FLAC, MP3 and document caches preserve usable native results in one response', async () => {
+  const h = harness({ names: 'original', resolve: async () => ({ ...collection, tracks: [track, { ...track, id: '124' }, { ...track, id: '125' }] }) });
+  h.deps.cache = async (value?: Track): Promise<CachedMusic | undefined> => value?.id === '123' ? { ...audio, audio: { codec: 'FLAC', lossless: true } } : value?.id === '125' ? { ...audio, kind: 'document' } : audio;
+  await h.inline.answer(query());
+  assert.equal(h.calls.length, 1);
+  assert.deepEqual(h.calls[0]!.body.results.map((r: any) => r.type), ['article', 'audio', 'document', 'article']);
 });

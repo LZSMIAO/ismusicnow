@@ -23,7 +23,7 @@ test('real handler routes inline queries without chat IDs, deep-link onboarding 
   };
   try {
     const { BotMusicCache } = await import('../src/lib/server/bot-cache.js');
-    await new BotMusicCache('999222').put({ provider: 'netease', id: '123', quality: 'original-lossless' }, { fileId: 'existing-file-id', kind: 'audio', duration: 150, bytes: 1000, audioSource: 'netease' });
+    await new BotMusicCache('999222').put({ provider: 'netease', id: '123', quality: 'original-lossless' }, { fileId: 'existing-file-id', kind: 'audio', duration: 150, bytes: 1000, audioSource: 'netease', audio: { codec: 'MPEG 1 Layer 3', lossless: false } });
     const { handle } = await import('../scripts/bot.js');
     await handle({ update_id: 1, inline_query: { id: 'denied', from: { id: 43 }, query: '床', offset: '' } });
     assert.deepEqual(calls.at(-1)!.body.results, []);
