@@ -1,13 +1,15 @@
 import { createRequire } from 'node:module';
-import type { Collection, DownloadFormat, Track } from '../../types.js';
+import type { Collection, DownloadFormat, MusicEntity, MusicSearchKind, Track } from '../../types.js';
 import { config } from '../config.js';
 import { ServiceError } from '../errors.js';
 import { fetchJson } from '../http.js';
 import type { MusicLink } from '../links.js';
 
 type Song = { id: number; name: string; ar?: { id?: number; name: string }[]; artists?: { id?: number; name: string }[]; al?: { id?: number; name: string; picUrl?: string }; album?: { id?: number; name: string; picUrl?: string }; dt?: number; duration?: number };
+type NeteaseEntity = { id: number; name: string; artist?: { name: string }; artists?: { name: string }[]; creator?: { nickname: string }; publishTime?: number; picUrl?: string; coverImgUrl?: string; img1v1Url?: string; size?: number; trackCount?: number; musicSize?: number; albumSize?: number };
 interface Body {
-  code?: number; songs?: Song[]; result?: { songs?: Song[]; songCount?: number };
+  code?: number; songs?: Song[]; hotSongs?: Song[]; artist?: NeteaseEntity; hotAlbums?: NeteaseEntity[];
+  result?: { songs?: Song[]; songCount?: number; albums?: NeteaseEntity[]; albumCount?: number; artists?: NeteaseEntity[]; artistCount?: number; playlists?: NeteaseEntity[]; playlistCount?: number };
   playlist?: { name: string; trackIds: { id: number }[]; trackCount: number };
   album?: { name: string }; lrc?: { lyric?: string };
   data?: { url: string | null; type: string; br: number; freeTrialInfo?: unknown }[];
@@ -53,9 +55,20 @@ export function mapNetease(song: Song): Track {
     sourceUrl: `https://music.163.com/song?id=${song.id}` };
 }
 
-export async function searchNetease(query: string): Promise<Collection> {
-  const body = await neteaseRequest('cloudsearch', { keywords: query, type: 1, limit: 30 });
-  return { title: query, provider: 'netease', kind: 'search', tracks: (body.result?.songs || []).map(mapNetease), total: body.result?.songCount || 0, warnings: [] };
+function mapEntity(entity: NeteaseEntity, kind: MusicEntity['kind']): MusicEntity {
+  return { id: String(entity.id), provider: 'netease', kind, title: entity.name,
+    artists: entity.artists?.map(a => a.name) || (entity.artist ? [entity.artist.name] : entity.creator ? [entity.creator.nickname] : []),
+    sourceUrl: `https://music.163.com/${kind}?id=${entity.id}`,
+    cover: (entity.picUrl || entity.coverImgUrl || entity.img1v1Url || '').replace(/^http:/, 'https:'),
+    year: entity.publishTime ? String(new Date(entity.publishTime).getUTCFullYear()) : undefined,
+    count: kind === 'artist' ? entity.musicSize : kind === 'playlist' ? entity.trackCount : entity.size };
+}
+export async function searchNetease(query: string, searchType: MusicSearchKind = 'track'): Promise<Collection> {
+  const body = await neteaseRequest('cloudsearch', { keywords: query, type: { track: 1, album: 10, artist: 100, playlist: 1000 }[searchType], limit: 30 });
+  const result = body.result;
+  const entities = searchType === 'track' ? undefined : (result?.[searchType === 'album' ? 'albums' : searchType === 'artist' ? 'artists' : 'playlists'] || []).map(e => mapEntity(e, searchType));
+  const total = result?.[searchType === 'track' ? 'songCount' : searchType === 'album' ? 'albumCount' : searchType === 'artist' ? 'artistCount' : 'playlistCount'] || 0;
+  return { title: query, query, searchType, provider: 'netease', kind: 'search', tracks: searchType === 'track' ? (result?.songs || []).map(mapNetease) : [], entities, total, warnings: [] };
 }
 
 export async function neteaseTracks(ids: string[]): Promise<Track[]> {
@@ -71,6 +84,9 @@ export async function resolveNetease(link: MusicLink): Promise<Collection> {
     const body = await neteaseRequest('album', { id: link.id });
     title = body.album?.name || '專輯'; total = body.songs?.length || 0;
     tracks = (body.songs || []).slice(0, config.maxCollectionTracks).map(mapNetease);
+  } else if (link.kind === 'artist') {
+    const body = await neteaseRequest('artists', { id: link.id });
+    title = body.artist?.name || ''; tracks = (body.hotSongs || []).slice(0, config.maxCollectionTracks).map(mapNetease); total = body.hotSongs?.length || 0;
   } else {
     const body = await neteaseRequest('playlist_detail', { id: link.id });
     const playlist = body.playlist;
@@ -80,8 +96,14 @@ export async function resolveNetease(link: MusicLink): Promise<Collection> {
     tracks = ids.length ? await neteaseTracks(ids) : [];
   }
   if (!tracks.length && link.kind === 'track') throw new ServiceError('NOT_FOUND', '找不到這首歌曲。', 404);
-  return { title, tracks, total, provider: 'netease', kind: link.kind,
+  return { title, tracks, total, provider: 'netease', kind: link.kind, sourceUrl: link.url,
     warnings: total > tracks.length ? [`此歌單共有 ${total} 首，本次載入前 ${tracks.length} 首。`] : [] };
+}
+
+export async function neteaseArtistAlbums(id: string): Promise<Collection> {
+  const body = await neteaseRequest('artist_album', { id, limit: 100 });
+  const entities = (body.hotAlbums || []).slice(0, config.maxCollectionTracks).map(e => mapEntity(e, 'album'));
+  return { title: body.artist?.name || '', provider: 'netease', kind: 'artist', searchType: 'album', tracks: [], entities, total: body.artist?.albumSize || entities.length, warnings: [], sourceUrl: `https://music.163.com/artist?id=${id}` };
 }
 
 export async function neteaseAudio(id: string, format: DownloadFormat): Promise<{ url: string; extension: string }> {
