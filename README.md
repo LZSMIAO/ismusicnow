@@ -1,4 +1,4 @@
-# ismusicnow · 音樂主義
+# MUISM · 音樂主義
 
 獨立的音樂獲取工具：SvelteKit 網頁、Telegram bot、Node.js 佇列與 Python 下載適配器。貼上連結或搜尋，選擇歌曲，再保存原始音源。
 
@@ -113,4 +113,4 @@ Bot 使用跨用戶 Telegram `file_id` 快取，按平台、歌曲 ID 和獲取�
 
 ## Inline 分享
 
-任何聊天輸入 `@muismbot 關鍵字或連結`。預設跨來源搜尋，支援單曲、專輯、藝術家、歌單分類；平台前綴可指定來源。已快取 MP3 或文件直接分享，未準備的原始音訊透過私聊取得；FLAC 保留原始位元組，以文件快取供 Inline 使用。詳見 [INLINE.md](INLINE.md)。
+任何聊天輸入 `@muismbot 關鍵字或連結`。預設跨來源搜尋，支援單曲、專輯、藝術家、歌單分類；平台前綴可指定來源。已快取 MP3 直接播放；首次選取在原訊息自動準備並轉為播放器。非 MP3 原始音源另做清楚標示的 MP3 播放版，原始檔另行獲取。需配置私有快取頻道並啟用全部 Inline feedback。詳見 [INLINE.md](INLINE.md)。

@@ -9,6 +9,7 @@ export interface MusicCacheKey { provider: Provider; id: string; quality: string
 const recordSchema = z.object({
   fileId: z.string().min(1), kind: z.enum(['audio', 'document']), duration: z.number().nonnegative(),
   bytes: z.number().int().positive(), audioSource: z.enum(['netease', 'spotify', 'ytm']),
+  presentation: z.enum(['original', 'telegram-playback']).optional(),
   audio: z.object({ codec: z.string(), bitrate: z.number().optional(), sampleRate: z.number().optional(),
     bitsPerSample: z.number().optional(), lossless: z.boolean() }).optional(),
 });
@@ -48,7 +49,7 @@ export class BotMusicCache {
       await rename(temporary, path);
     } finally { await rm(temporary, { force: true }); }
   }
-  private async invalidate(selection: MusicCacheKey, fileId: string): Promise<void> {
+  async invalidate(selection: MusicCacheKey, fileId: string): Promise<void> {
     if ((await this.get(selection))?.fileId === fileId) await rm(this.path(selection), { force: true });
   }
   async deliver(selection: MusicCacheKey, sendCached: (record: CachedMusic) => Promise<void>,

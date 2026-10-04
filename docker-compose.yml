@@ -27,7 +27,7 @@ services:
       timeout: 10s
       start_period: 60s
   bot:
-    image: ismusicnow:local
+    image: ${BOT_IMAGE:-ismusicnow:local}
     container_name: ismusicnow-bot
     command: ["node", "--import", "tsx", "scripts/bot.ts"]
     restart: unless-stopped

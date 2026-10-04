@@ -11,6 +11,7 @@ import { publicError, ServiceError } from './errors.js';
 import { searchText, type BotSource } from './bot-search.js';
 
 export interface InlineQuery { id: string; from: { id: number; language_code?: string; is_bot?: boolean }; query: string; offset?: string; chat_type?: string }
+export interface ChosenInline { result_id: string; from: { id: number }; inline_message_id?: string; query: string }
 type Telegram = (method: string, body: Record<string, unknown>) => Promise<unknown>;
 interface InlinePreferences { ui: BotLanguage; names?: AlbumLanguage }
 interface Dependencies {
@@ -21,6 +22,9 @@ interface Dependencies {
   getTrack: (provider: Provider, id: string) => Promise<Track>;
   cache: (track: Track) => Promise<CachedMusic | undefined>;
   metadata: (track: Track) => Promise<Track>;
+  acquire?: (track: Track) => Promise<CachedMusic>;
+  invalidate?: (track: Track, record: CachedMusic) => Promise<void>;
+  chooseNames?: (userId: number, language: AlbumLanguage) => Promise<void>;
 }
 export function cachedInlineAudio(record: CachedMusic): boolean {
   // CachedAudio is MP3-only. A FLAC accepted by sendAudio is still rejected
@@ -92,19 +96,20 @@ function forInlineChat<T>(results: T[], type?: string): T[] {
   });
 }
 
-// No audio is downloaded while someone types. Telegram holds previously
-// uploaded files; first downloads explicitly switch to the bot's private chat.
+// Typing only searches metadata. Selecting a result acquires a Telegram
+// playback reference and replaces that same inline message with native audio.
 export class BotInline {
   private queries = new Map<string, { until: number; value: Promise<Collection> }>();
   private latest = new Map<number, string>();
+  private preparing = new Map<string, Promise<void>>();
   constructor(private deps: Dependencies, private timeoutMs = 7000) {}
   private privateUrl(track?: Track) { return `https://t.me/${this.deps.username()}?start=${track ? inlineStart(track) : 'inline'}`; }
   private async visible(track: Track, names?: AlbumLanguage): Promise<Track> {
     return displayTrack(track.provider === 'netease' && names && names !== 'original' ? await this.deps.metadata(track) : track, names || 'original');
   }
-  private keyboard(track: Track, ui: BotLanguage, acquire?: Record<string, string>) {
+  private keyboard(track: Track, ui: BotLanguage, acquire?: Record<string, string>, playback = false) {
     const rows: Record<string, string>[][] = [];
-    if (acquire) rows.push([{ text: botText(ui, 'acquire'), ...acquire }]);
+    if (acquire) rows.push([{ text: botText(ui, acquire.callback_data?.startsWith('ip:') ? 'play' : 'acquire'), ...acquire }]);
     const row: Record<string, string>[] = [];
     try {
       const album = track.albumUrl ? parseMusicLink(track.albumUrl) : undefined;
@@ -114,25 +119,23 @@ export class BotInline {
     if (artist && (track.provider === 'netease' ? /^\d{1,16}$/ : /^[a-zA-Z0-9]{22}$/).test(artist) && track.provider !== 'ytm') row.push({ text: shortText(track.artists[0] || botText(ui, 'artist'), 20), switch_inline_query_current_chat: track.provider === 'netease' ? `https://music.163.com/artist?id=${artist}` : `https://open.spotify.com/artist/${artist}` });
     row.push({ text: `${botText(ui, 'source')} ↗`, url: track.sourceUrl });
     rows.push(row);
-    rows.push([{ text: botText(ui, 'share'), switch_inline_query: track.sourceUrl }]);
+    rows.push([...(playback ? [{ text: botText(ui, 'originalFile'), url: `https://t.me/${this.deps.username()}?start=${inlineStart(track).replace(/^in_/, 'raw_')}` }] : []), { text: botText(ui, 'share'), switch_inline_query: track.sourceUrl }]);
     return { inline_keyboard: rows };
   }
   private article(track: Track, visible: Track, ui: BotLanguage, userId: number, record?: CachedMusic, privateOnly = false) {
-    const description = [visible.artists.join(' / '), visible.album, source(track.provider), botText(ui, record && !privateOnly ? 'inlineReady' : 'inlineAcquire')].filter(Boolean).join(' · ');
-    const text = record ? musicCaption(visible, job(record, track), ui, this.deps.username()) :
-      `<b>「${escapeHtml(shortText(visible.title, 100))}」</b> — ${escapeHtml(shortText(visible.artists.join(' / '), 120))}\n<blockquote expandable>${escapeHtml(botText(ui, 'album'))}：${escapeHtml(shortText(visible.album, 120))}\n${source(track.provider)}</blockquote>`;
+    const description = [visible.artists.join(' / '), visible.album, source(track.provider), botText(ui, record && !privateOnly ? 'inlineReady' : 'play')].filter(Boolean).join(' · ');
+    const text = `<b>「${escapeHtml(shortText(visible.title, 100))}」</b> — ${escapeHtml(shortText(visible.artists.join(' / '), 120))}\n<i>${escapeHtml(botText(ui, 'preparePlayback'))}</i>`;
     return { type: 'article', id: `${track.provider}:${track.id}`, title: shortText(visible.title, 100), description: shortText(description, 250), ...thumbnail(track.cover), input_message_content: content(text),
-      reply_markup: this.keyboard(visible, ui, record && !privateOnly ? { callback_data: `ix:${userId}:${codes[track.provider]}:${track.id}` } : { url: this.privateUrl(track) }) };
+      reply_markup: this.keyboard(visible, ui, { callback_data: `ip:${userId}:${codes[track.provider]}:${track.id}` }) };
   }
   private async trackResult(track: Track, ui: BotLanguage, names: AlbumLanguage | undefined, userId: number) {
     const [visible, record] = await Promise.all([this.visible(track, names), this.deps.cache(track)]);
     const firstNames = track.provider === 'netease' && !names;
-    const privateOnly = record?.kind === 'audio' && !cachedInlineAudio(record);
+    const privateOnly = record?.kind !== 'audio' || !cachedInlineAudio(record);
     const fallback = this.article(track, visible, ui, userId, firstNames ? undefined : record, privateOnly);
     if (!record || firstNames || privateOnly) return { result: fallback, fallback };
-    const shared = { id: fallback.id, caption: musicCaption(visible, job(record, track), ui, this.deps.username()), parse_mode: 'HTML', reply_markup: this.keyboard(visible, ui) };
-    return { result: record.kind === 'audio' ? { type: 'audio', audio_file_id: record.fileId, ...shared } :
-      { type: 'document', document_file_id: record.fileId, title: fallback.title, description: fallback.description, ...shared }, fallback };
+    const shared = { id: `${fallback.id}:audio`, caption: musicCaption(visible, job(record, track), ui, this.deps.username()), parse_mode: 'HTML', reply_markup: this.keyboard(visible, ui, undefined, record.presentation === 'telegram-playback') };
+    return { result: { type: 'audio', audio_file_id: record.fileId, ...shared }, fallback };
   }
   private entity(entity: MusicEntity, ui: BotLanguage) {
     const description = [botText(ui, label(entity.kind)), entity.artists.join(' / '), entity.year, entity.count !== undefined ? botText(ui, 'tracksCount', { count: entity.count }) : '', source(entity.provider)].filter(Boolean).join(' · ');
@@ -193,7 +196,7 @@ export class BotInline {
       try { await this.deps.telegram('answerInlineQuery', { ...base, ...body, results: forInlineChat(body.results, query.chat_type), button: { text: botText(ui, 'settings'), start_parameter: 'inline_settings' } }); }
       catch (error) {
         // Some Telegram audio formats are accepted in chats but not in cached
-        // inline results. A text result can still insert the original file_id.
+        // inline results. A text result can still start the playback flow.
         if (!fallback || !(rejectedFileId(error) || error instanceof TelegramRequestError && error.errorCode === 400 && /file type|audio|document/i.test(error.description))) throw error;
         await this.deps.telegram('answerInlineQuery', { ...base, results: forInlineChat(fallback, query.chat_type), next_offset: response.next_offset, button: { text: botText(ui, 'settings'), start_parameter: 'inline_settings' } });
       }
@@ -211,15 +214,73 @@ export class BotInline {
       await this.deps.telegram('answerInlineQuery', { ...base, results: this.choices('', 'all', ui, botError(ui, publicError(error).code)), next_offset: '', button: { text: botText(ui, 'settings'), start_parameter: 'inline_settings' } }).catch(() => {});
     } finally { if (timer) clearTimeout(timer); if (this.latest.get(query.from.id) === query.id) this.latest.delete(query.from.id); }
   }
+  private async finish(track: Track, userId: number, inlineId: string, selected?: AlbumLanguage): Promise<void> {
+    const prefs = await this.deps.preferences(userId), names = selected || prefs.names, ui = prefs.ui;
+    if (track.provider === 'netease' && !names) {
+      await this.deps.telegram('editMessageText', { inline_message_id: inlineId, text: botText(ui, 'firstNames'), reply_markup: { inline_keyboard:
+        (['original', 'zh-Hant', 'zh-Hans'] as const).map(language => [{ text: botText(ui, language === 'original' ? 'original' : language === 'zh-Hant' ? 'traditional' : 'simplified'), callback_data: `inlang:${userId}:${codes[track.provider]}:${track.id}:${language}` }]) } });
+      return;
+    }
+    const visible = await this.visible(track, names);
+    try {
+      await this.deps.telegram('editMessageText', { inline_message_id: inlineId,
+        text: `<b>「${escapeHtml(visible.title)}」</b> — ${escapeHtml(visible.artists.join(' / '))}\n<i>${escapeHtml(botText(ui, 'preparePlayback'))}</i>`, parse_mode: 'HTML',
+        reply_markup: forInlineChat([{ reply_markup: this.keyboard(visible, ui, { callback_data: `ip:${userId}:${codes[track.provider]}:${track.id}` }) }], 'channel')[0]!.reply_markup,
+      }).catch(error => { if (!(error instanceof TelegramRequestError && /message is not modified/i.test(error.description))) throw error; });
+      const acquire = this.deps.acquire;
+      if (!acquire) throw new ServiceError('INLINE_CACHE_SETUP', 'Playback acquisition unavailable');
+      const edit = async (record: CachedMusic) => this.deps.telegram('editMessageMedia', { inline_message_id: inlineId,
+        media: { type: 'audio', media: record.fileId, caption: musicCaption(visible, job(record, track), ui, this.deps.username()), parse_mode: 'HTML', title: visible.title, performer: visible.artists.join(' / '), duration: record.duration },
+        reply_markup: forInlineChat([{ reply_markup: this.keyboard(visible, ui, undefined, record.presentation === 'telegram-playback') }], 'channel')[0]!.reply_markup });
+      let record = await acquire(track);
+      try { await edit(record); }
+      catch (error) {
+        if (!rejectedFileId(error) || !this.deps.invalidate) throw error;
+        await this.deps.invalidate(track, record); record = await acquire(track); await edit(record);
+      }
+    } catch (error) {
+      if (error instanceof TelegramRequestError && /message is not modified/i.test(error.description)) return;
+      await this.deps.telegram('editMessageText', { inline_message_id: inlineId, text: `${escapeHtml(visible.title)}\n${escapeHtml(botError(ui, publicError(error).code))}`, parse_mode: 'HTML', reply_markup: forInlineChat([{ reply_markup: this.keyboard(visible, ui, { callback_data: `ip:${userId}:${codes[track.provider]}:${track.id}` }) }], 'channel')[0]!.reply_markup }).catch(() => {});
+    }
+  }
+  async chosen(result: ChosenInline): Promise<void> {
+    if (!result.inline_message_id) return;
+    const match = /^(netease|spotify|ytm):([a-zA-Z0-9_-]{1,22})(:audio)?$/.exec(result.result_id);
+    if (!match || match[3]) return; // Telegram already inserted a cached native player.
+    await this.startPlayback(match[1] as Provider, match[2]!, result.from.id, result.inline_message_id);
+  }
+  private async startPlayback(provider: Provider, id: string, userId: number, inlineId: string, selected?: AlbumLanguage): Promise<void> {
+    const pending = this.preparing.get(inlineId);
+    if (pending) return pending;
+    const work = (async () => {
+      try {
+        validateTrackId(provider, id);
+        await this.finish(await this.deps.getTrack(provider, id), userId, inlineId, selected);
+      } catch (error) {
+        const { ui } = await this.deps.preferences(userId);
+        await this.deps.telegram('editMessageText', { inline_message_id: inlineId, text: botError(ui, publicError(error).code),
+          reply_markup: { inline_keyboard: [[{ text: botText(ui, 'play'), callback_data: `ip:${userId}:${codes[provider]}:${id}` }]] } }).catch(() => {});
+      }
+    })();
+    this.preparing.set(inlineId, work);
+    try { await work; } finally { if (this.preparing.get(inlineId) === work) this.preparing.delete(inlineId); }
+  }
   async callback(callback: { id: string; from: { id: number }; inline_message_id: string; data?: string }): Promise<void> {
     const { ui, names } = await this.deps.preferences(callback.from.id);
     const type = callback.data?.startsWith('ic:') ? 'channel' : undefined;
     const markup = (track: Track, acquire?: Record<string, string>) => forInlineChat([{ reply_markup: this.keyboard(track, ui, acquire) }], type)[0]!.reply_markup;
-    const match = /^ix:(\d+):([nsy]):([a-zA-Z0-9_-]{1,22})$/.exec((callback.data || '').replace(/^ic:/, 'ix:'));
+    const playback = /^ip:(\d+):([nsy]):([a-zA-Z0-9_-]{1,22})$/.exec(callback.data || '');
+    const language = /^inlang:(\d+):([nsy]):([a-zA-Z0-9_-]{1,22}):(original|zh-Hant|zh-Hans)$/.exec(callback.data || '');
+    const match = playback || language || /^ix:(\d+):([nsy]):([a-zA-Z0-9_-]{1,22})$/.exec((callback.data || '').replace(/^ic:/, 'ix:'));
     if (!match || Number(match[1]) !== callback.from.id) {
       await this.deps.telegram('answerCallbackQuery', { callback_query_id: callback.id, text: botText(ui, 'wrongOwner'), show_alert: true }); return;
     }
     await this.deps.telegram('answerCallbackQuery', { callback_query_id: callback.id });
+    if (playback || language || this.deps.acquire) {
+      if (language) await this.deps.chooseNames?.(callback.from.id, language[4] as AlbumLanguage);
+      await this.startPlayback(codeProviders[match[2]!]!, match[3]!, callback.from.id, callback.inline_message_id, language?.[4] as AlbumLanguage | undefined);
+      return;
+    }
     try {
       const track = await this.deps.getTrack(codeProviders[match[2]!]!, match[3]!);
       const [record, visible] = await Promise.all([this.deps.cache(track), this.visible(track, names)]);

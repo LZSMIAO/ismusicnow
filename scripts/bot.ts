@@ -11,10 +11,11 @@ import { safeFilename } from '../src/lib/server/links.js';
 import { resolveNeteaseCommand } from '../src/lib/server/bot-input.js';
 import { BotLanguageSettings, BotSettingsStore, displayTrack, type AlbumLanguage } from '../src/lib/server/bot-settings.js';
 import { audioPresentation, musicReferencePayload, sendMusic, TelegramRequestError } from '../src/lib/server/bot-media.js';
-import { BotMusicCache, type CachedMusic } from '../src/lib/server/bot-cache.js';
+import { BotMusicCache, rejectedFileId, type CachedMusic } from '../src/lib/server/bot-cache.js';
 import { BotDispatch } from '../src/lib/server/bot-dispatch.js';
-import { BotInline, cachedInlineAudio, parseInlineStart, type InlineQuery } from '../src/lib/server/bot-inline.js';
-import { inlinePresentationKey, musicCacheKey } from '../src/lib/server/bot-cache-key.js';
+import { BotPlayback } from '../src/lib/server/bot-playback.js';
+import { BotInline, parseInlineStart, type InlineQuery } from '../src/lib/server/bot-inline.js';
+import { musicCacheKey, telegramPlaybackKey } from '../src/lib/server/bot-cache-key.js';
 import { BotMessageCleanup } from '../src/lib/server/bot-cleanup.js';
 import { BotSelections, selectionLifetime, selectionPageSize, selectionMessage, type MusicSelection } from '../src/lib/server/bot-selection.js';
 import { metadataForDisplay } from '../src/lib/server/bot-metadata.js';
@@ -38,7 +39,7 @@ const statePath = resolve(process.env.DATA_DIR || '.data', 'bot-offset', `${toke
 
 interface User { id: number; language_code?: string; is_bot?: boolean; first_name?: string }
 interface Message { message_id: number; message_thread_id?: number; sender_chat?: { id: number }; via_bot?: { id: number; is_bot?: boolean }; chat: { id: number; type?: string }; from?: User; text?: string; reply_to_message?: { message_id: number; from?: { username?: string } } }
-interface Update { update_id: number; message?: Message; callback_query?: { id: string; from: User; data?: string; message?: Message; inline_message_id?: string }; inline_query?: InlineQuery }
+interface Update { update_id: number; message?: Message; callback_query?: { id: string; from: User; data?: string; message?: Message; inline_message_id?: string }; inline_query?: InlineQuery; chosen_inline_result?: { result_id: string; from: User; inline_message_id?: string; query: string } }
 
 export async function telegram<T>(method: string, body: Record<string, unknown> | FormData = {}): Promise<T> {
   const response = await fetch(`${endpoint}${method}`, { method: 'POST',
@@ -88,29 +89,44 @@ async function sendSettings(chatId: number, text: string, extra: Record<string, 
 }
 const settingsStore = new BotSettingsStore();
 const preferences = new BotLanguageSettings(settingsStore, sendSettings, sendTrack, updateCommands);
+const playback = new BotPlayback(store, mediaCache, telegram, () => {
+  const value = process.env.BOT_CACHE_CHAT_ID;
+  return value && /^-?\d+$/.test(value) && Number.isSafeInteger(Number(value)) ? Number(value) : undefined;
+}, () => botUsername, undefined, undefined, () => stopping);
 const inline = new BotInline({
   telegram, username: () => botUsername, resolve: resolveBotMusic, albums: artistAlbums, getTrack,
   preferences: async userId => ({ ui: await preferences.locale(userId), names: (await settingsStore.get(userId)).language }),
   cache: async track => {
     const key = await musicCacheKey(track);
-    return await mediaCache.get(inlinePresentationKey(key)) || await mediaCache.get(key);
+    return await mediaCache.get(telegramPlaybackKey(key)) || await mediaCache.get(key);
   }, metadata: track => metadataForDisplay(track, 250),
+  acquire: track => playback.get(track), invalidate: (track, record) => playback.invalidate(track, record), chooseNames: (userId, language) => settingsStore.setNamesLanguage(userId, language),
 });
 
-async function sendTrack(chatId: number, userId: number, track: Track, language: AlbumLanguage, messageId: number, messageThreadId?: number, keepRequest = false, inlineMode = false): Promise<void> {
+async function sendTrack(chatId: number, userId: number, track: Track, language: AlbumLanguage, messageId: number, messageThreadId?: number, keepRequest = false, inlineMode = false, originalFile = false): Promise<void> {
   const owner = `tg:${chatId}:${userId}`;
   const ui = await preferences.locale(userId);
   const visible = displayTrack(language !== 'original' ? await metadataForDisplay(track) : track, language);
   const primaryKey = await musicCacheKey(track);
-  const primary = inlineMode ? await mediaCache.get(primaryKey) : undefined;
-  const key = inlineMode && (!primary || primary.kind === 'audio' && !cachedInlineAudio(primary)) ? inlinePresentationKey(primaryKey) : primaryKey;
-  await mediaCache.deliver(key, async (record) => {
+  const sendRecord = async (record: CachedMusic) => {
     const job = { ...record, id: 'telegram-cache', track, format: 'original' as const, status: 'completed' as const,
       stage: '', createdAt: '', updatedAt: '' };
     await telegram(record.kind === 'audio' ? 'sendAudio' : 'sendDocument', musicReferencePayload({
       chatId, messageThreadId, track: visible, job, recipientId: chatId < 0 ? userId : undefined, recipientName: replyContext.getStore()?.userName, fileId: record.fileId, kind: record.kind, duration: record.duration, uiLanguage: ui, botUsername,
     }));
-  }, async () => {
+  };
+  if (!originalFile && (inlineMode || track.provider !== 'netease')) {
+    const progress = await send(chatId, botText(ui, 'preparePlayback'), { message_thread_id: messageThreadId, deleteAfterMs: 7 * 60_000, reply_parameters: replyParameters(messageId) });
+    try {
+      const record = await playback.get(track);
+      try { await sendRecord(record); }
+      catch (error) {
+        if (!rejectedFileId(error)) throw error;
+        await playback.invalidate(track, record); await sendRecord(await playback.get(track));
+      }
+    }
+    finally { await removeNow(chatId, progress.message_id); }
+  } else await mediaCache.deliver(primaryKey, sendRecord, async () => {
     const progress = await send(chatId, botText(ui, 'fetching', { title: visible.title, source: track.provider === 'ytm' ? 'YTM' : track.provider }), { message_thread_id: messageThreadId, deleteAfterMs: 7 * 60_000, reply_parameters: replyParameters(messageId) });
     try {
     const [created] = await store.create(owner, [track], 'original');
@@ -123,7 +139,7 @@ async function sendTrack(chatId: number, userId: number, track: Track, language:
         if ((await stat(path)).size > 49 * 1024 * 1024) throw new ServiceError('FILE_TOO_LARGE', '音訊超過 Telegram 上限。', 413);
         const presentation = await audioPresentation(path, track);
         let record: CachedMusic | undefined;
-        const asDocument = inlineMode && (!/mp3|mpeg.*layer[ -]?3/i.test(job.audio?.codec || '') || !!job.audio?.lossless);
+        const asDocument = originalFile;
         const delivery = await sendMusic(telegram, { chatId, messageThreadId, job, track: visible, recipientId: chatId < 0 ? userId : undefined, recipientName: replyContext.getStore()?.userName, uiLanguage: ui, botUsername, asDocument,
           bytes: new Uint8Array(await readFile(path)),
           filename: `${safeFilename(`${track.artists.join(' - ')} - ${track.title}`)}${extname(path)}`, ...presentation,
@@ -135,7 +151,6 @@ async function sendTrack(chatId: number, userId: number, track: Track, language:
         });
         // Telegram now holds the file. Do not keep a duplicate on this VPS.
         await store.remove(owner, job.id).catch(() => console.error('Bot 暫存音訊清理失敗。'));
-        if (inlineMode && record && !primary) await mediaCache.put(primaryKey, record).catch(() => console.error('Telegram 快取索引保存失敗。'));
         if (delivery === 'document' && !asDocument) await send(chatId, botText(ui, 'documentFallback'), { message_thread_id: messageThreadId, reply_parameters: replyParameters(messageId), deleteAfterMs: 30_000 }).catch(() => {});
         return record;
       }
@@ -209,7 +224,7 @@ async function handleUpdate(update: Update): Promise<void> {
   // their origin. They are already results, never a new text search or an
   // input eligible for cleanup. Keep callback and ordinary reply handling.
   if (update.message?.via_bot) return;
-  const user = update.message?.from || update.callback_query?.from || update.inline_query?.from;
+  const user = update.message?.from || update.callback_query?.from || update.inline_query?.from || update.chosen_inline_result?.from;
   const userId = user?.id;
   // Inline queries have no chat ID and must always receive an answer, even
   // when the sender is outside an allowlist. They never enter chat cleanup.
@@ -221,6 +236,7 @@ async function handleUpdate(update: Update): Promise<void> {
   // Anonymous group senders cannot own personal settings or selection lists.
   if (!userId || user.is_bot || update.message?.sender_chat || !permitted(userId)) return;
   await preferences.observeLanguage(userId, user.language_code);
+  if (update.chosen_inline_result) { await inline.chosen(update.chosen_inline_result); return; }
   if (update.callback_query?.inline_message_id) {
     await inline.callback({ ...update.callback_query, inline_message_id: update.callback_query.inline_message_id }); return;
   }
@@ -246,6 +262,11 @@ async function handleUpdate(update: Update): Promise<void> {
     }
     await updateCommands(chatId, ui, userId).catch(() => {});
     if (update.callback_query?.data === 'open-settings') { await preferences.show(chatId, userId); return; }
+    const original = update.callback_query?.data?.match(/^raw:(netease|spotify|ytm):([a-zA-Z0-9_-]{1,22})$/);
+    if (original) {
+      const track = await getTrack(original[1] as Provider, original[2]!);
+      await sendTrack(chatId, userId, track, (await settingsStore.get(userId)).language || 'original', message.message_id, message.message_thread_id, true, false, true); return;
+    }
     if (update.callback_query && /^(lang|ui|setting):/.test(update.callback_query.data || '')) {
       const own = Number(update.callback_query.data?.split(':')[1]) === userId;
       await settingsPanel.run(own ? { chatId, messageId: message.message_id } : undefined, () => preferences.callback(chatId, userId, update.callback_query!.data || '', () => removeNow(chatId, message.message_id)));
@@ -310,7 +331,11 @@ async function handleUpdate(update: Update): Promise<void> {
       }
       return;
     }
-    if (cmd === '/start' && isPrivate && args.startsWith('in_')) {
+    if (cmd === '/start' && isPrivate && args.startsWith('raw_')) {
+      const selected = parseInlineStart(args.replace(/^raw_/, 'in_'));
+      if (!selected) throw new ServiceError('INVALID_TRACK', 'Invalid original track');
+      await sendTrack(chatId, userId, await getTrack(selected.provider, selected.id), (await settingsStore.get(userId)).language || 'original', message.message_id, undefined, false, false, true);
+    } else if (cmd === '/start' && isPrivate && args.startsWith('in_')) {
       const selected = parseInlineStart(args);
       if (!selected) throw new ServiceError('INVALID_TRACK', 'Invalid inline track');
       const track = await getTrack(selected.provider, selected.id);
@@ -385,7 +410,7 @@ async function main(): Promise<void> {
   }, 1000);
   cleanupTimer.unref();
   try { offset = JSON.parse(await readFile(statePath, 'utf8')).offset || 0; } catch { /* First launch. */ }
-  console.log(`ismusicnow bot @${me.username} 已啟動（long polling）`);
+  console.log(`MUISM bot @${me.username} 已啟動（long polling）`);
   // Private menu buttons have no language_code parameter. Restore each
   // known user's override without blocking the polling loop.
   void settingsStore.knownLocales().then(async users => {
@@ -396,7 +421,7 @@ async function main(): Promise<void> {
   }).catch(() => console.error('Bot 語言選單同步稍後重試。'));
   while (!stopping) {
     try {
-      const updates = await telegram<Update[]>('getUpdates', { offset, timeout: 25, limit: 10, allowed_updates: ['message', 'callback_query', 'inline_query'] });
+      const updates = await telegram<Update[]>('getUpdates', { offset, timeout: 25, limit: 10, allowed_updates: ['message', 'callback_query', 'inline_query', 'chosen_inline_result'] });
       for (const update of updates) {
         // Inline searches have a short response window; do not queue them
         // behind downloads that may run for several minutes.

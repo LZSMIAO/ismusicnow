@@ -29,7 +29,7 @@ test('real handler routes inline queries without chat IDs, deep-link onboarding 
     assert.deepEqual(calls.at(-1)!.body.results, []);
     await handle({ update_id: 2, inline_query: { id: 'first', from: { id: 42, language_code: 'de' }, query: '床', offset: '' } });
     assert.equal(calls.at(-1)!.body.results[0].type, 'article');
-    assert.match(calls.at(-1)!.body.results[0].reply_markup.inline_keyboard[0][0].url, /start=in_n_123$/);
+    assert.equal(calls.at(-1)!.body.results[0].reply_markup.inline_keyboard[0][0].callback_data, 'ip:42:n:123');
     now += 4000;
     await handle({ update_id: 3, message: { message_id: 3, chat: { id: 42, type: 'private' }, from: { id: 42, language_code: 'de' }, text: '/start in_n_123' } });
     const prompt = calls.findLast(c => c.method === 'sendMessage')!;
@@ -66,13 +66,14 @@ test('real handler routes inline queries without chat IDs, deep-link onboarding 
     }
     const cache = new BotMusicCache('999222');
     await cache.put({ provider: 'netease', id: '123', quality: 'original-lossless' }, { fileId: 'old-flac-audio', kind: 'audio', duration: 150, bytes: 1000, audioSource: 'netease', audio: { codec: 'FLAC', lossless: true } });
-    await cache.put({ provider: 'netease', id: '123', quality: 'original-lossless:inline' }, { fileId: 'prepared-flac-document', kind: 'document', duration: 150, bytes: 1000, audioSource: 'netease', audio: { codec: 'FLAC', lossless: true } });
+    await cache.put({ provider: 'netease', id: '123', quality: 'original-lossless:telegram-mp3-320-v1' }, { presentation: 'telegram-playback', fileId: 'prepared-mp3-playback', kind: 'audio', duration: 150, bytes: 1000, audioSource: 'netease', audio: { codec: 'MPEG 1 Layer 3', lossless: false } });
     await handle({ update_id: 11, inline_query: { id: 'flac-ready', from: { id: 42 }, query: 'netease 床', offset: '' } });
-    assert.equal(calls.at(-1)!.body.results[0].type, 'document');
-    assert.equal(calls.at(-1)!.body.results[0].document_file_id, 'prepared-flac-document');
+    assert.equal(calls.at(-1)!.body.results[0].type, 'audio');
+    assert.equal(calls.at(-1)!.body.results[0].audio_file_id, 'prepared-mp3-playback');
+    assert.match(calls.at(-1)!.body.results[0].caption, /MP3/);
     now += 4000;
     await handle({ update_id: 12, message: { message_id: 12, chat: { id: 42, type: 'private' }, from: { id: 42 }, text: '/start in_n_123' } });
-    assert.equal(calls.findLast(c => c.method === 'sendDocument')!.body.document, 'prepared-flac-document');
+    assert.equal(calls.findLast(c => c.method === 'sendAudio')!.body.audio, 'prepared-mp3-playback');
     now += 4000;
     await handle({ update_id: 13, message: { message_id: 13, chat: { id: 42, type: 'private' }, from: { id: 42 }, text: '/netease 123' } });
     assert.equal(calls.findLast(c => c.method === 'sendAudio')!.body.audio, 'old-flac-audio', 'ordinary playback retains its original audio cache');

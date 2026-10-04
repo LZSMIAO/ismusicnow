@@ -24,9 +24,9 @@ export function musicCaption(track: Track, job: DownloadJob, language: BotLangua
   const technical = [audio?.codec || botText(language, 'originalAudio'), job.bytes ? `${(job.bytes / 1024 / 1024).toFixed(2)} MB` : '', audio?.bitrate ? `${Math.round(audio.bitrate / 1000)} kbps` : ''].filter(Boolean).join(' · ');
   return [recipient?.id ? `<a href="tg://user?id=${recipient.id}">${escapeHtml(shortText(recipient.name || String(recipient.id), 40))}</a>` : '',
     `<b>「${title}」</b> — ${artists}`,
-    `<blockquote expandable>${escapeHtml(botText(language, 'album'))}：${album}\n${escapeHtml(source)} · ${escapeHtml(technical)}\nvia @${escapeHtml(botUsername)} · 音樂主義</blockquote>`].filter(Boolean).join('\n');
+    `<blockquote expandable>${escapeHtml(botText(language, 'album'))}：${album}\n${escapeHtml(source)} · ${escapeHtml(technical)}${job.presentation === 'telegram-playback' ? '\n' + escapeHtml(botText(language, 'playbackVersion')) : ''}\nvia @${escapeHtml(botUsername)} · 音樂主義</blockquote>`].filter(Boolean).join('\n');
 }
-function musicButtons(track: Track, language: BotLanguage) {
+function musicButtons(track: Track, language: BotLanguage, playback = false) {
   const row: { text: string; url?: string; callback_data?: string }[] = [];
   try {
     const album = track.albumUrl ? parseMusicLink(track.albumUrl) : undefined;
@@ -35,7 +35,7 @@ function musicButtons(track: Track, language: BotLanguage) {
   const id = track.artistIds?.[0];
   if (id && (track.provider === 'netease' ? /^\d{1,16}$/ : /^[a-zA-Z0-9]{22}$/).test(id) && track.provider !== 'ytm') row.push({ text: shortText(track.artists[0] || botText(language, 'artist'), 20), callback_data: `browse:${track.provider}:artist:${id}` });
   row.push({ text: `${botText(language, 'source')} ↗`, url: track.sourceUrl });
-  return { inline_keyboard: [row, [{ text: botText(language, 'share'), switch_inline_query: track.sourceUrl }]] };
+  return { inline_keyboard: [row, [...(playback ? [{ text: botText(language, 'originalFile'), callback_data: `raw:${track.provider}:${track.id}` }] : []), { text: botText(language, 'share'), switch_inline_query: track.sourceUrl }]] };
 }
 
 // Cover URLs originate upstream. Limit them to platform CDNs, including redirects.
@@ -111,7 +111,7 @@ export function musicReferencePayload(reference: MusicReference): FormData {
   form.set('caption', musicCaption(reference.track, reference.job, language, reference.botUsername, { id: reference.recipientId, name: reference.recipientName }));
   form.set('parse_mode', 'HTML');
   if (reference.replyTo !== undefined) form.set('reply_parameters', JSON.stringify({ message_id: reference.replyTo, allow_sending_without_reply: true }));
-  form.set('reply_markup', JSON.stringify(musicButtons(reference.track, language)));
+  form.set('reply_markup', JSON.stringify(musicButtons(reference.track, language, reference.job.presentation === 'telegram-playback')));
   if (reference.kind === 'audio') {
     form.set('title', reference.track.title.slice(0, 256));
     form.set('performer', reference.track.artists.join(' / ').slice(0, 256));
@@ -130,7 +130,7 @@ export function musicPayload(upload: MusicUpload, document = false, withThumbnai
   form.set('caption', musicCaption(upload.track, upload.job, language, upload.botUsername, { id: upload.recipientId, name: upload.recipientName }));
   form.set('parse_mode', 'HTML');
   if (upload.replyTo !== undefined) form.set('reply_parameters', JSON.stringify({ message_id: upload.replyTo, allow_sending_without_reply: true }));
-  form.set('reply_markup', JSON.stringify(musicButtons(upload.track, language)));
+  form.set('reply_markup', JSON.stringify(musicButtons(upload.track, language, upload.job.presentation === 'telegram-playback')));
   if (!document) {
     form.set('title', upload.track.title.slice(0, 256));
     form.set('performer', upload.track.artists.join(' / ').slice(0, 256));
@@ -140,7 +140,8 @@ export function musicPayload(upload: MusicUpload, document = false, withThumbnai
   return form;
 }
 export async function sendMusic(telegram: Telegram, upload: MusicUpload): Promise<'audio' | 'document'> {
-  // The original bot also sends FLAC through sendAudio. Never transcode the song.
+  // NetEase FLAC remains native audio. Playback derivatives are prepared
+  // separately by BotPlayback and explicitly labelled in their caption.
   const delivered = (result: unknown, fallback: 'audio' | 'document' = 'audio') => {
     const kind = result && typeof result === 'object' && 'document' in result && !('audio' in result) ? 'document' as const : fallback;
     upload.onDelivered?.(kind, result);

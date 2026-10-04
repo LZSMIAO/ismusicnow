@@ -108,6 +108,10 @@ export class BotSettingsStore {
     uiLanguageSchema.parse(language);
     return this.change(userId, (settings) => { settings.uiLanguage = language; });
   }
+  setNamesLanguage(userId: number, language: AlbumLanguage): Promise<void> {
+    languageSchema.parse(language);
+    return this.change(userId, settings => { settings.language = language; });
+  }
   async observeLanguage(userId: number, code?: string): Promise<void> {
     if (!code) return;
     const language = telegramLanguage(code);

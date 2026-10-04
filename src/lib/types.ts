@@ -50,6 +50,7 @@ export interface DownloadJob {
   error?: string;
   errorCode?: string;
   audioSource: Provider;
+  presentation?: 'original' | 'telegram-playback';
   audio?: { codec: string; bitrate?: number; sampleRate?: number; bitsPerSample?: number; lossless: boolean };
 }
 

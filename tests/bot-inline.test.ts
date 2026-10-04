@@ -52,22 +52,23 @@ test('one-character searches return cached native audio and per-user Chinese cap
   assert.match(h.calls.at(-1)!.body.results[0].caption, /人是猫.*张卡斯/);
   assert.match(h.calls.at(-1)!.body.results[0].caption, /アルバム/);
 });
-test('uncached and first-time NetEase results explicitly open private acquisition, preserving preference onboarding', async () => {
+test('uncached and first-time NetEase results prepare same-message playback without private redirects', async () => {
   for (const record of [undefined, audio]) {
     const h = harness({ record }); await h.inline.answer(query());
     const result = h.calls[0]!.body.results[0];
     assert.equal(result.type, 'article');
-    assert.equal(result.reply_markup.inline_keyboard[0][0].url, 'https://t.me/muismbot?start=in_n_123');
-    assert.match(result.description, /Download, then share/);
+    assert.equal(result.reply_markup.inline_keyboard[0][0].callback_data, 'ip:42:n:123');
+    assert.match(result.description, /Play/);
+    assert.match(result.input_message_content.message_text, /Preparing playback/);
   }
 });
-test('cached documents retain their original format and source metadata in every supported UI language', async () => {
+test('original documents never become unplayable Inline documents in any UI language', async () => {
   const h = harness({ names: 'original', record: { ...audio, kind: 'document' } });
   for (const ui of botLanguages) {
     h.setPreferences({ ui, names: 'original' }); await h.inline.answer(query());
     const result = h.calls.at(-1)!.body.results[0];
-    assert.equal(result.document_file_id, audio.fileId); assert.equal(result.title, track.title);
-    assert.match(result.caption, /人是猫.*张卡斯/); assert.ok(result.caption.includes(botText(ui, 'album')));
+    assert.equal(result.type, 'article'); assert.equal(result.document_file_id, undefined); assert.equal(result.title, track.title);
+    assert.ok(result.input_message_content.message_text.includes(botText(ui, 'preparePlayback')));
   }
 });
 test('pagination is scoped to the parsed query and reuses bounded metadata searches', async () => {
@@ -113,7 +114,7 @@ test('Telegram inline format rejection falls back to a file_id insertion button 
   h.deps.telegram = async (method, body) => { h.calls.push({ method, body }); if (h.calls.length === 1) throw new TelegramRequestError(400, 'wrong audio file type'); return true; };
   await h.inline.answer(query());
   const result = h.calls.at(-1)!.body.results[0]; assert.equal(result.type, 'article');
-  assert.equal(result.reply_markup.inline_keyboard[0][0].callback_data, 'ix:42:n:123');
+  assert.equal(result.reply_markup.inline_keyboard[0][0].callback_data, 'ip:42:n:123');
   await h.inline.callback({ id: 'cb', from: { id: 42 }, inline_message_id: 'inline-opaque-id', data: 'ix:42:n:123' });
   const edit = h.calls.at(-1)!; assert.equal(edit.method, 'editMessageMedia'); assert.equal(edit.body.inline_message_id, 'inline-opaque-id'); assert.equal(edit.body.media.media, audio.fileId); assert.equal(edit.body.chat_id, undefined);
 });
@@ -145,8 +146,7 @@ test('FLAC and unknown cached audio never invalidate an inline page or trigger a
     assert.equal(h.calls.length, 1);
     const result = h.calls[0]!.body.results[0];
     assert.equal(result.type, 'article');
-    assert.equal(result.reply_markup.inline_keyboard[0][0].url, 'https://t.me/muismbot?start=in_n_123');
-    assert.ok(!result.reply_markup.inline_keyboard.flat().some((b: any) => b.callback_data));
+    assert.equal(result.reply_markup.inline_keyboard[0][0].callback_data, 'ip:42:n:123');
     await h.inline.callback({ id: 'cb', from: { id: 42 }, inline_message_id: 'older-card', data: 'ix:42:n:123' });
     assert.equal(h.calls.at(-1)!.method, 'editMessageText');
     assert.ok(!h.calls.some(c => c.method === 'editMessageMedia' || c.method === 'sendAudio'));
@@ -166,5 +166,61 @@ test('mixed FLAC, MP3 and document caches preserve usable native results in one 
   h.deps.cache = async (value?: Track): Promise<CachedMusic | undefined> => value?.id === '123' ? { ...audio, audio: { codec: 'FLAC', lossless: true } } : value?.id === '125' ? { ...audio, kind: 'document' } : audio;
   await h.inline.answer(query());
   assert.equal(h.calls.length, 1);
-  assert.deepEqual(h.calls[0]!.body.results.map((r: any) => r.type), ['article', 'audio', 'document', 'article']);
+  assert.deepEqual(h.calls[0]!.body.results.map((r: any) => r.type), ['article', 'audio', 'article', 'article']);
+});
+
+test('selecting an uncached song edits only the selected inline message into a native player', async () => {
+  const h = harness({ names: 'zh-Hant' }); let acquisitions = 0;
+  const playable = { ...audio, presentation: 'telegram-playback' as const };
+  const inline = new BotInline({ ...h.deps, acquire: async () => { acquisitions++; return playable; } });
+  await inline.answer(query()); assert.equal(acquisitions, 0, 'typing must not acquire audio');
+  await inline.chosen({ result_id: 'netease:123', from: { id: 42 }, inline_message_id: 'same-inline-card', query: '床' });
+  assert.equal(acquisitions, 1);
+  const edit = h.calls.at(-1)!; assert.equal(edit.method, 'editMessageMedia'); assert.equal(edit.body.inline_message_id, 'same-inline-card'); assert.equal(edit.body.media.type, 'audio'); assert.equal(edit.body.media.media, playable.fileId);
+  assert.match(edit.body.media.caption, /人是貓.*張卡斯/); assert.match(edit.body.media.caption, /MP3 conversion/);
+  const buttons = edit.body.reply_markup.inline_keyboard.flat(); assert.ok(buttons.some((b: any) => /start=raw_n_123$/.test(b.url || '')));
+  assert.ok(!buttons.some((b: any) => b.switch_inline_query_current_chat), 'finished cards also work in channels');
+  assert.ok(!h.calls.some(c => ['sendMessage', 'sendAudio', 'sendDocument', 'deleteMessage'].includes(c.method)));
+  await inline.chosen({ result_id: 'netease:123:audio', from: { id: 42 }, inline_message_id: 'cached-card', query: '床' });
+  await inline.chosen({ result_id: 'netease:123', from: { id: 42 }, query: '床' }); assert.equal(acquisitions, 1);
+});
+test('NetEase inline name preference is asked once, actor-bound and resumes the same selected message', async () => {
+  const h = harness(); let names: AlbumLanguage | undefined, acquired = 0;
+  const inline = new BotInline({ ...h.deps, preferences: async () => ({ ui: 'en', names }), chooseNames: async (_id, language) => { names = language; }, acquire: async () => { acquired++; return audio; } });
+  await inline.chosen({ result_id: 'netease:123', from: { id: 42 }, inline_message_id: 'same', query: '床' });
+  assert.match(h.calls.at(-1)!.body.text, /first NetEase download/); assert.equal(acquired, 0);
+  await inline.callback({ id: 'intruder', from: { id: 43 }, inline_message_id: 'same', data: 'inlang:42:n:123:zh-Hant' }); assert.equal(names, undefined);
+  await inline.callback({ id: 'select', from: { id: 42 }, inline_message_id: 'same', data: 'inlang:42:n:123:zh-Hant' });
+  assert.equal(names, 'zh-Hant'); assert.equal(acquired, 1); assert.equal(h.calls.at(-1)!.method, 'editMessageMedia'); assert.match(h.calls.at(-1)!.body.media.caption, /人是貓/);
+  const before = h.calls.length;
+  await inline.chosen({ result_id: 'netease:123', from: { id: 42 }, inline_message_id: 'next', query: '床' });
+  assert.ok(!h.calls.slice(before).some(c => /first NetEase download/.test(c.body.text || ''))); assert.equal(acquired, 2);
+});
+test('definitively expired playback IDs refresh once; ambiguous network failures never duplicate acquisition', async () => {
+  for (const stale of [true, false]) {
+    const h = harness({ names: 'original' }); let acquired = 0, invalidated = 0;
+    h.deps.telegram = async (method, body) => {
+      h.calls.push({ method, body });
+      if (method === 'editMessageMedia' && acquired === 1) throw stale ? new TelegramRequestError(400, 'invalid file_id') : new Error('network failure'); return true;
+    };
+    const inline = new BotInline({ ...h.deps, acquire: async () => ({ ...audio, fileId: 'id-' + (++acquired) }), invalidate: async () => { invalidated++; } });
+    await inline.chosen({ result_id: 'netease:123', from: { id: 42 }, inline_message_id: 'same', query: '床' });
+    assert.equal(acquired, stale ? 2 : 1); assert.equal(invalidated, stale ? 1 : 0);
+    assert.equal(h.calls.at(-1)!.method, stale ? 'editMessageMedia' : 'editMessageText');
+    if (!stale) assert.equal(h.calls.at(-1)!.body.reply_markup.inline_keyboard[0][0].callback_data, 'ip:42:n:123');
+    assert.ok(!h.calls.some(c => c.method === 'deleteMessage' || c.method === 'sendMessage'));
+  }
+});
+
+test('duplicate selection feedback shares work and metadata failures leave a retry on the same message', async () => {
+  const h = harness({ names: 'original' }); let acquisitions = 0, resolve!: (record: CachedMusic) => void;
+  const inline = new BotInline({ ...h.deps, acquire: async () => { acquisitions++; return new Promise(done => { resolve = done; }); } });
+  const selected = { result_id: 'netease:123', from: { id: 42 }, inline_message_id: 'same', query: '床' };
+  const a = inline.chosen(selected), b = inline.chosen(selected);
+  await new Promise(done => setTimeout(done, 0)); assert.equal(acquisitions, 1); resolve(audio); await Promise.all([a, b]);
+  assert.equal(h.calls.filter(c => c.method === 'editMessageMedia').length, 1);
+  const failure = new BotInline({ ...h.deps, getTrack: async () => { throw new Error('private API diagnostic'); } });
+  await failure.chosen({ ...selected, inline_message_id: 'failed-card' });
+  assert.equal(h.calls.at(-1)!.method, 'editMessageText'); assert.equal(h.calls.at(-1)!.body.inline_message_id, 'failed-card');
+  assert.equal(h.calls.at(-1)!.body.reply_markup.inline_keyboard[0][0].callback_data, 'ip:42:n:123'); assert.doesNotMatch(h.calls.at(-1)!.body.text, /private API/);
 });

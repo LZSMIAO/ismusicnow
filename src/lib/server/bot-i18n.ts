@@ -21,6 +21,11 @@ export const botLanguageNames: Record<BotLanguage, string> = {
 // Translate the static template before inserting music metadata. UI language
 // must never translate or normalize a song, artist, album, URL or filename.
 const catalog = {
+  playbackVersion: ["Telegram 播放版（MP3 轉碼）", "Telegram playback copy (MP3 conversion)", "Telegram 再生用（MP3 変換）", "Telegram 재생용 (MP3 변환)", "Copia reproducible de Telegram (conversión MP3)", "Copie de lecture Telegram (conversion MP3)", "Версия для Telegram (конвертация MP3)"],
+  originalFile: ["原始檔", "Original file", "元のファイル", "원본 파일", "Archivo original", "Fichier original", "Оригинальный файл"],
+  preparePlayback: ["正在準備播放…", "Preparing playback…", "再生を準備中…", "재생 준비 중…", "Preparando reproducción…", "Préparation de la lecture…", "Подготовка воспроизведения…"],
+  play: ["播放", "Play", "再生", "재생", "Reproducir", "Lire", "Воспроизвести"],
+  playbackSetup: ["播放快取尚未配置，請稍後重試。", "Playback storage is not ready. Try again later.", "再生用の保存先が未設定です。後でもう一度試してください。", "재생 저장소가 아직 준비되지 않았습니다. 나중에 다시 시도하세요.", "El almacenamiento no está listo. Inténtalo más tarde.", "Le stockage de lecture n’est pas prêt. Réessayez plus tard.", "Хранилище ещё не готово. Повторите позже."],
   openPlayer: ["開啟播放器", "Open player", "プレーヤーを開く", "플레이어 열기", "Abrir reproductor", "Ouvrir le lecteur", "Открыть плеер"],
   cmdApp: ["開啟音樂播放器", "Open the music player", "音楽プレーヤーを開く", "음악 플레이어 열기", "Abrir el reproductor de música", "Ouvrir le lecteur musical", "Открыть музыкальный плеер"],
   allSources: ["所有來源", "All sources", "すべてのサービス", "모든 소스", "Todas las fuentes", "Toutes les sources", "Все источники"],
@@ -96,7 +101,7 @@ const catalog = {
   cmdDownload: ["解析音樂連結並獲取", "Resolve and download a music link", "音楽リンクを解析して取得", "음악 링크 분석 및 다운로드", "Analizar y descargar enlace musical", "Analyser et télécharger un lien musical", "Разобрать и загрузить музыкальную ссылку"],
   cmdLyric: ["網易雲歌詞：名稱、ID 或連結", "NetEase lyrics: name, ID or link", "NetEase の歌詞：名前・ID・リンク", "NetEase 가사: 이름, ID 또는 링크", "Letras de NetEase: nombre, ID o enlace", "Paroles NetEase : nom, ID ou lien", "Тексты NetEase: название, ID или ссылка"],
   cmdSettings: ["語言與顯示偏好", "Language and display preferences", "言語・表示設定", "언어 및 표시 설정", "Idioma y preferencias de visualización", "Langue et préférences d’affichage", "Язык и настройки отображения"],
-  cmdAbout: ["關於音樂主義", "About ismusicnow", "ismusicnow について", "ismusicnow 소개", "Acerca de ismusicnow", "À propos d’ismusicnow", "Об ismusicnow"],
+  cmdAbout: ["關於 MUISM", "About MUISM", "MUISM について", "MUISM 소개", "Acerca de MUISM", "À propos de MUISM", "О MUISM"],
   firstNotice: ["首次獲取網易雲歌曲會先選中文名稱字形，之後沿用你的偏好。", "Your first NetEase download asks for Chinese spelling, then remembers your choice.", "初回の NetEase ダウンロードで中国語表記を選択し、次回から保存した設定を使います。", "첫 NetEase 다운로드에서 중국어 표기를 선택하면 다음부터 기억합니다.", "La primera descarga de NetEase pide la escritura china y recuerda tu elección.", "Le premier téléchargement NetEase demande l’écriture chinoise et mémorise votre choix.", "При первой загрузке NetEase выберите китайское написание. Выбор будет сохранён."],
   sourceNote: ["Spotify 使用 Spotify 原始音源；YTM 使用獨立適配器。", "Spotify uses its original audio; YTM has its own adapter.", "Spotify は元の Spotify 音源を使用し、YTM は専用の取得機能を使用します。", "Spotify는 원본 음원을 사용하며 YTM은 별도 어댑터를 사용합니다.", "Spotify usa su audio original; YTM tiene su propio adaptador.", "Spotify utilise son audio original ; YTM possède son propre adaptateur.", "Spotify использует своё исходное аудио; YTM — отдельный адаптер."],
   license: ["開源授權 GPL-3.0，不附帶擔保。", "Open source under GPL-3.0, without warranty.", "GPL-3.0 のオープンソースです。無保証です。", "GPL-3.0 오픈 소스이며 보증은 제공하지 않습니다.", "Código abierto GPL-3.0, sin garantía.", "Logiciel libre GPL-3.0, sans garantie.", "Открытый код GPL-3.0, без гарантий."],
@@ -136,6 +141,7 @@ const errors: Record<string, BotTextKey> = {
   ADAPTER_FAILED: 'adapterFailed', NO_OUTPUT: 'adapterFailed', TOOL_MISSING: 'adapterFailed', INVALID_QUALITY: 'adapterFailed',
   DOWNLOAD_TIMEOUT: 'timeout', FILE_TOO_LARGE: 'tooLarge', QUEUE_FULL: 'queueFull',
   UPSTREAM_TIMEOUT: 'timeout', RATE_LIMIT: 'rateLimited',
+  INLINE_CACHE_SETUP: 'playbackSetup',
   INVALID_INPUT: 'queryInput', INVALID_URL: 'invalidLink', UNSUPPORTED_LINK: 'invalidLink', UNSUPPORTED_HOST: 'invalidLink',
   SHORT_LINK: 'invalidLink', INVALID_TRACK: 'invalidLink', YTM_LINK_REQUIRED: 'invalidLink',
   EXPIRED: 'unavailableFile', NOT_READY: 'unavailableFile', SERVICE_RESTARTED: 'restarted',
