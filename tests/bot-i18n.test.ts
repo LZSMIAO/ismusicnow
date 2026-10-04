@@ -1,7 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { botLanguages, botCommands, botError, botHelp, botText } from '../src/lib/server/bot-i18n.js';
+import { botLanguages, botCommands, botError, botHelp, botText, telegramLanguage } from '../src/lib/server/bot-i18n.js';
 import { musicPayload, type MusicUpload } from '../src/lib/server/bot-media.js';
+
+test('Telegram IETF tags map to eight UI languages with an explicit Chinese fallback', () => {
+  for (const [tag, language] of [['zh-Hant', 'zh-Hant'], ['zh_TW', 'zh-Hant'], ['zh-HK', 'zh-Hant'], ['zh-Hans', 'zh-Hans'], ['zh-CN', 'zh-Hans'], ['zh-SG', 'zh-Hans'], ['zh', 'zh-Hant'], ['en-GB', 'en'], ['JA', 'ja'], ['ko-KR', 'ko'], ['es-MX', 'es'], ['fr-CA', 'fr'], ['ru-RU', 'ru'], ['de', 'zh-Hant']] as const) {
+    assert.equal(telegramLanguage(tag), language);
+  }
+  assert.equal(telegramLanguage(), 'zh-Hant');
+});
 
 test('the requested eight UI languages localize help, commands and errors while preserving interpolated metadata', () => {
   assert.deepEqual(botLanguages, ['zh-Hant', 'zh-Hans', 'en', 'ja', 'ko', 'es', 'fr', 'ru']);
@@ -29,7 +36,9 @@ test('localized music captions and buttons never change source names, file names
     assert.ok(String(form.get('caption')).includes(track.album));
     assert.equal((form.get('audio') as File).name, upload.filename);
     assert.deepEqual(new Uint8Array(await (form.get('audio') as File).arrayBuffer()), upload.bytes);
-    assert.ok(String(form.get('reply_markup')).includes(botText(language, 'settings')));
+    assert.ok(String(form.get('reply_markup')).includes(botText(language, 'openSource')));
+    assert.equal(JSON.parse(String(form.get('reply_markup'))).inline_keyboard.flat().length, 1);
+    assert.doesNotMatch(String(form.get('reply_markup')), /open-settings/);
     assert.doesNotMatch(String(form.get('reply_markup')), /中文顯示字形/);
   }
 });

@@ -129,3 +129,27 @@ test('expired first-use requests cannot unexpectedly download a song when settin
     assert.equal((await store.get(42)).language, 'original');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test('Telegram language is automatic until a manual choice; start shows one button and expands choices only on click', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ismusicnow-settings-'));
+  try {
+    const store = new BotSettingsStore(root), messages: { text: string; extra?: Record<string, unknown> }[] = [];
+    const flow = new BotLanguageSettings(store, async (_chat, text, extra) => { messages.push({ text, extra }); }, async () => {});
+    await flow.observeLanguage(42, 'en-US');
+    await flow.start(7, 42);
+    assert.match(messages.at(-1)!.text, /Paste a NetEase, Spotify or YouTube Music link/);
+    const startButtons = (messages.at(-1)!.extra?.reply_markup as { inline_keyboard: { text: string; callback_data: string }[][] }).inline_keyboard.flat();
+    assert.deepEqual(startButtons, [{ text: 'Change language', callback_data: 'setting:42:ui' }]);
+    await flow.callback(7, 42, startButtons[0]!.callback_data);
+    const expanded = (messages.at(-1)!.extra?.reply_markup as { inline_keyboard: { callback_data: string }[][] }).inline_keyboard.flat();
+    assert.equal(expanded.filter((b) => b.callback_data.startsWith('ui:')).length, 8);
+    await flow.observeLanguage(42, 'ja'); assert.equal(await flow.locale(42), 'ja');
+    await flow.callback(7, 42, 'ui:42:fr');
+    await flow.observeLanguage(42, 'zh-CN'); assert.equal(await flow.locale(42), 'fr');
+    const restored = new BotLanguageSettings(new BotSettingsStore(root), async () => {}, async () => {});
+    assert.equal(await restored.locale(42), 'fr');
+    assert.equal((await store.get(42)).language, undefined);
+    await flow.observeLanguage(11, 'ko'); await flow.observeLanguage(11, undefined);
+    assert.equal(await flow.locale(11), 'ko'); assert.equal(await flow.locale(12), 'zh-Hant');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

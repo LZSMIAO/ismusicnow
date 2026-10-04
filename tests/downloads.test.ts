@@ -40,7 +40,8 @@ test('queue persists real metadata, isolates owners and clears only the owner fi
     assert.equal((await restored.list('alice'))[0]?.status, 'completed');
     assert.ok((await restored.file('alice', job.id)).path.endsWith('.wav'));
     await restored.clear('bob'); assert.equal((await restored.list('alice')).length, 1);
-    await restored.clear('alice'); assert.deepEqual(await readdir(join(root, 'test')), []);
+    await restored.remove('bob', job.id); assert.equal((await restored.list('alice')).length, 1);
+    await restored.remove('alice', job.id); assert.deepEqual(await readdir(join(root, 'test')), []);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
