@@ -36,7 +36,7 @@ let botUsername = 'muismbot';
 const statePath = resolve(process.env.DATA_DIR || '.data', 'bot-offset', `${token.split(':')[0]}.json`);
 
 interface User { id: number; language_code?: string; is_bot?: boolean; first_name?: string }
-interface Message { message_id: number; message_thread_id?: number; sender_chat?: { id: number }; chat: { id: number; type?: string }; from?: User; text?: string; reply_to_message?: { message_id: number; from?: { username?: string } } }
+interface Message { message_id: number; message_thread_id?: number; sender_chat?: { id: number }; via_bot?: { id: number; is_bot?: boolean }; chat: { id: number; type?: string }; from?: User; text?: string; reply_to_message?: { message_id: number; from?: { username?: string } } }
 interface Update { update_id: number; message?: Message; callback_query?: { id: string; from: User; data?: string; message?: Message; inline_message_id?: string }; inline_query?: InlineQuery }
 
 export async function telegram<T>(method: string, body: Record<string, unknown> | FormData = {}): Promise<T> {
@@ -192,6 +192,10 @@ export async function handle(update: Update): Promise<void> {
 }
 
 async function handleUpdate(update: Update): Promise<void> {
+  // Inline shares are messages authored by the user, with via_bot marking
+  // their origin. They are already results, never a new text search or an
+  // input eligible for cleanup. Keep callback and ordinary reply handling.
+  if (update.message?.via_bot) return;
   const user = update.message?.from || update.callback_query?.from || update.inline_query?.from;
   const userId = user?.id;
   // Inline queries have no chat ID and must always receive an answer, even

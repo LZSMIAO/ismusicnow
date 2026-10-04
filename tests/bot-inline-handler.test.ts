@@ -49,6 +49,11 @@ test('real handler routes inline queries without chat IDs, deep-link onboarding 
     assert.ok(!calls.slice(before).some(c => c.method === 'deleteMessage'));
     now += 4000;
     await handle({ update_id: 7, message: { message_id: 7, chat: { id: 42, type: 'private' }, from: { id: 42 }, text: '/help' } });
+    const beforeShare = calls.length;
+    for (const chat of [{ id: 42, type: 'private' }, { id: -10042, type: 'supergroup' }]) {
+      await handle({ update_id: 8, message: { message_id: 8, chat, from: { id: 42 }, via_bot: { id: 999222, is_bot: true }, text: '「床」 — 草東沒有派對\n專輯：瓦合\nvia @muismbot' } });
+    }
+    assert.equal(calls.length, beforeShare, 'inline cards must never be searched, deleted or replaced');
     const help = calls.at(-1)!; assert.equal(help.body.parse_mode, 'HTML'); assert.match(help.body.text, /<blockquote expandable>/); assert.match(help.body.text, /@muismbot/);
   } finally { globalThis.fetch = fetchBefore; Date.now = nowBefore; process.env = env; await rm(root, { recursive: true, force: true }); }
 });
