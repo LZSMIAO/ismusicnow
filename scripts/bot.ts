@@ -28,8 +28,8 @@ const mediaCache = new BotMusicCache(token.split(':')[0]!);
 const selections = new BotSelections();
 const lastRequest = new Map<number, number>();
 let stopping = false, offset = 0, handlers = 0;
-let botUsername = 'ismusicnow_bot';
-const statePath = resolve(process.env.DATA_DIR || '.data', 'bot-offset.json');
+let botUsername = 'muismbot';
+const statePath = resolve(process.env.DATA_DIR || '.data', 'bot-offset', `${token.split(':')[0]}.json`);
 
 interface User { id: number; language_code?: string; is_bot?: boolean }
 interface Message { message_id: number; message_thread_id?: number; sender_chat?: { id: number }; chat: { id: number; type?: string }; from?: User; text?: string; reply_to_message?: { message_id: number; from?: { username?: string } } }
@@ -81,7 +81,7 @@ async function sendTrack(chatId: number, userId: number, track: Track, language:
     const job = { ...record, id: 'telegram-cache', track, format: 'original' as const, status: 'completed' as const,
       stage: '', createdAt: '', updatedAt: '' };
     await telegram(record.kind === 'audio' ? 'sendAudio' : 'sendDocument', musicReferencePayload({
-      chatId, messageThreadId, replyTo: messageId, track: visible, job, fileId: record.fileId, kind: record.kind, duration: record.duration, uiLanguage: ui,
+      chatId, messageThreadId, replyTo: messageId, track: visible, job, fileId: record.fileId, kind: record.kind, duration: record.duration, uiLanguage: ui, botUsername,
     }));
   }, async () => {
     const progress = await send(chatId, botText(ui, 'fetching', { title: visible.title, source: track.provider === 'ytm' ? 'YTM' : track.provider }), { message_thread_id: messageThreadId, deleteAfterMs: 7 * 60_000, reply_parameters: replyParameters(messageId) });
@@ -96,7 +96,7 @@ async function sendTrack(chatId: number, userId: number, track: Track, language:
         if ((await stat(path)).size > 49 * 1024 * 1024) throw new ServiceError('FILE_TOO_LARGE', '音訊超過 Telegram 上限。', 413);
         const presentation = await audioPresentation(path, track);
         let record: CachedMusic | undefined;
-        const delivery = await sendMusic(telegram, { chatId, messageThreadId, replyTo: messageId, job, track: visible, uiLanguage: ui,
+        const delivery = await sendMusic(telegram, { chatId, messageThreadId, replyTo: messageId, job, track: visible, uiLanguage: ui, botUsername,
           bytes: new Uint8Array(await readFile(path)),
           filename: `${safeFilename(`${track.artists.join(' - ')} - ${track.title}`)}${extname(path)}`, ...presentation,
           onDelivered: (kind, result) => {
@@ -217,7 +217,7 @@ async function handleUpdate(update: Update): Promise<void> {
     } else if (cmd === '/start') {
       await preferences.start(chatId, userId);
     } else if (['/help', '/about'].includes(cmd || '')) {
-      await send(chatId, botHelp(ui, !isPrivate), { reply_parameters: replyParameters(message.message_id) });
+      await send(chatId, botHelp(ui, !isPrivate, botUsername), { reply_parameters: replyParameters(message.message_id) });
     } else if (cmd === '/lyric') {
       if (!args) { await notice(chatId, botText(ui, 'lyricInput'), message.message_id); return; }
       const collection = await resolveNeteaseCommand(args);
@@ -256,6 +256,12 @@ async function main(): Promise<void> {
   const webhook = await telegram<{ url: string }>('getWebhookInfo');
   if (webhook.url) throw new Error('此 bot 已設定 webhook，請先確認其用途；輪詢模式沒有更改現有 webhook。');
   await telegram('setMyCommands', { commands: botCommands('en') });
+  // Telegram command menus accept ISO 639-1 codes; Chinese script preferences
+  // are applied separately with each user's private/chat-member scope.
+  for (const [code, language] of [['en', 'en'], ['zh', 'zh-Hans'], ['ja', 'ja'], ['ko', 'ko'], ['es', 'es'], ['fr', 'fr'], ['ru', 'ru']] as const) {
+    await telegram('setMyCommands', { commands: botCommands(language), language_code: code });
+  }
+  await telegram('setChatMenuButton', { menu_button: { type: 'commands' } });
   await cleanup.flush().catch(() => console.error('Bot 訊息清理失敗，稍後重試。'));
   let cleaning = false;
   const cleanupTimer = setInterval(() => {
