@@ -31,6 +31,18 @@ test('typed search → owned artist view → albums → tracks, stale callbacks 
       const type = new URL(address).searchParams.get('type')!;
       return Response.json({ [type + 's']: { items: [null, { id: 'a'.repeat(22), name: 'Native artist', artists: [{ name: 'Native artist' }], release_date: '2024-01', total_tracks: 10, owner: { display_name: 'Owner' }, duration_ms: 1000, album: { name: 'Native album' } }], total: 1, next: null } });
     }
+    if (address.startsWith('https://api.spotify.com/v1/artists/')) {
+      upstream.push({ url: address, body });
+      const url = new URL(address);
+      if (url.pathname.endsWith('/albums')) {
+        assert.equal(url.searchParams.get('limit'), '10', 'artist album pages respect the current API limit');
+        const offset = Number(url.searchParams.get('offset') || 0);
+        const items = Array.from({ length: offset ? 1 : 10 }, (_, i) => ({ id: String(offset + i).padStart(22, '0'), name: `Album ${offset + i + 1}`, artists: [{ name: 'Native artist' }], total_tracks: 12, release_date: '2024-01' }));
+        return Response.json({ items, total: 11, next: offset ? null : address + '&offset=10' });
+      }
+      assert.ok(!url.pathname.endsWith('/top-tracks'), 'removed Spotify endpoint is never offered or requested');
+      return Response.json({ id: 'a'.repeat(22), name: 'Native artist' });
+    }
     assert.ok(address.startsWith('https://api.telegram.org/bot999002:stub/'), 'only mock requests are permitted');
     const method = address.split('/').at(-1)!; calls.push({ method, body });
     return Response.json({ ok: true, result: ['sendMessage', 'sendAudio'].includes(method) ? { message_id: ++nextMessage } : true });
@@ -82,5 +94,13 @@ test('typed search → owned artist view → albums → tracks, stale callbacks 
       assert.equal(new URL(upstream.at(-1)!.url).searchParams.get('type'), type);
       assert.equal(type === 'track' ? collection.tracks.length : collection.entities?.length, 1, 'null catalog entries are ignored');
     }
+    await message(4, '/spotify native');
+    const spotifyMenu = nextMessage;
+    await callback(panel().reply_markup.inline_keyboard.flat().find((b: any) => b.callback_data.endsWith(':artist')).callback_data, spotifyMenu);
+    await callback(button('pick:'), spotifyMenu);
+    assert.match(panel().text, /Native artist/);
+    assert.match(panel().text, /1–5 \/ 11/, 'artist album pagination loads subsequent API pages');
+    assert.doesNotMatch(panel().text, /Top songs/);
+    assert.ok(!panel().reply_markup.inline_keyboard.flat().some((b: any) => b.callback_data.startsWith('view:')), 'Spotify artist view exposes available albums without a dead top-tracks tab');
   } finally { globalThis.fetch = realFetch; Date.now = realNow; process.env = env; await rm(root, { recursive: true, force: true }); }
 });
