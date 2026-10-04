@@ -14,13 +14,13 @@ export class TelegramRequestError extends ServiceError {
 }
 
 const sourceNames = { netease: '網易雲音樂', spotify: 'Spotify', ytm: 'YouTube Music' };
-export function musicCaption(track: Track, job: DownloadJob, language: BotLanguage = 'zh-Hant'): string {
+export function musicCaption(track: Track, job: DownloadJob, language: BotLanguage = 'zh-Hant', botUsername = 'muismbot'): string {
   const audio = job.audio;
   return [`「${track.title}」— ${track.artists.join(' / ') || botText(language, 'unknownArtist')}`.slice(0, 400),
     `${botText(language, 'album')}：${track.album || botText(language, 'unknownAlbum')}`.slice(0, 300),
     `${botText(language, 'source')}：${job.audioSource === 'netease' ? language === 'zh-Hans' ? '网易云音乐' : language === 'zh-Hant' ? '網易雲音樂' : 'NetEase Cloud Music' : sourceNames[job.audioSource]}`,
     `${audio?.codec || botText(language, 'originalAudio')}${job.bytes ? ` · ${(job.bytes / 1024 / 1024).toFixed(2)} MB` : ''}${audio?.bitrate ? ` · ${Math.round(audio.bitrate / 1000)} kbps` : ''}`,
-    'via @ismusicnow_bot · 音樂主義'].join('\n');
+    `via @${botUsername} · 音樂主義`].join('\n');
 }
 
 // Cover URLs originate upstream. Limit them to platform CDNs, including redirects.
@@ -80,19 +80,19 @@ type Telegram = (method: string, form: FormData) => Promise<unknown>;
 export interface MusicUpload {
   chatId: number; messageThreadId?: number; replyTo: number; job: DownloadJob; track: Track;
   bytes: Uint8Array; filename: string; duration: number; thumbnail?: Uint8Array;
-  uiLanguage?: BotLanguage;
+  uiLanguage?: BotLanguage; botUsername?: string;
   onDelivered?: (kind: 'audio' | 'document', result: unknown) => void;
 }
 export interface MusicReference {
   chatId: number; messageThreadId?: number; replyTo: number; job: DownloadJob; track: Track;
-  fileId: string; kind: 'audio' | 'document'; duration: number; uiLanguage?: BotLanguage;
+  fileId: string; kind: 'audio' | 'document'; duration: number; uiLanguage?: BotLanguage; botUsername?: string;
 }
 export function musicReferencePayload(reference: MusicReference): FormData {
   const form = new FormData(), language = reference.uiLanguage || 'zh-Hant';
   form.set('chat_id', String(reference.chatId));
   if (reference.messageThreadId !== undefined) form.set('message_thread_id', String(reference.messageThreadId));
   form.set(reference.kind, reference.fileId);
-  form.set('caption', musicCaption(reference.track, reference.job, language));
+  form.set('caption', musicCaption(reference.track, reference.job, language, reference.botUsername));
   form.set('reply_parameters', JSON.stringify({ message_id: reference.replyTo, allow_sending_without_reply: true }));
   form.set('reply_markup', JSON.stringify({ inline_keyboard: [[{ text: botText(language, 'openSource'), url: reference.track.sourceUrl }]] }));
   if (reference.kind === 'audio') {
@@ -109,7 +109,7 @@ export function musicPayload(upload: MusicUpload, document = false, withThumbnai
   form.set('chat_id', String(upload.chatId));
   if (upload.messageThreadId !== undefined) form.set('message_thread_id', String(upload.messageThreadId));
   form.set(document ? 'document' : 'audio', new Blob([new Uint8Array(upload.bytes)], { type: mime[extension] || 'application/octet-stream' }), upload.filename);
-  form.set('caption', musicCaption(upload.track, upload.job, language));
+  form.set('caption', musicCaption(upload.track, upload.job, language, upload.botUsername));
   form.set('reply_parameters', JSON.stringify({ message_id: upload.replyTo, allow_sending_without_reply: true }));
   form.set('reply_markup', JSON.stringify({ inline_keyboard: [[{ text: botText(language, 'openSource'), url: upload.track.sourceUrl }]] }));
   if (!document) {
