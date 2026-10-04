@@ -154,3 +154,18 @@ test('Telegram language is automatic until a manual choice; start shows one butt
     assert.equal(await flow.locale(11), 'ko'); assert.equal(await flow.locale(12), 'en');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test('first-use preferences preserve the requesting forum topic across restart and a choice in another chat', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ismusicnow-settings-'));
+  try {
+    const acquisitions: unknown[][] = [];
+    const flow = new BotLanguageSettings(new BotSettingsStore(root), async () => {}, async (...args) => { acquisitions.push(args); });
+    await flow.request(-100, 42, track, 90, 10);
+    const restored = new BotLanguageSettings(new BotSettingsStore(root), async () => {}, async (...args) => { acquisitions.push(args); });
+    await restored.callback(7, 42, 'lang:42:original');
+    assert.deepEqual(acquisitions, [[-100, 42, track, 'original', 90, 10]]);
+    assert.equal((await new BotSettingsStore(root).get(42)).pending, undefined);
+    await restored.request(-100, 42, track, 91, 20);
+    assert.deepEqual(acquisitions.at(-1), [-100, 42, track, 'original', 91, 20]);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

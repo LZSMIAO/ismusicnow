@@ -53,3 +53,20 @@ test('caption respects Telegram limits and cover downloads are restricted to pla
   assert.equal(coverUrl('https://p1.music.126.net/cover.jpg').hostname, 'p1.music.126.net');
   for (const raw of ['https://127.0.0.1/cover', 'https://music.126.net.evil.example/a', 'http://p1.music.126.net/a', 'https://user:pass@i.scdn.co/a']) assert.throws(() => coverUrl(raw));
 });
+
+test('new uploads, document fallback and cached file references target the requesting forum topic', async () => {
+  const { musicReferencePayload } = await import('../src/lib/server/bot-media.js');
+  const topicUpload = { ...upload, chatId: -100, messageThreadId: 10 };
+  const methods: string[] = [];
+  await sendMusic(async (method, form) => {
+    methods.push(method);
+    assert.equal(form.get('chat_id'), '-100'); assert.equal(form.get('message_thread_id'), '10');
+    assert.equal(JSON.parse(String(form.get('reply_parameters'))).message_id, 90);
+    if (method === 'sendAudio') throw new TelegramRequestError(400, 'AUDIO_CONTENT_TYPE_INVALID');
+  }, topicUpload);
+  assert.deepEqual(methods, ['sendAudio', 'sendDocument']);
+  for (const kind of ['audio', 'document'] as const) {
+    const form = musicReferencePayload({ ...topicUpload, fileId: 'cached-file', kind });
+    assert.equal(form.get('message_thread_id'), '10'); assert.equal(form.get(kind), 'cached-file');
+  }
+});

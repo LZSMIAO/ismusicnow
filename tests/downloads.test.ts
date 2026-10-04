@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile, readdir } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, readdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DownloadStore } from '../src/lib/server/downloads.js';
@@ -15,10 +15,14 @@ function wav(seconds: number): Buffer {
   b.writeUInt16LE(2, 32); b.writeUInt16LE(16, 34); b.write('data', 36); b.writeUInt32LE(size, 40);
   return b;
 }
-async function waitForJob(store: DownloadStore, owner: string) {
+async function waitForJob(store: DownloadStore, owner: string, root: string) {
   for (let i = 0; i < 100; i++) {
     const job = (await store.list(owner))[0]!;
-    if (['failed', 'completed'].includes(job.status)) return job;
+    if (['failed', 'completed'].includes(job.status)) {
+      // Wait for the terminal state to reach disk before simulating a restart.
+      const persisted = JSON.parse(await readFile(join(root, 'test', `${job.id}.json`), 'utf8'));
+      if (persisted.status === job.status) return job;
+    }
     await new Promise((r) => setTimeout(r, 10));
   }
   throw new Error('Queue did not finish');
@@ -31,7 +35,7 @@ test('queue persists real metadata, isolates owners and clears only the owner fi
       const file = join(dir, 'audio.wav'); await writeFile(file, wav(2)); return file;
     }, root);
     await store.create('alice', [track], 'original');
-    const job = await waitForJob(store, 'alice');
+    const job = await waitForJob(store, 'alice', root);
     assert.equal(job.status, 'completed', job.error); assert.ok(job.audio?.codec); assert.equal(job.audio?.sampleRate, 8000);
     assert.equal(job.filename, 'Test - Fixture.wav'); assert.equal('path' in job, false); assert.equal('owner' in job, false);
     assert.deepEqual(await store.list('bob'), []);
@@ -52,7 +56,7 @@ test('short previews fail and their audio files are removed', async () => {
       const file = join(dir, 'audio.wav'); await writeFile(file, wav(1)); return file;
     }, root);
     await store.create('alice', [track], 'original');
-    const job = await waitForJob(store, 'alice'); assert.equal(job.status, 'failed');
+    const job = await waitForJob(store, 'alice', root); assert.equal(job.status, 'failed');
     assert.match(job.error!, /音源長度不足/); assert.equal(job.errorCode, 'INCOMPLETE_AUDIO');
     assert.equal((await new DownloadStore('test', undefined, root).list('alice'))[0]?.errorCode, 'INCOMPLETE_AUDIO');
     assert.deepEqual((await readdir(join(root, 'test'))).filter((p) => !p.endsWith('.json')), []);

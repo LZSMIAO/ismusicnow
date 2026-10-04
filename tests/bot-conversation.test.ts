@@ -82,3 +82,18 @@ test('cleanup handles Telegram permission/missing errors once and retries transi
     assert.deepEqual(JSON.parse(await readFile(join(root, 'bot-cleanup', '42.json'), 'utf8')), []);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test('forum selection numbers and callbacks cannot cross topics, even for the same member', () => {
+  const choices = new BotSelections();
+  const a = choices.create(-100, 42, 90, collection, 10), b = choices.create(-100, 42, 100, collection, 20);
+  a.menuId = 91; b.menuId = 101;
+  assert.equal(choices.number(-100, 42, '1', undefined, 10)?.session.id, a.id);
+  assert.equal(choices.number(-100, 42, '2', undefined, 20)?.session.id, b.id);
+  assert.equal(choices.number(-100, 42, '1'), undefined);
+  assert.throws(() => choices.number(-100, 42, '1', 91, 20), { code: 'SELECTION_OWNER' });
+  assert.throws(() => choices.get(-100, 42, a.id, 91, 20), { code: 'SELECTION_OWNER' });
+  assert.equal(choices.get(-100, 42, a.id, 91, 10), a);
+  assert.match(selectionMessage(a, 'en').text, /reply to this list with its number/);
+  choices.delivered(-100, 90);
+  assert.equal(choices.number(-100, 42, '2', undefined, 20)?.session.id, b.id);
+});
