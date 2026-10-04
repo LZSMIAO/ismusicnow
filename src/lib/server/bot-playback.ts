@@ -41,14 +41,20 @@ export class BotPlayback {
     const key = await musicCacheKey(track);
     await Promise.all([this.cache.invalidate(key, record.fileId), this.cache.invalidate(telegramPlaybackKey(key), record.fileId)]);
   }
-  async get(track: Track): Promise<CachedMusic> {
-    const primaryKey = await musicCacheKey(track), key = telegramPlaybackKey(primaryKey);
+  async get(track: Track, preferOriginalAudio = false): Promise<CachedMusic> {
+    const native = preferOriginalAudio && track.provider === 'netease';
+    const primaryKey = await musicCacheKey(track), playbackKey = telegramPlaybackKey(primaryKey);
+    const key = native ? primaryKey : playbackKey;
     const original = await this.cache.get(primaryKey);
+    // A document ID cannot be resent as audio. Keep it for the original-file
+    // action and use the independent playable cache for ordinary requests.
+    if (native && original?.kind === 'audio') return original;
+    if (native && original?.kind === 'document') return this.get(track);
     if (original?.kind === 'audio' && isMp3(original.audio)) {
       await this.cache.put(key, original); return original;
     }
     let result: CachedMusic | undefined;
-    await this.cache.deliver(key, async record => { result = record; }, async () => {
+    await this.cache.deliver(key, async record => { result = native && record.kind === 'document' ? await this.get(track) : record; }, async () => {
       const chatId = this.cacheChat();
       if (!chatId) throw new ServiceError('INLINE_CACHE_SETUP', 'Telegram cache channel not configured');
       const owner = `telegram-playback:${track.provider}:${track.id}`;
@@ -76,11 +82,26 @@ export class BotPlayback {
           if (!cached) throw new ServiceError('TELEGRAM_ERROR', 'No Telegram file reference');
           return cached;
         };
+        const playable = async () => {
+          derivative = await this.prepare(path, ready!);
+          const record = await upload(derivative.path, derivative.job, false);
+          if (record.kind !== 'audio' || !isMp3(record.audio)) throw new ServiceError('TELEGRAM_ERROR', 'Playback must be native MP3 audio');
+          return record;
+        };
+        if (native) {
+          // Probe the original in the private cache channel first. Recipients
+          // never receive a document followed by a replacement audio message.
+          const record = await upload(path, ready, false);
+          if (record.kind === 'audio') { result = record; return record; }
+          await this.cache.put(primaryKey, record);
+          await this.cache.deliver(playbackKey, async cached => { result = cached; }, async () => {
+            result = await playable(); return result;
+          });
+          return record;
+        }
         // Keep the original alongside its playable derivative in Telegram.
         if (!original && !isMp3(ready.audio)) await this.cache.put(primaryKey, await upload(path, ready, true));
-        derivative = await this.prepare(path, ready);
-        result = await upload(derivative.path, derivative.job, false);
-        if (result.kind !== 'audio' || !isMp3(result.audio)) throw new ServiceError('TELEGRAM_ERROR', 'Playback must be native MP3 audio');
+        result = await playable();
         if (!original && isMp3(ready.audio)) await this.cache.put(primaryKey, result);
         return result;
       } finally {

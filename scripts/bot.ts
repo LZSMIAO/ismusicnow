@@ -115,17 +115,20 @@ async function sendTrack(chatId: number, userId: number, track: Track, language:
       chatId, messageThreadId, track: visible, job, recipientId: chatId < 0 ? userId : undefined, recipientName: replyContext.getStore()?.userName, fileId: record.fileId, kind: record.kind, duration: record.duration, uiLanguage: ui, botUsername,
     }));
   };
-  if (!originalFile && (inlineMode || track.provider !== 'netease')) {
-    const progress = await send(chatId, botText(ui, 'preparePlayback'), { message_thread_id: messageThreadId, deleteAfterMs: 7 * 60_000, reply_parameters: replyParameters(messageId) });
+  if (!originalFile) {
+    const native = track.provider === 'netease' && !inlineMode;
+    const source = native ? await mediaCache.get(primaryKey) : undefined;
+    const cached = source?.kind === 'audio' ? source : await mediaCache.get(telegramPlaybackKey(primaryKey));
+    const progress = cached?.kind === 'audio' ? undefined : await send(chatId, botText(ui, native ? 'fetching' : 'preparePlayback', { title: visible.title, source: track.provider }), { message_thread_id: messageThreadId, deleteAfterMs: 7 * 60_000, reply_parameters: replyParameters(messageId) });
     try {
-      const record = await playback.get(track);
+      const record = await playback.get(track, native);
       try { await sendRecord(record); }
       catch (error) {
         if (!rejectedFileId(error)) throw error;
-        await playback.invalidate(track, record); await sendRecord(await playback.get(track));
+        await playback.invalidate(track, record); await sendRecord(await playback.get(track, native));
       }
     }
-    finally { await removeNow(chatId, progress.message_id); }
+    finally { if (progress) await removeNow(chatId, progress.message_id); }
   } else await mediaCache.deliver(primaryKey, sendRecord, async () => {
     const progress = await send(chatId, botText(ui, 'fetching', { title: visible.title, source: track.provider === 'ytm' ? 'YTM' : track.provider }), { message_thread_id: messageThreadId, deleteAfterMs: 7 * 60_000, reply_parameters: replyParameters(messageId) });
     try {
