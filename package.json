@@ -1,0 +1,36 @@
+{
+  "name": "ismusicnow",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "音樂主義 — 網易雲、Spotify 原始音源與 YTM 的獨立獲取工具",
+  "license": "GPL-3.0-only",
+  "engines": { "node": ">=22.17.0" },
+  "imports": { "#lib/*": "./src/lib/*" },
+  "packageManager": "pnpm@10.33.4",
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env node_modules/vite/bin/vite.js --host localhost",
+    "build": "vite build",
+    "preview": "vite preview --host localhost",
+    "start": "node --env-file-if-exists=.env build/index.js",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "bot": "node --env-file-if-exists=.env --import tsx scripts/bot.ts"
+  },
+  "dependencies": {
+    "@lucide/svelte": "1.51.0",
+    "@neteasecloudmusicapienhanced/api": "4.41.0",
+    "music-metadata": "12.0.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-node": "6.0.0",
+    "@sveltejs/kit": "3.0.0",
+    "@types/node": "^24.0.0",
+    "svelte": "5.57.1",
+    "svelte-check": "4.7.6",
+    "tsx": "4.23.15",
+    "typescript": "^6.0.0",
+    "vite": "8.3.2"
+  }
+}

@@ -1,13 +1,13 @@
-#GitHub Staff
-.github
-
-#Git
-.gitignore
-LICENSE
-README.md
-
-#Other
-config_example.ini
-
-#Docker
-docker-compose.yml
+node_modules
+.svelte-kit
+build
+.data
+.env
+.env.*
+!.env.example
+.venv
+secrets
+.git
+cookies.txt
+*.wvd
+*.dll

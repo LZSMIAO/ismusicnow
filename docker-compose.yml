@@ -1,23 +1,48 @@
+name: ismusicnow
 services:
-  bot-api:
-    image: aiogram/telegram-bot-api:latest
+  web:
+    image: ismusicnow:local
+    build: .
+    container_name: ismusicnow-web
+    restart: unless-stopped
+    env_file: .env
     environment:
-      TELEGRAM_API_ID: "<api-id>"
-      TELEGRAM_API_HASH: "<api-hash>"
-    networks:
-       - music163bot
-
-  bot:
-    image: ghcr.io/xiaomengxinx/music163bot-go
+      HOST: 0.0.0.0
+      PORT: 3000
+      DATA_DIR: /app/.data
+      VOTIFY_BIN: /app/.venv/bin/votify
+      YTDLP_BIN: /app/.venv/bin/yt-dlp
+      SPOTIFY_COOKIES_PATH: /app/secrets/spotify-cookies.txt
+    ports:
+      - "127.0.0.1:28500:3000"
     volumes:
-      - ./config.ini:/app/config.ini
-      - ./cache:/app/cache
-      - ./log:/app/log
+      - ./data/web:/app/.data
+      - ./secrets:/app/secrets:ro
+    init: true
+    mem_limit: 1g
+    cpus: 1.0
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/').then(r=>process.exit(r.ok||r.status===401?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+  bot:
+    image: ismusicnow:local
+    container_name: ismusicnow-bot
+    command: ["node", "--import", "tsx", "scripts/bot.ts"]
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATA_DIR: /app/.data
+      VOTIFY_BIN: /app/.venv/bin/votify
+      YTDLP_BIN: /app/.venv/bin/yt-dlp
+      SPOTIFY_COOKIES_PATH: /app/secrets/spotify-cookies.txt
+    volumes:
+      - ./data/bot:/app/.data
+      - ./secrets:/app/secrets:ro
+    init: true
+    mem_limit: 1g
+    cpus: 1.0
     depends_on:
-      bot-api:
+      web:
         condition: service_started
-    networks:
-      - music163bot
-
-networks:
-    music163bot:
