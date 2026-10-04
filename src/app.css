@@ -106,19 +106,72 @@ html.telegram-app{height:var(--imn-height,100dvh);overflow:hidden}
 
 @media(max-width:700px){.player:has(.playback-status) .seek-line:has(input:disabled){display:none}}
 
-/* Search exposes its filters only while editing. The popover stays above the workspace. */
+/* Search focus surface: compact source pills and real recent items. */
 .searchbar{min-width:0;transition:background-color 160ms var(--ease-out),border-color 160ms var(--ease-out)}
 .searchbar.search-expanded{border-color:var(--silver);background:var(--raised)}
-.searchbar input{min-width:0}
-.search-options{position:fixed;inset:auto;margin:0;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--raised);color:var(--ink);z-index:var(--layer-menu);overflow:auto;overscroll-behavior:contain;opacity:0;transform:translateY(-8px);clip-path:inset(0 0 100% 0 round 14px);transition:opacity 150ms var(--ease-out),transform 150ms var(--ease-out),clip-path 150ms var(--ease-out),display 150ms allow-discrete,overlay 150ms allow-discrete}
-.search-options:popover-open{opacity:1;transform:translateY(0);clip-path:inset(0 0 0 0 round 14px);transition-duration:220ms}
+.searchbar input{min-width:0;font-size:1rem}
+.search-options{position:fixed;inset:auto;margin:0;padding:12px;border:0;border-radius:8px;background:var(--hover);color:var(--ink);box-shadow:0 12px 32px #0005;z-index:var(--layer-menu);overflow:auto;overscroll-behavior:contain;opacity:0;transform:translateY(-6px);transition:opacity 150ms var(--ease-out),transform 150ms var(--ease-out),display 150ms allow-discrete,overlay 150ms allow-discrete}
+.search-options:popover-open{opacity:1;transform:translateY(0);transition-duration:200ms}
 .search-options::backdrop{background:transparent}
-.search-sources{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
-.search-sources button{display:flex;align-items:center;justify-content:center;gap:6px;padding:8px 6px;min-height:44px;border:1px solid transparent;border-radius:8px;font-size:.8125rem;font-weight:500;white-space:nowrap;color:var(--muted)}
-.search-sources button:hover{background:var(--hover);color:var(--ink)}
-.search-sources button[aria-checked=true]{background:var(--hover);border-color:var(--edge);color:var(--silver)}
+.search-sources{display:flex;align-items:center;gap:6px;overflow:auto;scrollbar-width:none;padding:2px 4px 10px}
+.search-sources::-webkit-scrollbar{display:none}
+.search-sources button{display:flex;align-items:center;justify-content:center;flex-shrink:0;min-height:36px;padding:7px 14px;border:0;border-radius:999px;font-size:.8125rem;font-weight:500;line-height:1.4;white-space:nowrap;color:var(--ink);background:var(--raised)}
+.search-sources button:hover{background:var(--edge)}
+.search-sources button[aria-checked=true]{background:var(--silver);color:var(--dark);font-weight:600}
 .search-sources button:focus-visible{outline-offset:2px}
-.source-check-hidden{visibility:hidden}
-@starting-style{.search-options:popover-open{opacity:0;transform:translateY(-8px);clip-path:inset(0 0 100% 0 round 14px)}}
-@media(max-width:700px){.search-sources{grid-template-columns:repeat(2,minmax(0,1fr))}.search-options{padding:10px}.searchbar .search-submit{display:grid;flex-shrink:0;width:28px;min-height:40px}.search-sources button{font-size:.875rem}}
-@media(prefers-reduced-motion:reduce){.search-options{transition:none!important;transform:none;clip-path:none}}
+.source-name-mobile{display:none}
+.search-history h2{font-size:1rem;font-weight:700;margin:10px 12px 12px}
+.search-history-list{display:flex;flex-direction:column;gap:2px}
+.search-history-item{display:flex;align-items:center;gap:14px;width:100%;min-height:72px;padding:10px 12px;text-align:left;border-radius:4px}
+.search-history-item:hover,.search-history-item:focus-visible{background:oklch(.96 .005 260 / .08)}
+.search-history-item:focus-visible{outline-offset:-2px}
+.search-history-cover{display:grid;place-items:center;width:48px;height:48px;flex-shrink:0;background:var(--raised);border-radius:4px;overflow:hidden;color:var(--muted)}
+.search-history-cover.artist{border-radius:50%}
+.search-history-cover img{width:100%;height:100%}
+.search-history-text{min-width:0;flex:1}
+.search-history-text strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:1rem;font-weight:500;line-height:1.4}
+.search-history-text small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:.875rem;margin-top:3px}
+@starting-style{.search-options:popover-open{opacity:0;transform:translateY(-6px)}}
+@media(max-width:700px){.search-options{padding:10px 4px}.search-sources{padding:2px 8px 8px;gap:6px}.search-sources button{min-height:44px;padding:8px 12px;font-size:.8125rem}.source-name-desktop{display:none}.source-name-mobile{display:inline}.search-history h2{margin:8px 12px}.search-history-item{min-height:64px;gap:12px}.search-history-cover{width:40px;height:40px}.search-history-text strong{font-size:.9375rem}.search-history-text small{font-size:.8125rem}.searchbar .search-submit{display:grid;flex-shrink:0;width:28px;min-height:40px}}
+@media(prefers-reduced-motion:reduce){.search-options{transition:none!important;transform:none}}
+
+/* Download queue: native top-layer dialog, independent of the page grid. */
+:root{--layer-modal:60}
+.queue-modal{position:fixed;inset:0 auto auto 0;margin:0;padding:0;border:0;width:100%;height:100dvh;max-width:none;max-height:none;background:transparent;color:var(--ink);overflow:hidden;overscroll-behavior:none;touch-action:none;z-index:var(--layer-modal);transition:none}
+.queue-modal::backdrop{background:oklch(.115 0 0 / .45);opacity:1;transition:opacity 180ms var(--ease-out)}
+.queue-modal.queue-closing::backdrop{opacity:0}
+.queue-sheet{position:absolute;inset:0 0 0 auto;width:min(420px,calc(100% - 24px));height:100%;padding:calc(16px + env(safe-area-inset-top,0px)) 24px calc(24px + env(safe-area-inset-bottom,0px));border:0;border-left:1px solid var(--line);border-radius:16px 0 0 16px;background:var(--panel);box-shadow:-12px 0 40px #0003;overflow:hidden;transform:translate3d(0,0,0);contain:layout paint;backface-visibility:hidden}
+.queue-modal[open] .queue-sheet{will-change:transform}
+.queue-sheet .queue-panel{height:100%;min-height:0;display:flex;flex-direction:column}
+.queue-sheet .queue-heading{flex-shrink:0;padding:0 0 12px;gap:8px;border-bottom:1px solid var(--line)}
+.queue-heading h2{min-width:0}
+.queue-actions{display:flex;align-items:center;gap:4px;flex-shrink:0}
+.queue-actions .icon-button{display:grid;place-items:center;width:44px;height:44px;min-height:44px;padding:0;line-height:1;flex-shrink:0;border-radius:8px}
+.queue-actions .icon-button svg{display:block;width:20px;height:20px}
+.queue-actions .icon-button:hover{background:var(--raised);color:var(--ink)}
+.queue-sheet .queue-body{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;touch-action:pan-y;scrollbar-width:thin;padding-bottom:4px}
+.queue-sheet .job-list{margin-top:0}
+.queue-sheet .queue-footnote{padding-top:12px}
+.telegram-app .queue-modal{height:var(--imn-height,100dvh)}
+.telegram-app .queue-sheet{padding-top:calc(16px + var(--imn-safe-top,0px));padding-bottom:calc(24px + var(--imn-safe-bottom,0px))}
+
+@media(max-width:700px){.queue-sheet{padding-left:16px;padding-right:16px}.queue-sheet .queue-heading h2{font-size:1.125rem}}
+@media(prefers-reduced-motion:reduce){.queue-modal,.queue-modal::backdrop,.queue-sheet{transition:none!important}}
+
+/* Balanced desktop toolbar: search remains on the viewport centreline. */
+@media(min-width:961px){.app-header{grid-template-columns:minmax(0,1fr) minmax(320px,560px) minmax(0,1fr);gap:24px}.app-header .brand{justify-self:start}.header-links{justify-self:end;gap:8px}.header-links a,.header-links a:last-child{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:0 10px;border:0;border-radius:6px;font-size:.8125rem;font-weight:500;color:var(--muted)}.header-links a:hover{background:var(--raised);color:var(--ink)}.header-links a svg{flex-shrink:0}.header-links a:first-child{display:inline-flex}}
+.search-artists{padding:0 32px 24px}.search-artists h2{font-size:1.125rem;margin-bottom:12px}.artist-results{display:flex;gap:8px;overflow:auto;scrollbar-width:thin}.artist-result{width:152px;flex-shrink:0;text-align:left;padding:12px;border-radius:6px}.artist-result:hover{background:var(--raised)}.artist-avatar{width:128px;height:128px;display:grid;place-items:center;border-radius:50%;overflow:hidden;background:var(--raised);color:var(--muted);margin-bottom:12px}.artist-avatar img{width:100%;height:100%;object-fit:cover}.artist-result strong{display:block;font-size:.875rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.artist-result small{display:block;font-size:.75rem;color:var(--muted);margin-top:4px}
+@media(max-width:1100px) and (min-width:961px){.header-links a span{display:none}.header-links a{width:40px;justify-content:center;padding:0}}
+@media(max-width:700px){.search-artists{padding:0 16px 20px}.artist-result{width:120px;padding:8px}.artist-avatar{width:104px;height:104px}.artist-results{gap:4px;scrollbar-width:none}.artist-results::-webkit-scrollbar{display:none}}
+
+/* Pointer hover, playback and download selection have separate signals. */
+.track-head,.track{grid-template-columns:32px minmax(0,1fr) minmax(80px,160px) 48px 40px 40px}.track.checked,.track:has(input:checked){background:transparent}.track:hover,.track:focus-visible{background:var(--raised)}.track.current .track-title strong{color:var(--silver);font-weight:650}.track-download{display:grid;place-items:center;width:40px;height:40px;border-radius:50%;color:var(--muted);opacity:0}.track:hover .track-download,.track:focus-within .track-download{opacity:1}.track-download:hover{background:var(--hover);color:var(--ink)}.track-download-heading{display:grid;place-items:center}.track-download:disabled{cursor:wait}.track:focus-visible{outline-offset:-2px}
+@media(hover:none){.track-download{opacity:1}}
+@media(max-width:700px){.track-head,.track{grid-template-columns:24px minmax(0,1fr) 36px 36px;gap:8px}.track>.duration,.track-head>svg{display:none}.track-download{width:36px;height:44px;opacity:1}}
+
+.queue-open .workspace,.queue-open .app-header,.queue-open .player{filter:blur(3px)}
+
+/* Lyrics belong to the player: a quiet strip above transport, expandable in place. */
+.player-lyrics{flex-shrink:0;background:var(--panel);border-top:1px solid var(--line);padding:0 24px}.lyrics-strip{min-height:44px;display:flex;align-items:center;gap:24px;max-width:1100px;margin:auto}.lyrics-toggle{display:flex;align-items:center;gap:8px;min-height:44px;font-size:.8125rem;color:var(--muted);flex-shrink:0}.lyrics-toggle:hover{color:var(--ink)}.lyrics-strip>p{flex:1;font-size:.875rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--silver);text-align:center}.lyrics-lines{position:relative;max-width:900px;margin:auto;height:min(180px,max(64px,calc(100dvh - var(--player-height,96px) - 172px)));overflow:auto;overscroll-behavior:contain;padding:16px 0 24px;scrollbar-width:thin}.lyrics-lines>button{display:block;width:100%;min-height:40px;padding:8px 16px;text-align:center;font-size:1rem;line-height:1.6;color:var(--muted);font-weight:500}.lyrics-lines>button:disabled{opacity:1;cursor:default}.lyrics-lines>button.lyric-current{color:var(--ink);font-weight:700}.lyrics-lines>button:hover:not(:disabled){background:var(--raised)}.lyrics-plain{white-space:pre-line;text-align:center;font-size:.9375rem;line-height:2;padding:0 16px}.lyrics-empty{padding:32px;text-align:center;color:var(--muted)}.lyrics-credit{display:block;font-size:.6875rem;color:var(--muted);text-align:right;padding:12px 16px}.queue-open .player-lyrics{filter:blur(3px)}
+@media(min-width:701px){.workspace,.workspace.preview-hidden{height:calc(100svh - 72px - var(--player-height,96px) - var(--lyrics-height,0px))}}
+@media(max-width:700px){.player-lyrics{padding:0 12px}.lyrics-strip{gap:12px}.lyrics-toggle{font-size:.75rem;gap:6px}.lyrics-strip>p{font-size:.8125rem;text-align:right}.lyrics-lines{height:min(144px,24dvh)}.lyrics-lines>button{font-size:.9375rem}}

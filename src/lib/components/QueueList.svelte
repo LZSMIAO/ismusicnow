@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Download, Music2, Check, RotateCcw, Trash2, LoaderCircle } from '@lucide/svelte';
+  import { Download, Music2, Check, RotateCcw, Trash2, LoaderCircle, X } from '@lucide/svelte';
   import { onMount } from 'svelte';
   import { telegramBridge, downloadTelegramFile } from '#lib/telegram.js';
   import { api } from '#lib/ui.js';
@@ -16,12 +16,13 @@
     } catch (error) { saveError = error instanceof Error ? error.message : '無法保存音樂，請重試。'; }
     finally { saving = ''; }
   }
-  let { jobs, busy = false, error = '', compact = true, onclear, onretry }: {
-    jobs: DownloadJob[]; busy?: boolean; error?: string; compact?: boolean; onclear: () => void; onretry: (job: DownloadJob) => void;
+  let { jobs, busy = false, error = '', compact = true, onclear, onretry, onclose }: {
+    jobs: DownloadJob[]; busy?: boolean; error?: string; compact?: boolean; onclear: () => void; onretry: (job: DownloadJob) => void; onclose?: () => void;
   } = $props();
 </script>
 <section class="queue-panel" class:expanded={!compact} aria-label="下載佇列">
-  <div class="queue-heading"><h2>下載佇列 <span>{jobs.length}</span></h2>{#if jobs.some((j) => j.status === 'completed' || j.status === 'failed')}<button class="icon-button" aria-label="清除已完成及失敗項目" disabled={busy} onclick={onclear}><Trash2 size={18} /></button>{/if}</div>
+  <div class="queue-heading"><h2>下載佇列 <span>{jobs.length}</span></h2><div class="queue-actions">{#if jobs.some((j) => j.status === 'completed' || j.status === 'failed')}<button class="icon-button" aria-label="清除已完成及失敗項目" disabled={busy} onclick={onclear}><Trash2 size={20} /></button>{/if}{#if onclose}<button class="icon-button" aria-label="關閉下載佇列" onclick={onclose}><X size={20} /></button>{/if}</div></div>
+  <div class="queue-body">
   {#if saveError}<p class="error-message" role="alert">{saveError}</p>{/if}
   {#if error}<p class="error-message" role="alert">{error}</p>{/if}
   {#if !jobs.length}<p class="queue-empty">尚無下載</p>{:else}
@@ -32,4 +33,5 @@
       </li>
     {/each}</ul><p class="queue-footnote">檔案保留 24 小時</p>
   {/if}
+  </div>
 </section>

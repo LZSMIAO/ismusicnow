@@ -1,9 +1,12 @@
 <script lang="ts">
-  import { ArrowRight, Check, Search } from '@lucide/svelte';
+  import { ArrowRight, Music2, Search } from '@lucide/svelte';
   import { onMount } from 'svelte';
+  import { providerNames } from '#lib/ui.js';
+  import type { SearchSource } from '#lib/types.js';
 
-  let { value = $bindable(''), source = $bindable('all'), inputElement = $bindable(), loading = false, onsearch }: {
-    value?: string; source?: string; inputElement?: HTMLInputElement; loading?: boolean; onsearch: () => void;
+  type Recent = { input: string; provider: SearchSource; title: string; artist: string; cover: string; kind: string };
+  let { value = $bindable(''), source = $bindable('all'), inputElement = $bindable(), loading = false, recent = [], onsearch, onrecent }: {
+    value?: string; source?: string; inputElement?: HTMLInputElement; loading?: boolean; recent?: Recent[]; onsearch: () => void; onrecent: (item: Recent) => void;
   } = $props();
   const options = [
     { value: 'all', label: '所有來源' }, { value: 'netease', label: '網易雲' },
@@ -17,7 +20,7 @@
     width = Math.min(bounds.width, window.innerWidth - 24);
     left = Math.max(12, Math.min(bounds.left, window.innerWidth - width - 12));
     top = bounds.bottom + 8;
-    maxHeight = Math.max(0, (viewport ? viewport.height + viewport.offsetTop : window.innerHeight) - top - 12);
+    maxHeight = Math.max(0, Math.min(560, (viewport ? viewport.height + viewport.offsetTop : window.innerHeight) - top - 12));
   }
   function expand() {
     position();
@@ -38,8 +41,27 @@
     if (event.key === 'Escape') { event.preventDefault(); close(); }
     if (event.key === 'ArrowDown') {
       event.preventDefault(); expand();
-      panel.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus({ preventScroll: true });
+      (panel.querySelector<HTMLButtonElement>('.search-history-item') || panel.querySelector<HTMLButtonElement>('[aria-checked="true"]'))?.focus({ preventScroll: true });
     }
+  }
+  function recentKeyboard(event: KeyboardEvent) {
+    if (event.key === 'Escape') { event.preventDefault(); close(true); return; }
+    const buttons = [...panel.querySelectorAll<HTMLButtonElement>('.search-history-item')];
+    const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    if (event.key === 'ArrowUp' && index === 0) { event.preventDefault(); inputElement?.focus({ preventScroll: true }); return; }
+    let next: number;
+    if (event.key === 'ArrowDown') next = Math.min(index + 1, buttons.length - 1);
+    else if (event.key === 'ArrowUp') next = Math.max(index - 1, 0);
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = buttons.length - 1;
+    else return;
+    event.preventDefault(); buttons[next]?.focus();
+  }
+  function subtitle(item: Recent) {
+    const kind = ({ search: '搜尋', album: '專輯', artist: '藝術家', playlist: '歌單', track: '歌曲' } as Record<string, string>)[item.kind] || '音樂';
+    const artist = item.artist && item.artist !== '搜尋結果' ? item.artist : '';
+    const provider = item.provider === 'all' ? '所有來源' : providerNames[item.provider];
+    return [kind, artist, provider].filter(Boolean).join(' · ');
   }
   function optionKeyboard(event: KeyboardEvent) {
     if (event.key === 'Escape') { event.preventDefault(); close(true); return; }
@@ -85,9 +107,22 @@
 <div id="search-options" bind:this={panel} popover class="search-options" aria-label="搜尋選項" style={`top:${top}px;left:${left}px;width:${width}px;max-height:${maxHeight}px`} ontoggle={(event: ToggleEvent) => open = event.newState === 'open'}>
   <div class="search-sources" role="radiogroup" tabindex="-1" aria-label="搜尋來源" onkeydown={optionKeyboard}>
     {#each options as option (option.value)}
-      <button type="button" role="radio" aria-checked={source === option.value} tabindex={source === option.value ? 0 : -1} onclick={() => { source = option.value; inputElement?.focus({ preventScroll: true }); }}>
-        <span>{option.label}</span><Check size={14} aria-hidden="true" class={source === option.value ? '' : 'source-check-hidden'} />
+      <button type="button" role="radio" aria-label={option.label} aria-checked={source === option.value} tabindex={source === option.value ? 0 : -1} onclick={() => { source = option.value; inputElement?.focus({ preventScroll: true }); }}>
+        {#if option.value === 'ytm'}<span class="source-name-desktop">YouTube Music</span><span class="source-name-mobile" aria-hidden="true">YTM</span>{:else}<span>{option.label}</span>{/if}
       </button>
     {/each}
   </div>
+  {#if recent.length}
+    <section class="search-history" aria-label="最近搜尋">
+      <h2>最近搜尋</h2>
+      <div class="search-history-list">
+        {#each recent.slice(0, 6) as item (`${item.provider}:${item.input}`)}
+          <button type="button" class="search-history-item" aria-label={`重新搜尋 ${item.title}`} onkeydown={recentKeyboard} onclick={() => { close(); inputElement?.blur(); onrecent(item); }}>
+            <span class="search-history-cover" class:artist={item.kind === 'artist'}>{#if item.cover}<img src={item.cover} alt="" width="48" height="48" loading="lazy" referrerpolicy="no-referrer" onerror={(event) => (event.currentTarget as HTMLImageElement).hidden = true} />{:else}<Music2 size={20} />{/if}</span>
+            <span class="search-history-text"><strong>{item.title}</strong><small>{subtitle(item)}</small></span>
+          </button>
+        {/each}
+      </div>
+    </section>
+  {/if}
 </div>
