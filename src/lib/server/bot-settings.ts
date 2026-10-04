@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { Converter } from 'opencc-js';
 import { z } from 'zod';
 import type { Track } from '../types.js';
-import { botHelp, botLanguages, botLanguageNames, botText, telegramLanguage, type BotLanguage } from './bot-i18n.js';
+import { botHelp, botLanguages, botLanguageLabel, botText, telegramLanguage, type BotLanguage } from './bot-i18n.js';
 
 const languageSchema = z.enum(['original', 'zh-Hant', 'zh-Hans']);
 export type AlbumLanguage = z.infer<typeof languageSchema>;
@@ -135,7 +135,7 @@ export class BotLanguageSettings {
     const ui = await this.locale(userId);
     await this.onUiChange?.(chatId, ui, userId).catch(() => {});
     await this.send(chatId, botHelp(ui, chatId < 0, botUsername), { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
-      [{ text: `${botLanguageNames[ui]} ｜ ${botText(ui, 'changeLanguage')}`, callback_data: `setting:${userId}:ui` }],
+      [{ text: `${botLanguageLabel(ui)} ｜ 🌐 ${botText(ui, 'changeLanguage')}`, callback_data: `setting:${userId}:ui` }],
     ] } });
   }
   private name(language: AlbumLanguage, ui: BotLanguage): string {
@@ -143,9 +143,9 @@ export class BotLanguageSettings {
   }
   async show(chatId: number, userId: number): Promise<void> {
     const settings = await this.store.get(userId), ui = settings.uiLanguage || settings.telegramLanguage || 'en';
-    await this.send(chatId, `${botText(ui, 'settings')}\n\n${botText(ui, 'uiLanguage')}：${botLanguageNames[ui]}\n${botText(ui, 'namesSetting')}：${settings.language ? this.name(settings.language, ui) : botText(ui, 'unset')}\n\n${botText(ui, 'scope')}`, {
+    await this.send(chatId, `${botText(ui, 'settings')}\n\n🌐 ${botText(ui, 'uiLanguage')}：${botLanguageLabel(ui)}\n${botText(ui, 'namesSetting')}：${settings.language ? this.name(settings.language, ui) : botText(ui, 'unset')}\n\n${botText(ui, 'scope')}`, {
       deleteAfterMs: 30 * 60_000, reply_markup: { inline_keyboard: [
-        [{ text: botText(ui, 'uiLanguage'), callback_data: `setting:${userId}:ui` }],
+        [{ text: `🌐 ${botText(ui, 'uiLanguage')}`, callback_data: `setting:${userId}:ui` }],
         [{ text: botText(ui, 'namesSetting'), callback_data: `setting:${userId}:names` }],
         [{ text: botText(ui, 'close'), callback_data: `setting:${userId}:close` }],
       ] },
@@ -163,10 +163,10 @@ export class BotLanguageSettings {
   }
   async showUi(chatId: number, userId: number): Promise<void> {
     const ui = await this.locale(userId);
-    const buttons = botLanguages.map((language) => ({ text: `${ui === language ? '✓ ' : ''}${botLanguageNames[language]}`, callback_data: `ui:${userId}:${language}` }));
+    const buttons = botLanguages.map((language) => ({ text: `${ui === language ? '✓ ' : ''}${botLanguageLabel(language)}`, callback_data: `ui:${userId}:${language}` }));
     const rows = Array.from({ length: Math.ceil(buttons.length / 2) }, (_v, i) => buttons.slice(i * 2, i * 2 + 2));
     rows.push([{ text: botText(ui, 'back'), callback_data: `setting:${userId}:home` }]);
-    await this.send(chatId, `${botText(ui, 'uiLanguage')}\n\n${botText(ui, 'current', { value: botLanguageNames[ui] })}\n${botText(ui, 'uiScope')}`, { deleteAfterMs: 30 * 60_000, reply_markup: { inline_keyboard: rows } });
+    await this.send(chatId, `🌐 ${botText(ui, 'uiLanguage')}\n\n${botText(ui, 'current', { value: botLanguageLabel(ui) })}\n${botText(ui, 'uiScope')}`, { deleteAfterMs: 30 * 60_000, reply_markup: { inline_keyboard: rows } });
   }
   async request(chatId: number, userId: number, track: Track, messageId: number, messageThreadId?: number, keepRequest = false, inlineMode = false): Promise<void> {
     const thread: [number?, boolean?, boolean?] = inlineMode ? [messageThreadId, keepRequest, true] : keepRequest ? [messageThreadId, true] : messageThreadId === undefined ? [] : [messageThreadId];

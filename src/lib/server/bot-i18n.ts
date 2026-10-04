@@ -18,6 +18,13 @@ export const botLanguageNames: Record<BotLanguage, string> = {
   'zh-Hant': '繁體中文', 'zh-Hans': '简体中文', en: 'English', ja: '日本語', ko: '한국어',
   es: 'Español', fr: 'Français', ru: 'Русский',
 };
+const botLanguageFlags: Record<BotLanguage, string> = {
+  'zh-Hant': '🇭🇰 🇲🇴 🇹🇼', 'zh-Hans': '🇨🇳', en: '🇬🇧', ja: '🇯🇵', ko: '🇰🇷',
+  es: '🇪🇸', fr: '🇫🇷', ru: '🇷🇺',
+};
+export function botLanguageLabel(language: BotLanguage): string {
+  return `${botLanguageFlags[language]} ${botLanguageNames[language]}`;
+}
 // Translate the static template before inserting music metadata. UI language
 // must never translate or normalize a song, artist, album, URL or filename.
 const catalog = {

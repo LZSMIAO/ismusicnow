@@ -140,7 +140,7 @@ test('Telegram language is automatic until a manual choice; start shows one butt
     await flow.start(7, 42);
     assert.match(messages.at(-1)!.text, /Send a name or link/);
     const startButtons = (messages.at(-1)!.extra?.reply_markup as { inline_keyboard: { text: string; callback_data: string }[][] }).inline_keyboard.flat();
-    assert.deepEqual(startButtons, [{ text: 'English ｜ Switch language', callback_data: 'setting:42:ui' }]);
+    assert.deepEqual(startButtons, [{ text: '🇬🇧 English ｜ 🌐 Switch language', callback_data: 'setting:42:ui' }]);
     await flow.callback(7, 42, startButtons[0]!.callback_data);
     const expanded = (messages.at(-1)!.extra?.reply_markup as { inline_keyboard: { callback_data: string }[][] }).inline_keyboard.flat();
     assert.equal(expanded.filter((b) => b.callback_data.startsWith('ui:')).length, 8);
