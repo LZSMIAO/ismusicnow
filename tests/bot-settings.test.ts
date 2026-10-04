@@ -138,7 +138,7 @@ test('Telegram language is automatic until a manual choice; start shows one butt
     const flow = new BotLanguageSettings(store, async (_chat, text, extra) => { messages.push({ text, extra }); }, async () => {});
     await flow.observeLanguage(42, 'en-US');
     await flow.start(7, 42);
-    assert.match(messages.at(-1)!.text, /Send a song name, artist name or music link/);
+    assert.match(messages.at(-1)!.text, /Send.*artist.*link/);
     const startButtons = (messages.at(-1)!.extra?.reply_markup as { inline_keyboard: { text: string; callback_data: string }[][] }).inline_keyboard.flat();
     assert.deepEqual(startButtons, [{ text: 'English ｜ Switch language', callback_data: 'setting:42:ui' }]);
     await flow.callback(7, 42, startButtons[0]!.callback_data);
@@ -167,5 +167,20 @@ test('first-use preferences preserve the requesting forum topic across restart a
     assert.equal((await new BotSettingsStore(root).get(42)).pending, undefined);
     await restored.request(-100, 42, track, 91, 20);
     assert.deepEqual(acquisitions.at(-1), [-100, 42, track, 'original', 91, 20]);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+
+test('first-use dismissal precedes acquisition and retained music cards survive a restart', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ismusicnow-settings-'));
+  try {
+    const events: string[] = [], acquisitions: unknown[][] = [];
+    const flow = new BotLanguageSettings(new BotSettingsStore(root), async () => {}, async () => {});
+    await flow.request(-100, 42, track, 90, 10, true);
+    const restored = new BotLanguageSettings(new BotSettingsStore(root), async () => {}, async (...args) => { events.push('acquire'); acquisitions.push(args); });
+    await restored.callback(-100, 42, 'lang:42:original', async () => { events.push('dismiss'); });
+    assert.deepEqual(events, ['dismiss', 'acquire']);
+    assert.deepEqual(acquisitions, [[-100, 42, track, 'original', 90, 10, true]]);
+    assert.equal((await new BotSettingsStore(root).get(42)).pending, undefined);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

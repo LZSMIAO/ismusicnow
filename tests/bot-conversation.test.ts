@@ -15,7 +15,7 @@ test('selection numbers are scoped to user/chat, absolute across pages, and expi
   let now = 1000;
   const choices = new BotSelections(() => now), session = choices.create(7, 42, 90, collection);
   session.menuId = 91;
-  assert.equal(choices.number(7, 42, '9')?.track.id, '10008');
+  assert.equal(choices.number(7, 42, '9')?.track?.id, '10008');
   assert.equal(choices.number(8, 42, '1'), undefined);
   assert.equal(choices.number(7, 43, '1'), undefined);
   assert.throws(() => choices.number(7, 43, '1', 91), { code: 'SELECTION_OWNER' });
@@ -25,9 +25,9 @@ test('selection numbers are scoped to user/chat, absolute across pages, and expi
   assert.equal(choices.number(7, 42, '10000'), undefined);
   session.page = 1;
   const page = selectionMessage(session, 'en');
-  assert.match(page.text, /9–10 \/ 10/); assert.match(page.text, /12 songs in total; 10 loaded/);
+  assert.match(page.text, /6–10 \/ 10/); assert.match(page.text, /Loaded 10 \/ 12 results/);
   assert.match(page.text, /醜奴兒 · 2:30/);
-  assert.equal(page.reply_markup.inline_keyboard[0]![0]!.callback_data, `pick:${session.id}:8`);
+  assert.equal(page.reply_markup.inline_keyboard[1]![0]!.callback_data, `pick:${session.id}:5`);
   assert.equal(page.reply_markup.inline_keyboard.at(-1)![0]!.callback_data, `page:${session.id}:0`);
   now += 30 * 60_000;
   assert.equal(choices.number(7, 42, '1'), undefined);
@@ -96,4 +96,22 @@ test('forum selection numbers and callbacks cannot cross topics, even for the sa
   assert.match(selectionMessage(a, 'en').text, /reply to this list with its number/);
   choices.delivered(-100, 90);
   assert.equal(choices.number(-100, 42, '2', undefined, 20)?.session.id, b.id);
+});
+
+test('an action removes its own panel immediately and persists a transient deletion failure for retry', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ismusicnow-immediate-'));
+  let now = 1000, attempts = 0;
+  const removed: number[] = [];
+  try {
+    const queue = new BotMessageCleanup('42', async (_chat, id) => {
+      if (id === 91 && ++attempts === 1) throw new TelegramRequestError(429, 'retry');
+      removed.push(id);
+    }, root, () => now);
+    await queue.schedule(7, 90, 60_000);
+    await queue.removeNow(7, 92); assert.deepEqual(removed, [92]);
+    await queue.removeNow(7, 91); assert.deepEqual(removed, [92]);
+    now += 60_000;
+    await new BotMessageCleanup('42', async (_chat, id) => { removed.push(id); }, root, () => now).flush();
+    assert.deepEqual(new Set(removed), new Set([90, 91, 92]));
+  } finally { await rm(root, { recursive: true, force: true }); }
 });

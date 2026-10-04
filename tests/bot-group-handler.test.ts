@@ -45,7 +45,7 @@ test('group commands, mentions, member languages, owned reply selection and conc
     };
     const sent = () => calls.findLast((call) => call.method === 'sendMessage')!;
     const audioCount = () => calls.filter((call) => call.method === 'sendAudio').length;
-    const selector = () => ({ id: nextMessage, pick: sent().body.reply_markup.inline_keyboard[0][0].callback_data, page: sent().body.reply_markup.inline_keyboard.at(-1)[0].callback_data });
+    const selector = () => ({ id: nextMessage, pick: sent().body.reply_markup.inline_keyboard.flat().find((b: any) => b.callback_data.startsWith('pick:')).callback_data, page: sent().body.reply_markup.inline_keyboard.flat().find((b: any) => b.callback_data.startsWith('page:')).callback_data });
     await message(10, '普通聊天'); await message(11, '1'); await message(12, '/search@another_bot 床');
     await message(13, '@muismbot_other 床'); await message(14, '/unknown@muismbot 床');
     await handle({ update_id: 15, message: { message_id: 15, chat: { id: -100, type: 'supergroup' }, from: { id: 90, is_bot: true }, text: '/start' } });
@@ -53,7 +53,7 @@ test('group commands, mentions, member languages, owned reply selection and conc
     assert.equal(calls.length, 0); assert.equal(queries.length, 0);
 
     await message(20, '/start@muismbot', 90, 10);
-    assert.equal(sent().body.message_thread_id, 10); assert.equal(sent().body.reply_parameters.message_id, 20);
+    assert.equal(sent().body.message_thread_id, 10); assert.equal(sent().body.reply_parameters, undefined);
     assert.match(sent().body.text, /In groups, use \/search@muismbot/);
     assert.equal(sent().body.reply_markup.inline_keyboard.flat().length, 1);
     assert.deepEqual(calls.findLast((call) => call.method === 'setMyCommands')!.body.scope, { type: 'chat_member', chat_id: -100, user_id: 90 });
@@ -70,17 +70,17 @@ test('group commands, mentions, member languages, owned reply selection and conc
     assert.match(commands.body.commands.find((c: { command: string }) => c.command === 'search').description, /Chercher/);
 
     await Promise.all([message(30, '/search@muismbot 草東', 90, 10), message(31, '/search@muismbot 人是猫', 91, 20)]);
-    const topicMenus = calls.filter((call) => call.method === 'sendMessage' && [30, 31].includes(call.body.reply_parameters?.message_id));
+    const topicMenus = calls.filter((call) => call.method === 'sendMessage' && /<b>(草東|人是猫)<\/b>/.test(call.body.text));
     assert.equal(topicMenus.length, 2);
-    assert.equal(topicMenus.find((call) => call.body.reply_parameters.message_id === 30)!.body.message_thread_id, 10);
-    assert.equal(topicMenus.find((call) => call.body.reply_parameters.message_id === 31)!.body.message_thread_id, 20);
-    assert.match(topicMenus.find((call) => call.body.reply_parameters.message_id === 30)!.body.text, /reply to this list/);
+    assert.equal(topicMenus.find((call) => call.body.text.includes('<b>草東</b>'))!.body.message_thread_id, 10);
+    assert.equal(topicMenus.find((call) => call.body.text.includes('<b>人是猫</b>'))!.body.message_thread_id, 20);
+    assert.match(topicMenus.find((call) => call.body.text.includes('<b>草東</b>'))!.body.text, /reply to this list/);
 
     await message(40, '@muismbot 床', 90, 10);
     assert.equal(queries.at(-1), '床'); assert.equal(sent().body.message_thread_id, 10);
     const choices = selector();
     await callback(choices.page, choices.id, 90, 10);
-    assert.match(calls.findLast((call) => call.method === 'editMessageText')!.body.text, /9–10 \/ 10/);
+    assert.match(calls.findLast((call) => call.method === 'editMessageText')!.body.text, /6–10 \/ 10/);
     const before = audioCount();
     await message(41, '9', 90, 10); assert.equal(audioCount(), before);
     await message(42, '9', 91, 10, choices.id); assert.equal(audioCount(), before);
@@ -90,16 +90,16 @@ test('group commands, mentions, member languages, owned reply selection and conc
     await message(44, '9', 90, 10, choices.id);
     const audio = calls.findLast((call) => call.method === 'sendAudio')!;
     assert.equal(audio.body.audio, 'cached:10008'); assert.equal(audio.body.message_thread_id, '10');
-    assert.equal(audio.body.reply_parameters.message_id, 44);
-    const pending = JSON.parse(await readFile(join(root, 'bot-cleanup', '999001.json'), 'utf8')) as { chatId: number; messageId: number; due: number }[];
-    for (const id of [40, 44, choices.id]) assert.ok(pending.some((item) => item.chatId === -100 && item.messageId === id && item.due <= now + 2000));
-    for (const id of [41, 42, 43]) assert.ok(!pending.some((item) => item.messageId === id), 'ignored or failed requests must survive');
+    assert.equal(audio.body.reply_parameters, undefined); assert.match(audio.body.caption, /tg:\/\/user\?id=90/);
+    const deleted = calls.filter(call => call.method === 'deleteMessage').map(call => call.body.message_id);
+    for (const id of [40, 44, choices.id]) assert.ok(deleted.includes(id), 'accepted requests are deleted immediately');
+    for (const id of [41, 42, 43]) assert.ok(!deleted.includes(id), 'ignored or failed requests must survive');
 
     await message(50, '草東沒有派對', 90, 20, 1000);
     assert.equal(queries.at(-1), '草東沒有派對'); const replyChoices = selector();
     await callback(replyChoices.pick, replyChoices.id, 90, 20);
     assert.equal(calls.findLast((call) => call.method === 'sendAudio')!.body.message_thread_id, '20');
-    assert.equal(calls.findLast((call) => call.method === 'sendAudio')!.body.reply_parameters.message_id, 50);
+    assert.equal(calls.findLast((call) => call.method === 'sendAudio')!.body.reply_parameters, undefined);
     await message(60, '/netease@muismbot 10000', 90, undefined, undefined, -101);
     assert.equal(calls.findLast((call) => call.method === 'sendAudio')!.body.chat_id, '-101');
     assert.equal(calls.findLast((call) => call.method === 'sendAudio')!.body.message_thread_id, undefined);
@@ -114,9 +114,12 @@ test('group commands, mentions, member languages, owned reply selection and conc
     assert.equal((await new BotSettingsStore().get(92)).pending?.messageThreadId, 10);
     await callback('lang:92:original', firstPrompt, 92, 20);
     assert.equal(calls.findLast((call) => call.method === 'sendAudio')!.body.message_thread_id, '10');
-    assert.equal(calls.findLast((call) => call.method === 'sendAudio')!.body.reply_parameters.message_id, 70);
+    assert.equal(calls.findLast((call) => call.method === 'sendAudio')!.body.reply_parameters, undefined);
+    assert.ok(calls.some(call => call.method === 'deleteMessage' && call.body.message_id === firstPrompt));
+    const prompts = () => calls.filter(call => call.method === 'sendMessage' && call.body.text?.includes('first NetEase download')).length;
+    const promptCount = prompts();
     await message(71, '/netease@muismbot 10000', 92, 20);
-    assert.equal(calls.at(-1)!.method, 'sendAudio', 'Chinese choice is only asked once');
+    assert.equal(prompts(), promptCount, 'Chinese choice is only asked once');
   } finally {
     globalThis.fetch = realFetch; Date.now = realNow; process.env = env;
     await rm(root, { recursive: true, force: true });

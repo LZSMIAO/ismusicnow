@@ -14,7 +14,7 @@ test('the requested eight UI languages localize help, commands and errors while 
   assert.deepEqual(botLanguages, ['zh-Hant', 'zh-Hans', 'en', 'ja', 'ko', 'es', 'fr', 'ru']);
   for (const language of botLanguages) {
     const help = botHelp(language), commands = botCommands(language);
-    assert.ok(help.length < 4000); assert.equal(commands.length, 9);
+    assert.ok(help.length < 4000); assert.equal(commands.length, 12);
     assert.ok(commands.every((c) => c.description.length > 0 && c.description.length <= 256));
     assert.doesNotMatch(help, /\{\w+\}/);
     assert.doesNotMatch(help, /GPL|warranty|擔保|担保|adapter|適配器|适配器/);
@@ -37,7 +37,7 @@ test('localized music captions and buttons never change source names, file names
     assert.ok(String(form.get('caption')).includes(track.album));
     assert.equal((form.get('audio') as File).name, upload.filename);
     assert.deepEqual(new Uint8Array(await (form.get('audio') as File).arrayBuffer()), upload.bytes);
-    assert.ok(String(form.get('reply_markup')).includes(botText(language, 'openSource')));
+    assert.ok(String(form.get('reply_markup')).includes(botText(language, 'source')));
     assert.equal(JSON.parse(String(form.get('reply_markup'))).inline_keyboard.flat().length, 1);
     assert.doesNotMatch(String(form.get('reply_markup')), /open-settings/);
     assert.doesNotMatch(String(form.get('reply_markup')), /中文顯示字形/);

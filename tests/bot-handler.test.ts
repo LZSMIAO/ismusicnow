@@ -6,7 +6,7 @@ import { join } from 'node:path';
 
 // Exercise the actual bot handler with an isolated DATA_DIR and a fully stubbed
 // network. This never sends messages to real users or starts long polling.
-test('plain text → reply/pagination → numeric or owned callback selection → cached audio → delayed deletion; failed inputs survive', async () => {
+test('plain text → reply/pagination → numeric or owned callback selection → cached audio → immediate deletion; failed inputs survive', async () => {
   const root = await mkdtemp(join(tmpdir(), 'ismusicnow-handler-'));
   const env = { ...process.env }, realFetch = globalThis.fetch, realNow = Date.now;
   let now = realNow(), nextMessage = 1000, failDelivery = false;
@@ -49,32 +49,33 @@ test('plain text → reply/pagination → numeric or owned callback selection �
     assert.equal(sent.body.reply_markup.inline_keyboard[0][0].text, 'English ｜ Switch language');
     const startId = nextMessage;
     await callback(sent.body.reply_markup.inline_keyboard[0][0].callback_data, startId, 42, sent.body.text);
-    const expanded = calls.findLast((call) => call.method === 'sendMessage')!;
+    const expanded = calls.findLast((call) => call.method === 'editMessageText')!;
+    assert.equal(expanded.body.message_id, startId, 'language picker edits the existing panel');
     assert.equal(expanded.body.reply_markup.inline_keyboard.flat().filter((button: { callback_data: string }) => button.callback_data.startsWith('ui:')).length, 8);
     await message(100, '草東沒有派對');
     sent = calls.filter((call) => call.method === 'sendMessage').at(-1)!;
-    assert.equal(sent.body.reply_parameters.message_id, 100);
-    assert.match(sent.body.text, /Songs · NetEase/); assert.equal(sent.body.deleteAfterMs, undefined);
-    const menuId = nextMessage, pageData = sent.body.reply_markup.inline_keyboard.at(-1)[0].callback_data;
+    assert.equal(sent.body.reply_parameters, undefined);
+    assert.match(sent.body.text, /NetEase · Songs/); assert.equal(sent.body.deleteAfterMs, undefined);
+    const menuId = nextMessage, pageData = sent.body.reply_markup.inline_keyboard.flat().find((b: any) => b.callback_data.startsWith('page:')).callback_data;
     await callback(pageData, menuId);
-    assert.match(calls.findLast((call) => call.method === 'editMessageText')!.body.text, /9–10 \/ 10/);
+    assert.match(calls.findLast((call) => call.method === 'editMessageText')!.body.text, /6–10 \/ 10/);
     const audioCount = () => calls.filter((call) => call.method === 'sendAudio').length;
-    await callback(sent.body.reply_markup.inline_keyboard[0][0].callback_data, menuId, 43);
+    await callback(sent.body.reply_markup.inline_keyboard.flat().find((b: any) => b.callback_data.startsWith('pick:')).callback_data, menuId, 43);
     assert.equal(audioCount(), 0);
     await message(101, '9');
     let audio = calls.findLast((call) => call.method === 'sendAudio')!;
     assert.ok(audio, JSON.stringify(calls.slice(-5)));
-    assert.equal(audio.body.audio, 'cached:10008'); assert.equal(audio.body.reply_parameters.message_id, 101);
-    let pending = JSON.parse(await readFile(join(root, 'bot-cleanup', '999000.json'), 'utf8')) as { messageId: number; due: number }[];
-    for (const id of [100, 101, menuId]) assert.ok(pending.some((entry) => entry.messageId === id && entry.due <= now + 2000));
+    assert.equal(audio.body.audio, 'cached:10008'); assert.equal(audio.body.reply_parameters, undefined);
+    const deleted = () => calls.filter(call => call.method === 'deleteMessage').map(call => call.body.message_id);
+    for (const id of [100, 101, menuId]) assert.ok(deleted().includes(id));
     await message(110, '床');
     sent = calls.findLast((call) => call.method === 'sendMessage')!;
-    await callback(sent.body.reply_markup.inline_keyboard[0][0].callback_data, nextMessage);
+    await callback(sent.body.reply_markup.inline_keyboard.flat().find((b: any) => b.callback_data.startsWith('pick:')).callback_data, nextMessage);
     audio = calls.findLast((call) => call.method === 'sendAudio')!;
-    assert.equal(audio.body.reply_parameters.message_id, 110);
+    assert.equal(audio.body.reply_parameters, undefined);
     failDelivery = true;
     await message(120, 'https://music.163.com/song?id=10000');
-    pending = JSON.parse(await readFile(join(root, 'bot-cleanup', '999000.json'), 'utf8'));
+    const pending = JSON.parse(await readFile(join(root, 'bot-cleanup', '999000.json'), 'utf8')) as { messageId: number; due: number }[];
     assert.ok(!pending.some((entry) => entry.messageId === 120));
     const error = calls.findLast((call) => call.method === 'sendMessage')!;
     assert.equal(error.body.reply_parameters.message_id, 120);
@@ -91,7 +92,7 @@ test('plain text → reply/pagination → numeric or owned callback selection �
     now += 31 * 60_000;
     const removed: number[] = [];
     await new BotMessageCleanup('999000', async (_chat, id) => { removed.push(id); }, root, () => now).flush();
-    assert.ok(removed.includes(100) && removed.includes(101)); assert.ok(!removed.includes(120));
+    assert.ok(deleted().includes(100) && deleted().includes(101)); assert.ok(!removed.includes(120));
     assert.ok(!removed.includes(90) && !removed.includes(140) && !removed.includes(startId), 'start screens and music cards remain');
   } finally {
     globalThis.fetch = realFetch; Date.now = realNow; process.env = env;

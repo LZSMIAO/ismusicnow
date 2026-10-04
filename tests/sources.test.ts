@@ -13,6 +13,9 @@ test('Spotify 與 YTM 永遠分屬獨立來源', () => {
   assert.equal(parseMusicLink('https://open.spotify.com/intl-tw/track/6rqhFgbbKwnb9MLmUQDhG6?si=test')?.provider, 'spotify');
   assert.equal(parseMusicLink('spotify:album:6rqhFgbbKwnb9MLmUQDhG6')?.kind, 'album');
   assert.equal(parseMusicLink('https://music.youtube.com/watch?v=Zi_XLOBDo_Y&list=RD12345678')?.provider, 'ytm');
+  assert.equal(parseMusicLink('https://music.163.com/#/artist?id=123')?.kind, 'artist');
+  assert.equal(parseMusicLink('spotify:artist:6rqhFgbbKwnb9MLmUQDhG6')?.kind, 'artist');
+  assert.equal(parseMusicLink('https://open.spotify.com/artist/6rqhFgbbKwnb9MLmUQDhG6')?.kind, 'artist');
 });
 test('不接受偽造主機、URL 使用者資訊和本機地址', () => {
   for (const url of ['https://music.163.com.attacker.test/song?id=1', 'https://user@music.163.com/song?id=1', 'http://localhost/song?id=1']) assert.throws(() => parseMusicLink(url));
