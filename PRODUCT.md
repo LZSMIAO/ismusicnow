@@ -14,7 +14,7 @@ web
 
 ## Product Purpose
 
-獨立的 ismusicnow（音樂主義），保留 Telegram bot，新增網頁獲取頁面。網易雲、Spotify 原始音源與 YouTube Music 分開適配，形成貼上連結或搜尋、選曲、獲取及保存的完整流程。
+MUISM · 音樂主義（原 ismusicnow），保留 Telegram bot，新增網頁獲取頁面。網易雲、Spotify 原始音源與 YouTube Music 分開適配，形成貼上連結或搜尋、選曲、獲取及保存的完整流程。
 
 ## Positioning
 

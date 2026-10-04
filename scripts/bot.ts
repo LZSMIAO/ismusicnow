@@ -304,11 +304,11 @@ async function handleUpdate(update: Update): Promise<void> {
       await preferences.start(chatId, userId, botUsername);
       await sendCollection(chatId, userId, await resolveNeteaseCommand(args), message.message_id);
     } else if (cmd === '/start' && args === 'app') {
-      await send(chatId, 'ismusicnow · 音樂主義', { reply_markup: { inline_keyboard: [[isPrivate ? { text: 'ismusicnow ↗', web_app: { url: webAppUrl.href } } : { text: 'ismusicnow ↗', url: `https://t.me/${botUsername}?start=app` }]] } });
+      await send(chatId, 'MUISM · 音樂主義', { reply_markup: { inline_keyboard: [[isPrivate ? { text: '開啟播放器', web_app: { url: webAppUrl.href } } : { text: '開啟播放器', url: `https://t.me/${botUsername}?start=app` }]] } });
     } else if (cmd === '/start') {
       await preferences.start(chatId, userId, botUsername);
     } else if (cmd === '/app') {
-      await send(chatId, 'ismusicnow · 音樂主義', { reply_markup: { inline_keyboard: [[isPrivate ? { text: 'ismusicnow ↗', web_app: { url: webAppUrl.href } } : { text: 'ismusicnow ↗', url: `https://t.me/${botUsername}?start=app` }]] } });
+      await send(chatId, 'MUISM · 音樂主義', { reply_markup: { inline_keyboard: [[isPrivate ? { text: '開啟播放器', web_app: { url: webAppUrl.href } } : { text: '開啟播放器', url: `https://t.me/${botUsername}?start=app` }]] } });
     } else if (['/help', '/about'].includes(cmd || '')) {
       await send(chatId, botHelp(ui, !isPrivate, botUsername), { parse_mode: 'HTML', reply_parameters: replyParameters(message.message_id) });
     } else if (cmd === '/lyric') {
@@ -358,7 +358,7 @@ async function main(): Promise<void> {
   for (const [code, language] of [['en', 'en'], ['zh', 'zh-Hans'], ['ja', 'ja'], ['ko', 'ko'], ['es', 'es'], ['fr', 'fr'], ['ru', 'ru']] as const) {
     for (const type of ['default', 'all_private_chats', 'all_group_chats']) await telegram('setMyCommands', { commands: botCommands(language), language_code: code, scope: { type } });
   }
-  await telegram('setChatMenuButton', { menu_button: { type: 'web_app', text: 'ismusicnow', web_app: { url: webAppUrl.href } } });
+  await telegram('setChatMenuButton', { menu_button: { type: 'web_app', text: '開啟播放器', web_app: { url: webAppUrl.href } } });
   await cleanup.flush().catch(() => console.error('Bot 訊息清理失敗，稍後重試。'));
   let cleaning = false;
   const cleanupTimer = setInterval(() => {

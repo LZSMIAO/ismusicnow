@@ -1,5 +1,7 @@
 # 部署紀錄
 
+MUISM 品牌與 Telegram 視窗修正：網頁標題、頁首、播放器與指南統一 MUISM · 音樂主義，bot 選單改「開啟播放器」。Mini App 使用固定 WebView 殼層，搜尋框與播放器固定，曲目及指南內部捲動；空白頁不再因最低內容高度撐出整頁捲動條。
+
 Telegram Mini App：bot 選單「ismusicnow」和 `/app` 直接開啟 https://music.ism.tw，支援安全區、動態視窗與原生返回鍵。API 驗證 Telegram initData 的 HMAC 與 24 小時時效，帳號下載佇列持久隔離；已下載音訊與原生保存使用限定用途的短效簽名連結（保存 10 分鐘、播放 1 小時），不依賴第三方 Cookie。Telegram 8.0+ 使用原生下載，較舊版本開啟同一短效連結。`BOT_WEB_APP_URL` 可改 HTTPS 入口，預設正式網址；主 Mini App 的 profile Open App 若需要可另外由 BotFather 開啟。
 
 2026-10-04：網頁播放器移除本站固定 30 秒上限，使用音訊實際時長，真正播放結束才自動換曲；完整網易雲音源及同一 session 已下載檔案均可完整播放。Spotify 官方片段與網易雲試聽權限明確標示，無直接播放來源時提供完整音訊下載入口。線上 FLAC 驗證時長 4:05，播放至 1:36；55 項測試通過。

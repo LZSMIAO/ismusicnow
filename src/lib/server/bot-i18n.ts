@@ -137,7 +137,7 @@ export function botCommands(language: BotLanguage) {
   return ([['netease', 'cmdNetease'], ['music', 'cmdNetease'], ['search', 'cmdSearch'], ['spotify', 'cmdSpotify'],
     ['ytm', 'cmdYtm'], ['album', 'cmdAlbum'], ['artist', 'cmdArtist'], ['playlist', 'cmdPlaylist'], ['download', 'cmdDownload'], ['lyric', 'cmdLyric'], ['settings', 'cmdSettings'], ['about', 'cmdAbout']] as const)
     .map(([command, key]) => ({ command: command as string, description: botText(language, key).slice(0, 256) }))
-    .concat({ command: 'app', description: 'ismusicnow · Web App' });
+    .concat({ command: 'app', description: 'MUISM · Web App' });
 }
 export function botHelp(language: BotLanguage, group = false, botUsername = 'muismbot'): string {
   return ['<b>音樂主義</b>', '', botText(language, group ? 'helpGroup' : 'quickHelp', { botUsername }),

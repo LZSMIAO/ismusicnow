@@ -44,17 +44,31 @@
 
 @media(min-width:1251px){.mobile-preview-error.preview-collapsed{position:fixed;bottom:108px;right:16px;max-width:420px;display:flex;align-items:center;gap:16px;padding:12px 16px;background:var(--raised);color:var(--ink);border:1px solid var(--line);border-radius:6px;font-size:.875rem;z-index:var(--layer-toast)}.mobile-preview-error.preview-collapsed a{white-space:nowrap;text-decoration:underline}}
 
-/* Telegram Mini App: keep the same music workspace inside native chrome. */
-.telegram-app body{padding:var(--imn-safe-top,0px) var(--imn-safe-right,0px) 0 var(--imn-safe-left,0px);min-height:var(--imn-height,100dvh)}
-.telegram-app .workspace{height:calc(var(--imn-stable-height,100svh) - 168px - var(--imn-safe-top,0px) - var(--imn-safe-bottom,0px));min-height:0}
-.telegram-app .document-main{padding-bottom:calc(64px + var(--imn-safe-bottom,0px))}
+/* Telegram Mini App: the shell fits the WebView; only music/document content scrolls. */
+html.telegram-app{height:var(--imn-height,100dvh);overflow:hidden}
+.telegram-app body{height:100%;min-height:0;overflow:hidden;display:flex;flex-direction:column;padding:var(--imn-safe-top,0px) var(--imn-safe-right,0px) var(--imn-safe-bottom,0px) var(--imn-safe-left,0px)}
+.telegram-app .app-header{flex-shrink:0}
+.telegram-app .workspace,.telegram-app .workspace.preview-hidden{flex:1;min-height:0;height:auto;padding-bottom:0}
+.telegram-app .main-panel{height:100%;min-height:0;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.telegram-app .workspace.empty .panel-navigation{display:none}
+.telegram-app .workspace.empty .main-panel,.telegram-app .workspace.empty .home-view{display:flex;flex-direction:column}
+.telegram-app .workspace.empty .home-view{flex:1;min-height:0}
+.telegram-app .initial-search{flex:1;min-height:0;gap:16px;padding:16px 0}
+.telegram-app .player{position:relative;left:auto;right:auto;bottom:auto;flex-shrink:0}
+.telegram-app .document-header{flex-shrink:0;width:100%;margin:0 auto}
+.telegram-app .document-main{flex:1;min-height:0;width:100%;overflow:auto;overscroll-behavior:contain;padding-bottom:32px}
 .telegram-app .queue-drawer{top:calc(80px + var(--imn-safe-top,0px));bottom:calc(104px + var(--imn-safe-bottom,0px));height:auto;max-height:calc(var(--imn-height,100dvh) - 184px - var(--imn-safe-top,0px) - var(--imn-safe-bottom,0px))}
+.telegram-app .main-panel::-webkit-scrollbar{width:4px}
+.telegram-app .main-panel::-webkit-scrollbar-thumb{background:var(--line);border-radius:2px}
+.telegram-app .main-panel::-webkit-scrollbar-track{background:transparent}
 @media(max-width:700px){
-  .telegram-app .workspace,.telegram-app .workspace.preview-hidden{height:auto;padding-bottom:calc(120px + var(--imn-safe-bottom,0px))}
-  .telegram-app .player{left:var(--imn-safe-left,0px);right:var(--imn-safe-right,0px);height:calc(104px + var(--imn-safe-bottom,0px));padding-bottom:calc(12px + var(--imn-safe-bottom,0px))}
-  .telegram-app .queue-drawer{top:calc(124px + var(--imn-safe-top,0px));bottom:calc(116px + var(--imn-safe-bottom,0px));max-height:calc(var(--imn-height,100dvh) - 240px - var(--imn-safe-top,0px) - var(--imn-safe-bottom,0px))}
+  .telegram-app .main-panel{border-radius:0}
+  .telegram-app .app-header{height:108px;padding-top:8px}
+  .telegram-app .player{height:104px;padding:12px 16px}
+  .telegram-app .queue-drawer{top:calc(108px + var(--imn-safe-top,0px));bottom:calc(112px + var(--imn-safe-bottom,0px));max-height:calc(var(--imn-height,100dvh) - 220px - var(--imn-safe-top,0px) - var(--imn-safe-bottom,0px))}
   .telegram-app .toast,.telegram-app .mobile-preview-error{bottom:calc(112px + var(--imn-safe-bottom,0px))}
-  .telegram-keyboard .player{visibility:hidden;pointer-events:none}
+  .telegram-keyboard .player{display:none}
+  .telegram-keyboard .queue-drawer{bottom:calc(8px + var(--imn-safe-bottom,0px))}
   .telegram-app .searchbar input{font-size:16px}
   .telegram-app .mobile-nav .icon-button,.telegram-app .save-button{min-height:44px;min-width:44px}
 }
