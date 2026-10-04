@@ -34,6 +34,7 @@ export interface DownloadJob {
   filename?: string;
   bytes?: number;
   error?: string;
+  errorCode?: string;
   audioSource: Provider;
   audio?: { codec: string; bitrate?: number; sampleRate?: number; bitsPerSample?: number; lossless: boolean };
 }
