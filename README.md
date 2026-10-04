@@ -66,6 +66,6 @@ Bot：[\@ismusicnow_bot](https://t.me/ismusicnow_bot)。直接貼音樂連結即
 
 ## 獨立與授權
 
-這個版本重新建立前後端與部署結構，不依賴原專案執行期下載程式，不沿用原作者的服務地址或自動更新流程。保留原專案 [LZSMIAO/ismusicnow](https://github.com/LZSMIAO/ismusicnow) 的 GPL-3.0 授權，完整條文見 [LICENSE](LICENSE)。依賴工具保留各自授權。本專案不附帶擔保。僅獲取你有權使用的內容。
+這個版本重新建立前後端與部署結構，不依賴原專案執行期下載程式，不沿用原作者的服務地址或自動更新流程。保留原專案 [XiaoMengXinX/Music163bot-Go](https://github.com/XiaoMengXinX/Music163bot-Go) 的 GPL-3.0 授權，完整條文見 [LICENSE](LICENSE)。依賴工具保留各自授權。本專案不附帶擔保。僅獲取你有權使用的內容。
 
-`main` 保存重寫版本，`v2` 保留原版歷史。目前依維護者決定保留 GitHub fork 關係。
+`main` 保存重寫版本，`v2` 保留原版歷史。2026-10-04 已離開原 GitHub fork 網路，成為獨立倉庫。

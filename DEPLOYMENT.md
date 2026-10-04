@@ -39,4 +39,4 @@ docker compose up -d --build
 
 備份 `.env`、`secrets/` 和 `data/` 至私人位置。原始碼更新不要覆蓋這些內容。
 
-`main` 是重寫版本，`v2` 保留原版。依維護者選擇保留 GitHub fork 關係；不推送 codex 分支。
+`main` 是重寫版本，`v2` 保留原版。2026-10-04 已解除 GitHub fork 關係，成為獨立倉庫；完整 Git 歷史已先備份。不推送 codex 分支。
