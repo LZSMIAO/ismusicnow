@@ -5,7 +5,7 @@ import { ServiceError } from '../errors.js';
 import { fetchJson } from '../http.js';
 import type { MusicLink } from '../links.js';
 
-type Song = { id: number; name: string; ar?: { id?: number; name: string }[]; artists?: { id?: number; name: string }[]; al?: { name: string; picUrl?: string }; album?: { name: string; picUrl?: string }; dt?: number; duration?: number };
+type Song = { id: number; name: string; ar?: { id?: number; name: string }[]; artists?: { id?: number; name: string }[]; al?: { id?: number; name: string; picUrl?: string }; album?: { id?: number; name: string; picUrl?: string }; dt?: number; duration?: number };
 interface Body {
   code?: number; songs?: Song[]; result?: { songs?: Song[]; songCount?: number };
   playlist?: { name: string; trackIds: { id: number }[]; trackCount: number };
@@ -47,6 +47,7 @@ export function mapNetease(song: Song): Track {
   const album = song.al || song.album;
   return { id: String(song.id), provider: 'netease', title: song.name,
     artists: (song.ar || song.artists || []).map((a) => a.name), album: album?.name || '',
+    albumUrl: album?.id ? `https://music.163.com/album?id=${album.id}` : undefined,
     artistIds: (song.ar || song.artists || []).map((a) => a.id ? String(a.id) : ''),
     cover: album?.picUrl?.replace(/^http:/, 'https:') || '', durationMs: song.dt || song.duration || 0,
     sourceUrl: `https://music.163.com/song?id=${song.id}` };
@@ -99,4 +100,10 @@ export async function neteaseAudio(id: string, format: DownloadFormat): Promise<
 export async function neteaseLyrics(id: string): Promise<string> {
   const body = await neteaseRequest('lyric', { id });
   return body.lrc?.lyric || '';
+}
+
+export async function neteasePreview(id: string): Promise<string | null> {
+  const body = await neteaseRequest('song_url_v1', { id, crypto: 'eapi', level: 'standard' });
+  // Trial clips are valid here; full downloads retain their existing checks.
+  return body.data?.[0]?.url || null;
 }

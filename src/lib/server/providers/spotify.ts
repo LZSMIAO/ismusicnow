@@ -7,8 +7,8 @@ import { fetchJson } from '../http.js';
 import type { MusicLink } from '../links.js';
 import { commandAvailable, runCommand } from '../process.js';
 
-interface Album { name: string; images?: { url: string }[]; tracks?: Page<SpotifyTrack> }
-interface SpotifyTrack { id: string; name: string; type?: string; is_local?: boolean; artists: { name: string }[]; album?: Album; duration_ms: number }
+interface Album { id?: string; name: string; images?: { url: string }[]; tracks?: Page<SpotifyTrack> }
+interface SpotifyTrack { id: string; name: string; type?: string; is_local?: boolean; artists: { name: string }[]; album?: Album; duration_ms: number; preview_url?: string | null }
 interface Page<T> { items: T[]; total: number; next: string | null }
 let token: { value: string; expires: number } | undefined;
 
@@ -37,7 +37,7 @@ async function spotifyRequest<T>(path: string): Promise<T> {
 export function mapSpotify(track: SpotifyTrack, album?: Album): Track {
   const record = track.album || album;
   return { id: track.id, provider: 'spotify', title: track.name, artists: track.artists.map((a) => a.name),
-    album: record?.name || '', cover: record?.images?.[0]?.url || '', durationMs: track.duration_ms || 0,
+    album: record?.name || '', albumUrl: record?.id ? `https://open.spotify.com/album/${record.id}` : undefined, cover: record?.images?.[0]?.url || '', durationMs: track.duration_ms || 0,
     sourceUrl: `https://open.spotify.com/track/${track.id}` };
 }
 
@@ -51,6 +51,11 @@ export async function spotifyTrack(id: string): Promise<Track> {
   const url = `https://open.spotify.com/track/${id}`;
   const embed = await fetchJson<{ title: string; thumbnail_url?: string }>(`https://open.spotify.com/oembed?url=${encodeURIComponent(url)}`);
   return { id, title: embed.title, provider: 'spotify', artists: [], album: '', cover: embed.thumbnail_url || '', durationMs: 0, sourceUrl: url };
+}
+
+export async function spotifyPreview(id: string): Promise<string | null> {
+  if (!spotifyMetadataConfigured()) return null;
+  return (await spotifyRequest<SpotifyTrack>(`tracks/${id}`)).preview_url || null;
 }
 
 export async function resolveSpotify(link: MusicLink): Promise<Collection> {

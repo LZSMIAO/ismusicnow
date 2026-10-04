@@ -2,39 +2,28 @@
 
 ## Direction
 
-已確認的明亮收藏工具構圖：側欄、連結輸入、曲目列表、下載佇列。實際內容來自平台及工作狀態，構圖示意歌曲不寫入產品。
+已批准的 v8：Spotify 類型的音樂工作區，黑 × 冰銀。全域搜尋、收藏導覽、連續曲目列表、右側預覽和底部播放器。圖片只參考情緒，不沿用暖色或製作背景插畫；移除標語與解釋顯而易見操作的文案。
 
-## Scene
+## Color and Type
 
-午後自然光下，在桌前貼上喜歡的音樂連結，安靜整理自己的音樂收藏。
+Restrained dark surfaces. Canvas `oklch(.115 0 0)`，panel `.185 .003 260`，raised `.235 .005 260`，正文 `.96 .005 260`，次要文字 `.76 .009 260`，冰銀控制 `.89 .016 260`。不以 Spotify 綠色作為本項目品牌色。
 
-## Color
+系統無襯線字體，繁中 fallback PingFang TC / Noto Sans TC。專輯名使用大字重，正文和操作沿用 .75 / .875 / 1rem，時間與尺寸採 tabular numbers。沒有外部字型依賴。
 
-Restrained. Pure white canvas, indigo accent, readable neutral ink. Primary hue anchored at 279° from the impeccable palette seed.
+## Layout
 
-```css
---canvas: oklch(1 0 0);
---surface: oklch(0.975 0 0);
---ink: oklch(0.22 0.012 279);
---muted: oklch(0.48 0.016 279);
---primary: oklch(0.445 0.206 279);
---primary-soft: oklch(0.96 0.018 279);
---line: oklch(0.9 0.006 279);
---success: oklch(0.4 0.11 155);
---error: oklch(0.48 0.17 25);
-```
+全寬工作區：232px 收藏欄、彈性主區、280px 預覽；1600px 以上兩側為 280 / 336px。1250px 以下收起右側預覽，960px 以下收藏欄變為圖示，700px 以下使用單欄與固定底部播放器。手機頂欄保留指南和佇列入口。
 
-## Type
+搜尋結果中的專輯入口直接使用平台專輯 ID；不冒充獨立專輯分類搜尋。所有來源共用一個搜尋入口，每首歌始終保留平台身分。下載選擇和試聽互不干擾，新結果只預選一首。
 
-One system sans stack; Traditional Chinese fallback PingFang TC / Noto Sans TC. Fixed rem scale: .75, .875, 1, 1.125, 1.5, 2.25. Data uses tabular numbers. No external font dependency.
+## Interaction and Motion
 
-## Layout and Components
-
-216px sidebar, main content max 1440px, acquisition content and 300px queue (320px on wide screens). Below 1100px queue moves under content. Below 760px sidebar becomes top navigation. Spacing scale: 4, 8, 12, 16, 24, 32, 48, 64, 96px. Border radii 6 / 8 / 12px; pill only for small badges. Thin dividers define lists. Icons from Lucide only. Semantic layer scale: content 0, navigation 10, action bar 20.
-
-## State and Motion
-
-Real empty, loading, unavailable-adapter, error and complete states. 180ms hover/focus transitions and indeterminate progress for active download; no invented percentages. Reduced-motion variant removes animation. Images do not animate on hover.
+- 來源和音質使用 native popover，深色選單、勾選狀態、方向鍵、Home / End / Escape、焦點返回。
+- 非模態下載側欄保持主頁亮度；220ms translate / opacity 過渡，不動畫 layout。手機側欄避開固定播放器。
+- 搜尋取消舊請求，以最後一次請求為準；骨架只在真實請求期間出現。內容淡入 180ms。
+- 曲目播放與下載勾選獨立。30 秒試聽由 Audio 真實事件驅動，支援暫停、進度、音量與專輯連續播放。來源缺少試聽時顯示原因；已完成下載可以使用同一 session 的檔案預覽。
+- Hover 以表面亮度回饋，按下位移 1px；封面不縮放或漂浮。Reduced motion 關閉動畫和過渡。
+- 返回鍵恢復上一份結果、來源、音質與勾選；最近開啟只保存最少元資料和來源連結。
 
 ## Telegram interaction
 

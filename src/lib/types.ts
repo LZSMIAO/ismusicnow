@@ -1,4 +1,5 @@
 export type Provider = 'netease' | 'spotify' | 'ytm';
+export type SearchSource = Provider | 'all';
 export type DownloadFormat = 'original' | 'mp3' | 'flac';
 
 export interface Track {
@@ -7,6 +8,7 @@ export interface Track {
   title: string;
   artists: string[];
   album: string;
+  albumUrl?: string;
   cover: string;
   durationMs: number;
   sourceUrl: string;
@@ -21,6 +23,7 @@ export interface Collection {
   tracks: Track[];
   total: number;
   warnings: string[];
+  providers?: Provider[];
 }
 
 export interface DownloadJob {
