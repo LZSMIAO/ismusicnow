@@ -10,6 +10,8 @@ export interface Track {
   cover: string;
   durationMs: number;
   sourceUrl: string;
+  artistIds?: string[];
+  metadataLanguages?: { title?: string; album?: string; artists?: string[] };
 }
 
 export interface Collection {
