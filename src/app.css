@@ -105,3 +105,20 @@ html.telegram-app{height:var(--imn-height,100dvh);overflow:hidden}
 @media(max-width:700px){.playback-budget{grid-row:3}.player:has(.playback-budget) .playback-status{grid-row:4}}
 
 @media(max-width:700px){.player:has(.playback-status) .seek-line:has(input:disabled){display:none}}
+
+/* Search exposes its filters only while editing. The popover stays above the workspace. */
+.searchbar{min-width:0;transition:background-color 160ms var(--ease-out),border-color 160ms var(--ease-out)}
+.searchbar.search-expanded{border-color:var(--silver);background:var(--raised)}
+.searchbar input{min-width:0}
+.search-options{position:fixed;inset:auto;margin:0;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--raised);color:var(--ink);z-index:var(--layer-menu);overflow:auto;overscroll-behavior:contain;opacity:0;transform:translateY(-8px);clip-path:inset(0 0 100% 0 round 14px);transition:opacity 150ms var(--ease-out),transform 150ms var(--ease-out),clip-path 150ms var(--ease-out),display 150ms allow-discrete,overlay 150ms allow-discrete}
+.search-options:popover-open{opacity:1;transform:translateY(0);clip-path:inset(0 0 0 0 round 14px);transition-duration:220ms}
+.search-options::backdrop{background:transparent}
+.search-sources{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.search-sources button{display:flex;align-items:center;justify-content:center;gap:6px;padding:8px 6px;min-height:44px;border:1px solid transparent;border-radius:8px;font-size:.8125rem;font-weight:500;white-space:nowrap;color:var(--muted)}
+.search-sources button:hover{background:var(--hover);color:var(--ink)}
+.search-sources button[aria-checked=true]{background:var(--hover);border-color:var(--edge);color:var(--silver)}
+.search-sources button:focus-visible{outline-offset:2px}
+.source-check-hidden{visibility:hidden}
+@starting-style{.search-options:popover-open{opacity:0;transform:translateY(-8px);clip-path:inset(0 0 100% 0 round 14px)}}
+@media(max-width:700px){.search-sources{grid-template-columns:repeat(2,minmax(0,1fr))}.search-options{padding:10px}.searchbar .search-submit{display:grid;flex-shrink:0;width:28px;min-height:40px}.search-sources button{font-size:.875rem}}
+@media(prefers-reduced-motion:reduce){.search-options{transition:none!important;transform:none;clip-path:none}}

@@ -5,6 +5,7 @@
   import { Library, House, Search, Download, ArrowRight, ChevronLeft, PanelRight, X, Play, Pause, SkipBack, SkipForward, Volume2, Music2, LoaderCircle, ExternalLink, RotateCcw } from '@lucide/svelte';
   import TrackList from './MusicTrackList.svelte';
   import SelectMenu from './SelectMenu.svelte';
+  import SearchBar from './SearchBar.svelte';
   import DownloadQueue from './QueueList.svelte';
   import { createDownloadState } from '#lib/download-state.svelte.js';
   import { createPreviewState } from '#lib/preview-state.svelte.js';
@@ -19,11 +20,11 @@
   type View = { collection: Collection; selected: string[]; format: string; input: string; source: string };
   let previous = $state<View[]>([]), viewInput = '', viewSource = 'all';
   let queueTrigger: HTMLElement | undefined;
-  let searchInput: HTMLInputElement, panel: HTMLElement, drawer: HTMLElement, playerElement: HTMLElement;
+  let searchInput = $state<HTMLInputElement>();
+  let panel: HTMLElement, drawer: HTMLElement, playerElement: HTMLElement;
   let searchRequest: AbortController | undefined, noticeTimer: ReturnType<typeof setTimeout> | undefined;
   const queue = createDownloadState();
   const player = createPreviewState(() => { if (continuous) void adjacent(1, false); });
-  const sourceOptions = [{ value: 'all', label: '所有來源' }, { value: 'netease', label: '網易雲' }, { value: 'spotify', label: 'Spotify' }, { value: 'ytm', label: 'YouTube Music' }];
   const first = $derived(collection?.tracks[0]);
   const active = $derived(player.track || first || null);
   const current = $derived(player.track ? `${player.track.provider}:${player.track.id}` : '');
@@ -54,7 +55,7 @@
   });
   function feedback(text: string) { notice = text; clearTimeout(noticeTimer); noticeTimer = setTimeout(() => notice = '', 5000); }
   async function resolve(value = input, provider = source as SearchSource) {
-    if (!value.trim()) { searchInput.focus(); return; }
+    if (!value.trim()) { searchInput?.focus(); return; }
     searchRequest?.abort(); const request = new AbortController(); searchRequest = request;
     input = value; source = provider; loading = true; error = ''; notice = ''; continuous = false;
     try {
@@ -122,7 +123,7 @@
   function keyboard(event: KeyboardEvent) {
     const target = event.target as HTMLElement;
     if (target.closest('input,textarea,select,[contenteditable],button,a')) return;
-    if (event.key === '/') { event.preventDefault(); searchInput.focus(); }
+    if (event.key === '/') { event.preventDefault(); searchInput?.focus(); }
     if (event.code === 'Space' && active) { event.preventDefault(); preview(active); }
   }
 </script>
@@ -130,13 +131,13 @@
 <svelte:window onkeydown={keyboard} />
 <header class="app-header">
   <a class="brand" href="/" aria-label="MUISM 首頁" onclick={(e) => { e.preventDefault(); home(); }}><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span><strong>MUISM.</strong></a>
-  <form class="searchbar" role="search" onsubmit={(e) => { e.preventDefault(); void resolve(); }}><Search size={22} /><input id="music-input" bind:this={searchInput} bind:value={input} aria-label="搜尋音樂或貼上連結" placeholder="搜尋或貼上連結" maxlength="1000" autocomplete="off" /><SelectMenu id="source-menu" bind:value={source} options={sourceOptions} label="搜尋來源" /><button class="search-submit" type="submit" aria-label={loading ? '重新搜尋' : '搜尋'} disabled={!input.trim()}><ArrowRight size={18} /></button></form>
+  <SearchBar bind:value={input} bind:source bind:inputElement={searchInput} {loading} onsearch={() => void resolve()} />
   <nav class="mobile-nav" aria-label="行動版導覽"><a class="icon-button" href="/guide" aria-label="使用指南"><Library size={18} /></a><button class="icon-button" aria-label="下載佇列" aria-expanded={queueOpen} onclick={openQueue}><Download size={18} /></button></nav>
   <div class="header-links"><a href="https://github.com/LZSMIAO/ismusicnow" target="_blank" rel="noreferrer">GitHub ↗</a><a href="https://t.me/muismbot" target="_blank" rel="noreferrer">Telegram ↗</a></div>
 </header>
 <div class="workspace" class:preview-hidden={!previewVisible} class:empty={!collection && !loading} class:search-results={collection?.kind === 'search'}>
   <aside class="library" aria-label="音樂導覽">
-    <div class="library-head"><Library size={22} /><span>你的音樂</span></div><nav class="side-nav"><button class:active={collection?.kind !== 'search'} onclick={home} aria-label="最近開啟"><House size={20} /><span>最近開啟</span></button><button class:active={collection?.kind === 'search'} onclick={() => searchInput.focus()} aria-label="搜尋音樂"><Search size={20} /><span>搜尋</span></button><button onclick={openQueue} aria-label="下載佇列"><Download size={20} /><span>下載佇列</span>{#if queue.jobs.length}<span class="badge">{queue.jobs.length}</span>{/if}</button></nav>
+    <div class="library-head"><Library size={22} /><span>你的音樂</span></div><nav class="side-nav"><button class:active={collection?.kind !== 'search'} onclick={home} aria-label="最近開啟"><House size={20} /><span>最近開啟</span></button><button class:active={collection?.kind === 'search'} onclick={() => searchInput?.focus()} aria-label="搜尋音樂"><Search size={20} /><span>搜尋</span></button><button onclick={openQueue} aria-label="下載佇列"><Download size={20} /><span>下載佇列</span>{#if queue.jobs.length}<span class="badge">{queue.jobs.length}</span>{/if}</button></nav>
     {#if recent.length}<div class="recent-heading">最近開啟</div>{#each recent as item (`${item.provider}:${item.input}`)}<button class="recent-album" aria-label={`重新開啟 ${item.title}`} onclick={() => void resolve(item.input, item.provider)}><span class="recent-cover">{#if item.cover}<img src={item.cover} alt="" width="48" height="48" referrerpolicy="no-referrer" onerror={(e) => (e.currentTarget as HTMLImageElement).hidden = true} />{:else}<Music2 size={22} />{/if}</span><span><strong>{item.title}</strong><small>{item.artist}</small></span></button>{/each}{/if}
     <div class="side-footer"><a href="/guide">使用指南 ↗</a><a href="/downloads">全部下載 ↗</a></div>
   </aside>
@@ -161,7 +162,7 @@
       <TrackList tracks={collection.tracks} {selected} {current} playing={isPlaying} busy={adding} search={collection.kind === 'search'} ontoggle={toggle} onselectall={selectAll} onpreview={preview} />
       </div>{/key}
     {:else}
-      <div class="home-view">{#if recent.length}<h1>最近開啟</h1><div class="history-grid">{#each recent as item (`${item.provider}:${item.input}`)}<button class="history-card" onclick={() => void resolve(item.input, item.provider)}><span class="history-cover">{#if item.cover}<img src={item.cover} alt="" referrerpolicy="no-referrer" onerror={(e) => (e.currentTarget as HTMLImageElement).hidden = true} />{:else}<Music2 size={48} />{/if}</span><strong>{item.title}</strong><small>{item.artist}</small></button>{/each}</div>{:else}<div class="initial-search"><Music2 size={48} strokeWidth={1.2} /><p>尚未開啟音樂</p><button class="download-button" onclick={() => searchInput.focus()}><Search size={18} />搜尋</button></div>{/if}</div>
+      <div class="home-view">{#if recent.length}<h1>最近開啟</h1><div class="history-grid">{#each recent as item (`${item.provider}:${item.input}`)}<button class="history-card" onclick={() => void resolve(item.input, item.provider)}><span class="history-cover">{#if item.cover}<img src={item.cover} alt="" referrerpolicy="no-referrer" onerror={(e) => (e.currentTarget as HTMLImageElement).hidden = true} />{:else}<Music2 size={48} />{/if}</span><strong>{item.title}</strong><small>{item.artist}</small></button>{/each}</div>{:else}<div class="initial-search"><Music2 size={48} strokeWidth={1.2} /><p>尚未開啟音樂</p><button class="download-button" onclick={() => searchInput?.focus()}><Search size={18} />搜尋</button></div>{/if}</div>
     {/if}
   </main>
   {#if previewVisible}

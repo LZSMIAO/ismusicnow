@@ -18,7 +18,8 @@ Restrained dark surfaces. Canvas `oklch(.115 0 0)`，panel `.185 .003 260`，rai
 
 ## Interaction and Motion
 
-- 來源和音質使用 native popover，深色選單、勾選狀態、方向鍵、Home / End / Escape、焦點返回。
+- 搜尋框專注輸入，不放獨立來源選單。獲得焦點時向下展開同寬 native popover，來源用四個選項整合在面板內；選擇後保持編輯，送出、Escape 或點擊外部收起。220ms 展開／150ms 收起，Reduced motion 即時切換；方向鍵切換來源，焦點可回到輸入框。
+- 音質沿用 native popover，深色選單、勾選狀態、方向鍵、Home / End / Escape、焦點返回。
 - 非模態下載側欄保持主頁亮度；220ms translate / opacity 過渡，不動畫 layout。手機側欄避開固定播放器。
 - 搜尋取消舊請求，以最後一次請求為準；骨架只在真實請求期間出現。內容淡入 180ms。
 - 曲目播放與下載勾選獨立。播放不設時間上限，由 Audio 真實時長及 ended 事件驅動，支援暫停、進度、音量與專輯連續播放。來源缺少試聽時顯示原因；已完成下載可以使用同一 session 的檔案預覽。
