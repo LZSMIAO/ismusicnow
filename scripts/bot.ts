@@ -5,7 +5,8 @@ import { publicError, ServiceError } from '../src/lib/server/errors.js';
 import { resolveMusic, getTrack } from '../src/lib/server/music.js';
 import { neteaseLyrics } from '../src/lib/server/providers/netease.js';
 import { safeFilename } from '../src/lib/server/links.js';
-import type { Track, Provider } from '../src/lib/types.js';
+import { resolveNeteaseCommand } from '../src/lib/server/bot-input.js';
+import type { Track, Provider, Collection } from '../src/lib/types.js';
 
 const token = process.env.BOT_TOKEN;
 if (!token) { console.error('請在 .env 配置 BOT_TOKEN。'); process.exit(1); }
@@ -57,6 +58,10 @@ async function sendTrack(chatId: number, userId: number, track: Track): Promise<
 
 async function listTracks(chatId: number, userId: number, input: string, provider: Provider): Promise<void> {
   const collection = await resolveMusic(input, provider);
+  await sendCollection(chatId, userId, collection);
+}
+
+async function sendCollection(chatId: number, userId: number, collection: Collection): Promise<void> {
   if (!collection.tracks.length) { await send(chatId, '沒有找到歌曲，請試試其他關鍵字。'); return; }
   if (collection.kind === 'track') return sendTrack(chatId, userId, collection.tracks[0]!);
   const rows = collection.tracks.slice(0, 8).map((track, i) => [{ text: `${i + 1}. ${track.title} — ${track.artists.join(' / ')}`.slice(0, 60), callback_data: `dl:${track.provider}:${track.id}` }]);
@@ -91,17 +96,20 @@ async function handle(update: Update): Promise<void> {
     const text = message.text?.trim() || '';
     const [command, ...rest] = text.split(/\s+/); const args = rest.join(' ');
     const cmd = command?.split('@')[0];
-    if (['/start', '/help', '/about'].includes(cmd || '')) {
-      await send(chatId, 'ismusicnow · 音樂主義\n\n直接貼上網易雲、Spotify 或 YouTube Music 連結。\n/search 歌名 — 搜尋網易雲\n/spotify 歌名 — 搜尋 Spotify\n/netease 歌曲ID — 獲取網易雲\n/lyric 歌曲ID — 獲取網易雲 LRC 歌詞\n\nSpotify 只使用 Spotify 原始音源；YTM 是獨立適配器。\n開源授權 GPL-3.0，不附帶擔保。');
+    if (cmd === '/start' && /^\d{1,16}$/.test(args)) {
+      await sendCollection(chatId, userId, await resolveNeteaseCommand(args));
+    } else if (['/start', '/help', '/about'].includes(cmd || '')) {
+      await send(chatId, 'ismusicnow · 音樂主義\n\n直接貼上網易雲、Spotify 或 YouTube Music 連結。\n/netease 歌名／歌曲ID／連結 — 直接獲取網易雲；關鍵字取第一個結果\n/music 或 /musicid — 同 /netease\n/search 歌名 — 搜尋網易雲並選曲\n/spotify 歌名 — 搜尋 Spotify\n/ytm 連結 — 獲取 YouTube Music\n/lyric 歌名／歌曲ID／連結 — 獲取網易雲 LRC 歌詞\n\nSpotify 只使用 Spotify 原始音源；YTM 是獨立適配器。\n開源授權 GPL-3.0，不附帶擔保。');
     } else if (cmd === '/lyric') {
-      if (!/^\d{1,16}$/.test(args)) { await send(chatId, '請輸入 /lyric 網易雲歌曲ID。'); return; }
-      const lyric = await neteaseLyrics(args);
+      if (!args) { await send(chatId, '請輸入 /lyric 網易雲歌名、歌曲 ID 或連結。'); return; }
+      const collection = await resolveNeteaseCommand(args);
+      const track = collection.tracks[0]!;
+      const lyric = await neteaseLyrics(track.id);
       if (!lyric) { await send(chatId, '這首歌暫時沒有 LRC 歌詞。'); return; }
-      const form = new FormData(); form.set('chat_id', String(chatId)); form.set('document', new Blob([lyric], { type: 'text/plain' }), `${safeFilename(args)}.lrc`);
+      const form = new FormData(); form.set('chat_id', String(chatId)); form.set('document', new Blob([lyric], { type: 'text/plain' }), `${safeFilename(`${track.artists.join(' - ')} - ${track.title}`)}.lrc`);
       await telegram('sendDocument', form);
-    } else if (cmd === '/netease' || cmd === '/musicid') {
-      if (!args) { await send(chatId, '請提供網易雲歌曲 ID。'); return; }
-      await sendTrack(chatId, userId, await getTrack('netease', args));
+    } else if (cmd === '/netease' || cmd === '/music' || cmd === '/musicid') {
+      await sendCollection(chatId, userId, await resolveNeteaseCommand(args));
     } else if (cmd === '/search' || cmd === '/spotify' || cmd === '/ytm' || cmd === '/download') {
       if (!args) { await send(chatId, '請在命令後輸入關鍵字或音樂連結。'); return; }
       await listTracks(chatId, userId, args, cmd === '/spotify' ? 'spotify' : cmd === '/ytm' ? 'ytm' : 'netease');
@@ -115,7 +123,7 @@ async function main(): Promise<void> {
   const me = await telegram<{ username: string }>('getMe');
   const webhook = await telegram<{ url: string }>('getWebhookInfo');
   if (webhook.url) throw new Error('此 bot 已設定 webhook，請先確認其用途；輪詢模式沒有更改現有 webhook。');
-  await telegram('setMyCommands', { commands: [{ command: 'search', description: '搜尋網易雲音樂' }, { command: 'spotify', description: '搜尋 Spotify' }, { command: 'netease', description: '透過歌曲 ID 獲取' }, { command: 'download', description: '解析音樂連結並獲取' }, { command: 'lyric', description: '獲取網易雲 LRC 歌詞' }, { command: 'about', description: '關於音樂主義' }] });
+  await telegram('setMyCommands', { commands: [{ command: 'netease', description: '透過關鍵詞、歌曲 ID 或連結獲取網易雲' }, { command: 'music', description: '透過關鍵詞、歌曲 ID 或連結獲取網易雲' }, { command: 'search', description: '搜尋網易雲音樂並選曲' }, { command: 'spotify', description: '搜尋 Spotify' }, { command: 'ytm', description: '獲取 YouTube Music 連結' }, { command: 'download', description: '解析音樂連結並獲取' }, { command: 'lyric', description: '透過歌名、ID 或連結獲取網易雲 LRC 歌詞' }, { command: 'about', description: '關於音樂主義' }] });
   try { offset = JSON.parse(await readFile(statePath, 'utf8')).offset || 0; } catch { /* First launch. */ }
   console.log(`ismusicnow bot @${me.username} 已啟動（long polling）`);
   while (!stopping) {
