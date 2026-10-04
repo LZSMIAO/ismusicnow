@@ -9,7 +9,11 @@ export function audioLabel(job: DownloadJob): string {
 }
 export async function api<T>(url: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(url, { ...init, headers: { 'Content-Type': 'application/json', ...init.headers } });
-  const body = await response.json();
-  if (!response.ok) throw new Error(body.message || '操作失敗，請稍後再試。');
+  let body;
+  try { body = await response.json(); }
+  catch {
+    throw new Error(response.status === 504 ? '音樂服務回應超時，請稍後重試。' : response.ok ? '服務回應格式異常，請重新整理後再試。' : '音樂服務暫時無法連接，請稍後重試。');
+  }
+  if (!response.ok) throw new Error(typeof body?.message === 'string' ? body.message : '操作失敗，請稍後再試。');
   return body as T;
 }
