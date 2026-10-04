@@ -79,7 +79,7 @@ export async function resolveSpotify(link: MusicLink): Promise<Collection> {
   } else if (link.kind === 'album') {
     const album = await spotifyRequest<Album>(`albums/${link.id}`);
     title = album.name;
-    let page = album.tracks || await spotifyRequest<Page<SpotifyTrack>>(`albums/${link.id}/tracks?limit=50`);
+    let page = album.tracks || await spotifyRequest<Page<SpotifyTrack>>(`albums/${link.id}/tracks?limit=10`);
     total = page.total;
     while (true) {
       tracks.push(...page.items.slice(0, config.maxCollectionTracks - tracks.length).map((t) => mapSpotify(t, album)));
@@ -87,14 +87,9 @@ export async function resolveSpotify(link: MusicLink): Promise<Collection> {
       page = await spotifyRequest<Page<SpotifyTrack>>(new URL(page.next).pathname.replace(/^\/v1\//, '') + new URL(page.next).search);
     }
   } else if (link.kind === 'artist') {
-    const artist = await spotifyRequest<Artist>(`artists/${link.id}`);
-    let result: { tracks: SpotifyTrack[] };
-    try { result = await spotifyRequest<{ tracks: SpotifyTrack[] }>(`artists/${link.id}/top-tracks?market=TW`); }
-    catch (error) {
-      if (error instanceof ServiceError && error.code === 'ACCOUNT_REQUIRED') return spotifyArtistAlbums(link.id);
-      throw error;
-    }
-    title = artist.name; tracks.push(...result.tracks.map(t => mapSpotify(t))); total = tracks.length;
+    // Development Mode removed artist top-tracks in February 2026.
+    // Browse the artist's actual albums instead of mislabelling search results.
+    return spotifyArtistAlbums(link.id);
   } else {
     const playlist = await spotifyRequest<{ name: string }>(`playlists/${link.id}`);
     title = playlist.name;
@@ -118,9 +113,16 @@ export async function resolveSpotify(link: MusicLink): Promise<Collection> {
 }
 
 export async function spotifyArtistAlbums(id: string): Promise<Collection> {
-  const [artist, page] = await Promise.all([spotifyRequest<Artist>(`artists/${id}`), spotifyRequest<Page<Album>>(`artists/${id}/albums?include_groups=album,single&limit=50`)]);
-  const entities = page.items.filter(a => a.id).map(a => mapEntity(a, 'album'));
-  return { title: artist.name, provider: 'spotify', kind: 'artist', searchType: 'album', tracks: [], entities, total: page.total, warnings: [], sourceUrl: `https://open.spotify.com/artist/${id}` };
+  const [artist, first] = await Promise.all([spotifyRequest<Artist>(`artists/${id}`), spotifyRequest<Page<Album>>(`artists/${id}/albums?include_groups=album,single&market=TW&limit=10`)]);
+  const entities: MusicEntity[] = [];
+  let page = first;
+  while (true) {
+    entities.push(...page.items.filter(a => a?.id).slice(0, config.maxCollectionTracks - entities.length).map(a => mapEntity(a, 'album')));
+    if (!page.next || entities.length >= config.maxCollectionTracks) break;
+    const next = new URL(page.next);
+    page = await spotifyRequest<Page<Album>>(next.pathname.replace(/^\/v1\//, '') + next.search);
+  }
+  return { title: artist.name, provider: 'spotify', kind: 'artist', searchType: 'album', tracks: [], entities, total: first.total, warnings: [], sourceUrl: `https://open.spotify.com/artist/${id}` };
 }
 
 export async function spotifyDownloaderReady(): Promise<boolean> {
