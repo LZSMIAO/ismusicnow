@@ -18,6 +18,17 @@ const videoId = /^[a-zA-Z0-9_-]{11}$/;
 const artistId = /^UC[a-zA-Z0-9_-]{22}$/;
 const albumId = /^MPREb_[a-zA-Z0-9_-]{1,94}$/;
 const playlistId = /^[a-zA-Z0-9_-]{10,100}$/;
+const catalogueTracks = new Map<string, { track: Track; expires: number }>();
+function remember(collection: Collection): Collection {
+  const now = Date.now();
+  for (const [id, cached] of catalogueTracks) if (cached.expires <= now) catalogueTracks.delete(id);
+  for (const track of collection.tracks) {
+    catalogueTracks.delete(track.id);
+    catalogueTracks.set(track.id, {track, expires: now + 10 * 60_000});
+  }
+  while (catalogueTracks.size > 500) catalogueTracks.delete(catalogueTracks.keys().next().value!);
+  return collection;
+}
 const cover = (entry: CatalogueEntry) => entry.thumbnails?.findLast(t => typeof t?.url === 'string' && t.url.startsWith('https://'))?.url || '';
 const names = (entry: CatalogueEntry) => (entry.artists || []).map(a => a?.name).filter((name): name is string => typeof name === 'string' && !!name);
 function catalogueTrack(entry: CatalogueEntry): Track | undefined {
@@ -50,7 +61,7 @@ async function catalogueRequest(operation: 'search' | 'artist' | 'album', input:
 export async function searchYtm(query: string, kind: MusicSearchKind = 'track'): Promise<Collection> {
   const response = await catalogueRequest('search', query, kind);
   if (!Array.isArray(response)) throw new ServiceError('YTM_SEARCH_UNAVAILABLE', 'YouTube Music 暫時無法搜尋。', 502);
-  return mapYtmSearch(query, kind, response.filter(e => e && typeof e === 'object').slice(0, 20));
+  return remember(mapYtmSearch(query, kind, response.filter(e => e && typeof e === 'object').slice(0, 20)));
 }
 
 export function mapYtmBrowse(link: MusicLink, entry: CatalogueEntry): Collection {
@@ -65,6 +76,7 @@ export function mapYtmBrowse(link: MusicLink, entry: CatalogueEntry): Collection
 }
 
 function cookieArgs(): string[] { return config.ytmCookiesPath ? ['--cookies', resolve(config.ytmCookiesPath)] : []; }
+const toolArgs = () => ['--ignore-config', '--js-runtimes', `node:${process.execPath}`, ...cookieArgs()];
 function mapYtm(entry: YtmEntry): Track {
   return { id: entry.id, provider: 'ytm', title: entry.title, artists: [entry.artist || entry.uploader || ''].filter(Boolean),
     album: entry.album || '', cover: entry.thumbnail || entry.thumbnails?.at(-1)?.url || '', durationMs: (entry.duration || 0) * 1000,
@@ -72,21 +84,30 @@ function mapYtm(entry: YtmEntry): Track {
 }
 
 export async function resolveYtm(link: MusicLink): Promise<Collection> {
+  const cached = link.kind === 'track' ? catalogueTracks.get(link.id) : undefined;
+  if (cached && cached.expires > Date.now()) return { provider: 'ytm', kind: 'track', title: cached.track.title, tracks: [cached.track], total: 1, warnings: [], sourceUrl: link.url };
   if (link.kind === 'artist' || link.kind === 'album') {
     const response = await catalogueRequest(link.kind, link.id);
     if (!response || typeof response !== 'object' || Array.isArray(response)) throw new ServiceError('NOT_FOUND', '找不到這個 YouTube Music 頁面。', 404);
-    return mapYtmBrowse(link, response as CatalogueEntry);
+    return remember(mapYtmBrowse(link, response as CatalogueEntry));
   }
-  const output = await runCommand(config.ytdlpBin, ['--ignore-config', ...cookieArgs(), '--dump-single-json', '--skip-download',
+  const output = await runCommand(config.ytdlpBin, [...toolArgs(), '--dump-single-json', '--skip-download',
     '--flat-playlist', '--playlist-end', String(config.maxCollectionTracks), '--', link.url], { timeout: 45_000 });
   const info = JSON.parse(output) as YtmEntry;
   const tracks = (info.entries || [info]).filter((t) => /^[a-zA-Z0-9_-]{11}$/.test(t.id)).map(mapYtm);
   const total = info.playlist_count || tracks.length;
-  return { title: info.title, kind: link.kind, provider: 'ytm', total, tracks,
-    warnings: total > tracks.length ? [`共有 ${total} 首，本次載入前 ${tracks.length} 首。`] : [] };
+  return remember({ title: info.title, kind: link.kind, provider: 'ytm', total, tracks,
+    warnings: total > tracks.length ? [`共有 ${total} 首，本次載入前 ${tracks.length} 首。`] : [] });
 }
 
 export async function downloadYtm(track: Track, directory: string): Promise<void> {
-  await runCommand(config.ytdlpBin, ['--ignore-config', ...cookieArgs(), '--no-playlist', '--no-progress',
-    '--max-filesize', '256M', '--format', 'bestaudio', '--output', resolve(directory, 'audio.%(ext)s'), '--', track.sourceUrl], { cwd: directory, timeout: 300_000 });
+  try {
+    await runCommand(config.ytdlpBin, [...toolArgs(), '--no-playlist', '--no-progress',
+      '--max-filesize', '256M', '--format', 'bestaudio', '--output', resolve(directory, 'audio.%(ext)s'), '--', track.sourceUrl], { cwd: directory, timeout: 300_000 });
+  } catch (error) {
+    if (error instanceof ServiceError && error.code === 'ADAPTER_FAILED') throw new ServiceError('YTM_AUDIO_UNAVAILABLE', config.ytmCookiesPath
+      ? 'YouTube Music 獲取失敗，請確認帳號登入狀態與曲目權限。'
+      : 'YouTube Music 獲取失敗；若平台要求登入，請配置 YTM cookies 後重試。', 502);
+    throw error;
+  }
 }

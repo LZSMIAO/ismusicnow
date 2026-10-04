@@ -47,6 +47,8 @@ Bot 使用 long polling，不需要開放 Telegram webhook 埠；如果已有 we
 
 Spotify 登入 cookies 使用 Netscape cookies.txt 格式，放在 `secrets/spotify-cookies.txt`；Compose 以唯讀方式掛載。搜尋與集合元資料需要 `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`，部分歌單需要有權限的 `SPOTIFY_ACCESS_TOKEN`。AAC／FLAC 的 Votify 配置可掛載在 `secrets/` 並使用容器內絕對路徑設定 `VOTIFY_CONFIG_PATH`。YTM 可選 `YTM_COOKIES_PATH=/app/secrets/ytm-cookies.txt`。
 
+YTM 音源獲取已啟用 Node.js JavaScript runtime，Docker 包含 yt-dlp 的 EJS 配套依賴。公開搜尋能正常返回結果不代表 VPS 的匿名音源請求通過 YouTube 登入驗證；若回傳 LOGIN_REQUIRED，將你自己的 Netscape 格式 YTM cookies 放入 `secrets/ytm-cookies.txt`，在伺服器 `.env` 填入 `YTM_COOKIES_PATH=/app/secrets/ytm-cookies.txt`，再重建 web 容器。不要把 cookies 提交 GitHub 或貼到聊天中。
+
 更新 `.env` 後執行 `docker compose up -d --force-recreate`；更新程式使用 `docker compose up -d --build`。`data/` 保存下載與 bot 游標，`secrets/` 保存來源登入。備份時一併保存，勿公開這些目錄。原始碼包、Git 及 Docker build context 均排除真實憑證。
 
 ## 本機
