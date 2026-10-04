@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import { botLanguages, botCommands, botError, botHelp, botText, telegramLanguage } from '../src/lib/server/bot-i18n.js';
 import { musicPayload, type MusicUpload } from '../src/lib/server/bot-media.js';
 
-test('Telegram IETF tags map to eight UI languages with an explicit Chinese fallback', () => {
-  for (const [tag, language] of [['zh-Hant', 'zh-Hant'], ['zh_TW', 'zh-Hant'], ['zh-HK', 'zh-Hant'], ['zh-Hans', 'zh-Hans'], ['zh-CN', 'zh-Hans'], ['zh-SG', 'zh-Hans'], ['zh', 'zh-Hant'], ['en-GB', 'en'], ['JA', 'ja'], ['ko-KR', 'ko'], ['es-MX', 'es'], ['fr-CA', 'fr'], ['ru-RU', 'ru'], ['de', 'zh-Hant']] as const) {
+test('Telegram IETF tags map to eight UI languages with an English fallback and script precedence', () => {
+  for (const [tag, language] of [['zh-Hant', 'zh-Hant'], ['zh_TW', 'zh-Hant'], ['zh-HK', 'zh-Hant'], ['zh-Hans', 'zh-Hans'], ['zh-CN', 'zh-Hans'], ['zh-SG', 'zh-Hans'], ['zh', 'zh-Hans'], ['en-GB', 'en'], ['JA', 'ja'], ['ko-KR', 'ko'], ['es-MX', 'es'], ['fr-CA', 'fr'], ['ru-RU', 'ru'], ['de', 'en'], ['zh-Hant-CN', 'zh-Hant'], ['zh-Hans-TW', 'zh-Hans'], ['zh-MO', 'zh-Hant'], ['it', 'en']] as const) {
     assert.equal(telegramLanguage(tag), language);
   }
-  assert.equal(telegramLanguage(), 'zh-Hant');
+  assert.equal(telegramLanguage(), 'en');
 });
 
 test('the requested eight UI languages localize help, commands and errors while preserving interpolated metadata', () => {

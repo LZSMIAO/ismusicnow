@@ -44,6 +44,7 @@ test('first NetEase acquisition pauses, offers choices and resumes exactly once 
     const send = async (_chat: number, text: string, extra?: Record<string, unknown>) => { messages.push({ text, extra }); };
     const acquire = async (...args: Parameters<ConstructorParameters<typeof BotLanguageSettings>[2]>) => { acquisitions.push(args); };
     const flow = new BotLanguageSettings(new BotSettingsStore(root), send, acquire);
+    await flow.observeLanguage(42, 'zh-TW');
     await flow.request(7, 42, track, 90);
     assert.equal(acquisitions.length, 0);
     assert.match(messages[0]!.text, /首次獲取網易雲/);
@@ -94,7 +95,7 @@ test('UI language persists independently of NetEase spelling and pending first-u
     await flow.callback(7, 42, 'ui:42:ja');
     assert.equal((await store.get(42)).language, 'zh-Hant');
     await flow.callback(7, 11, 'ui:42:ru');
-    assert.equal(await flow.locale(42), 'ja'); assert.equal(await flow.locale(11), 'zh-Hant');
+    assert.equal(await flow.locale(42), 'ja'); assert.equal(await flow.locale(11), 'en');
     await flow.showUi(7, 42);
     const keyboard = (messages.at(-1)!.extra?.reply_markup as { inline_keyboard: { callback_data: string }[][] }).inline_keyboard;
     assert.equal(keyboard.flat().filter((b) => b.callback_data.startsWith('ui:')).length, 8);
@@ -108,7 +109,7 @@ test('group setting buttons are bound to the owner; preferences stay isolated an
     const store = new BotSettingsStore(root), messages: string[] = [];
     const flow = new BotLanguageSettings(store, async (_id, text) => { messages.push(text); }, async () => { throw new Error('No pending track'); });
     await flow.callback(-100, 11, 'lang:42:zh-Hans');
-    assert.match(messages.at(-1)!, /其他用戶/); assert.deepEqual(await store.get(11), {}); assert.deepEqual(await store.get(42), {});
+    assert.match(messages.at(-1)!, /another user/); assert.deepEqual(await store.get(11), {}); assert.deepEqual(await store.get(42), {});
     await flow.callback(-100, 42, 'lang:42:original');
     await flow.callback(-100, 11, 'lang:11:zh-Hans');
     await flow.callback(-100, 42, 'lang:42:zh-Hant');
@@ -137,9 +138,9 @@ test('Telegram language is automatic until a manual choice; start shows one butt
     const flow = new BotLanguageSettings(store, async (_chat, text, extra) => { messages.push({ text, extra }); }, async () => {});
     await flow.observeLanguage(42, 'en-US');
     await flow.start(7, 42);
-    assert.match(messages.at(-1)!.text, /Paste a NetEase, Spotify or YouTube Music link/);
+    assert.match(messages.at(-1)!.text, /Send a song name, artist name or music link/);
     const startButtons = (messages.at(-1)!.extra?.reply_markup as { inline_keyboard: { text: string; callback_data: string }[][] }).inline_keyboard.flat();
-    assert.deepEqual(startButtons, [{ text: 'Change language', callback_data: 'setting:42:ui' }]);
+    assert.deepEqual(startButtons, [{ text: 'English ｜ Switch language', callback_data: 'setting:42:ui' }]);
     await flow.callback(7, 42, startButtons[0]!.callback_data);
     const expanded = (messages.at(-1)!.extra?.reply_markup as { inline_keyboard: { callback_data: string }[][] }).inline_keyboard.flat();
     assert.equal(expanded.filter((b) => b.callback_data.startsWith('ui:')).length, 8);
@@ -150,6 +151,6 @@ test('Telegram language is automatic until a manual choice; start shows one butt
     assert.equal(await restored.locale(42), 'fr');
     assert.equal((await store.get(42)).language, undefined);
     await flow.observeLanguage(11, 'ko'); await flow.observeLanguage(11, undefined);
-    assert.equal(await flow.locale(11), 'ko'); assert.equal(await flow.locale(12), 'zh-Hant');
+    assert.equal(await flow.locale(11), 'ko'); assert.equal(await flow.locale(12), 'en');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
