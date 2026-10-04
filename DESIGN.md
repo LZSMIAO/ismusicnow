@@ -35,3 +35,11 @@ One system sans stack; Traditional Chinese fallback PingFang TC / Noto Sans TC. 
 ## State and Motion
 
 Real empty, loading, unavailable-adapter, error and complete states. 180ms hover/focus transitions and indeterminate progress for active download; no invented percentages. Reduced-motion variant removes animation. Images do not animate on hover.
+
+## Telegram interaction
+
+直接關鍵字先顯示歌曲候選，包含歌手、專輯與時長，避免同名歌／不同版本被默認下載。音樂連結保留平台、類型和 ID 的明確語意：單曲直接獲取；合集展開後逐首選擇。序號只引用當前用戶在當前聊天的選曲列表。
+
+後續分類搜尋建議採用「歌曲／專輯／歌單／藝人」四類切換，預設歌曲。專輯顯示歌手、年份與曲數；歌單顯示建立者與曲數；藝人先顯示身份／原生名稱，再進入熱門曲或專輯。這些獨立分類搜尋與藝人作品導航尚未實作，不能由歌曲關鍵字結果冒充。
+
+Bot 語言採手動設定、Telegram 語言、English 的優先順序。開始畫面只放「當前語言 ｜ 切換語言」，展開後列出八種語言的原生名稱；名稱字形設定另屬網易雲，不隨 Bot 介面語言翻譯。臨時提示延遲清理，成功交付後才刪請求，保留音樂卡片。
