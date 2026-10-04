@@ -21,10 +21,20 @@ export function musicCaption(track: Track, job: DownloadJob, language: BotLangua
   const source = job.audioSource === 'netease' ? language === 'zh-Hans' ? '网易云音乐' : language === 'zh-Hant' ? '網易雲音樂' : 'NetEase' : sourceNames[job.audioSource];
   const title = escapeHtml(shortText(track.title, 100)), artists = escapeHtml(shortText(track.artists.join(' / ') || botText(language, 'unknownArtist'), 120));
   const album = escapeHtml(shortText(track.album || botText(language, 'unknownAlbum'), 120));
-  const technical = [audio?.codec || botText(language, 'originalAudio'), job.bytes ? `${(job.bytes / 1024 / 1024).toFixed(2)} MB` : '', audio?.bitrate ? `${Math.round(audio.bitrate / 1000)} kbps` : ''].filter(Boolean).join(' · ');
+  // Telegram previews up to three quote lines. Separate real metadata fields
+  // so even a short title/album leaves details behind the native expand control.
+  const details = [
+    `${escapeHtml(botText(language, 'album'))}：${album}`,
+    `${escapeHtml(botText(language, 'source'))}：${escapeHtml(source)}`,
+    `${escapeHtml(botText(language, 'audioFormat'))}：${escapeHtml(audio?.codec || botText(language, 'originalAudio'))}`,
+    job.bytes ? `${escapeHtml(botText(language, 'fileSize'))}：${(job.bytes / 1024 / 1024).toFixed(2)} MB` : '',
+    audio?.bitrate ? `${escapeHtml(botText(language, 'bitrate'))}：${Math.round(audio.bitrate / 1000)} kbps` : '',
+    job.presentation === 'telegram-playback' ? escapeHtml(botText(language, 'playbackVersion')) : '',
+    `via @${escapeHtml(botUsername)} · 音樂主義`,
+  ].filter(Boolean).join('\n');
   return [recipient?.id ? `<a href="tg://user?id=${recipient.id}">${escapeHtml(shortText(recipient.name || String(recipient.id), 40))}</a>` : '',
     `<b>「${title}」</b> — ${artists}`,
-    `<blockquote expandable>${escapeHtml(botText(language, 'album'))}：${album}\n${escapeHtml(source)} · ${escapeHtml(technical)}${job.presentation === 'telegram-playback' ? '\n' + escapeHtml(botText(language, 'playbackVersion')) : ''}\nvia @${escapeHtml(botUsername)} · 音樂主義</blockquote>`].filter(Boolean).join('\n');
+    `<blockquote expandable>${details}</blockquote>`].filter(Boolean).join('\n');
 }
 function musicButtons(track: Track, language: BotLanguage, playback = false) {
   const row: { text: string; url?: string; callback_data?: string }[] = [];
