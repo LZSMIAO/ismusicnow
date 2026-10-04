@@ -26,7 +26,7 @@ export function searchRelevance(query: string, item: Track | MusicEntity): numbe
     } else if (q.length >= 2 && artist.includes(q)) score += 300;
   }
   if (withoutArtists && withoutArtists !== q && title === withoutArtists) score += 1000;
-  else if (Math.min(title.length, q.length) >= 2 && (title.includes(q) || q.includes(title))) score += 450;
+  else if (title !== q && Math.min(title.length, q.length) >= 2 && (title.includes(q) || q.includes(title))) score += 450;
   const tokens = normalize(query).split(/[^\p{L}\p{N}]+/u).map(compact).filter(Boolean);
   const haystack = title + artistNames.join('');
   if (tokens.length) score += Math.round(300 * tokens.filter(token => haystack.includes(token)).length / tokens.length);

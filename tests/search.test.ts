@@ -68,3 +68,14 @@ test('an artist-name query prefers actual credited artists over titles mentionin
   const merged = await combineSearches('周杰伦', [mention,credited].map(c=>({provider:c.provider,search:async()=>c})));
   assert.equal(merged.tracks[0]?.id,'1');
 });
+
+test('title and credited artist beat an exact combined-query title from another uploader', async () => {
+  const credited = result('spotify', ['a']), mention = result('bilibili', ['BV1']);
+  credited.tracks[0] = { ...credited.tracks[0]!, title: 'Porcelain', artists: ['Moby'] };
+  mention.tracks[0] = { ...mention.tracks[0]!, title: 'Moby - Porcelain', artists: ['Other uploader'] };
+  for (const sources of [[mention, credited], [credited, mention]]) {
+    const merged = await combineSearches('Moby Porcelain', sources.map(c => ({provider: c.provider, search: async () => c})));
+    assert.equal(merged.tracks[0]?.id, 'a');
+    assert.equal(merged.providers?.[0], 'spotify');
+  }
+});
