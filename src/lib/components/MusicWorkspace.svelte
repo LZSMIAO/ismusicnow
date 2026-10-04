@@ -18,8 +18,8 @@
   let input = $state(''), source = $state<string>('all'), collection = $state<Collection | null>(null), recent = $state<Recent[]>([]);
   let artists = $state<MusicEntity[]>([]), artistsLoading = $state(false);
   let selected = $state<string[]>([]), format = $state<string>('original'), loading = $state(false), adding = $state(false), error = $state(''), notice = $state('');
-  let previewVisible = $state(true), reduced = $state(false), queueOpen = $state(false), continuous = $state(false);
-  type View = { collection: Collection; selected: string[]; format: string; input: string; source: string };
+  let previewVisible = $state(true), reduced = $state(false), queueOpen = $state(false), continuous = $state(false), lyricsPage = $state(false);
+  type View = { artists: MusicEntity[]; collection: Collection; selected: string[]; format: string; input: string; source: string };
   let previous = $state<View[]>([]), viewInput = '', viewSource = 'all';
   let queueTrigger: HTMLElement | undefined;
   let queueAnimation: Animation | undefined, queueClosing = false;
@@ -54,17 +54,17 @@
     return () => { document.documentElement.classList.remove('queue-open'); queueAnimation?.cancel(); resizePlayer.disconnect(); document.documentElement.style.removeProperty('--player-height'); searchRequest?.abort(); clearTimeout(noticeTimer); stopQueue(); stopPlayer(); media.removeEventListener('change', motion); };
   });
   $effect(() => {
-    return setTelegramBack(queueOpen ? closeQueue : collection ? (previous.length ? back : home) : null);
+    return setTelegramBack(queueOpen ? closeQueue : lyricsPage ? () => lyricsPage = false : collection ? (previous.length ? back : home) : null);
   });
   function feedback(text: string) { notice = text; clearTimeout(noticeTimer); noticeTimer = setTimeout(() => notice = '', 5000); }
   async function resolve(value = input, provider = source as SearchSource) {
     if (!value.trim()) { searchInput?.focus(); return; }
-    searchRequest?.abort(); const request = new AbortController(); searchRequest = request;
-    input = value; source = provider; artists = []; artistsLoading = false; loading = true; error = ''; notice = ''; continuous = false;
+    lyricsPage = false; searchRequest?.abort(); const request = new AbortController(); searchRequest = request;
+    const oldArtists = artists; input = value; source = provider; artists = []; artistsLoading = false; loading = true; error = ''; notice = ''; continuous = false;
     try {
       const result = await api<Collection>('/api/resolve', { method: 'POST', body: JSON.stringify({ input: value, provider }), signal: request.signal });
       if (searchRequest !== request) return;
-      if (collection) previous = [...previous.slice(-11), { collection, selected: [...selected], format, input: viewInput, source: viewSource }];
+      if (collection) previous = [...previous.slice(-11), { artists: oldArtists, collection, selected: [...selected], format, input: viewInput, source: viewSource }];
       viewInput = value; viewSource = provider;
       artistsLoading = result.kind === 'search'; player.clearFailure(); collection = result; selected = []; format = 'original';
       const track = result.tracks[0];
@@ -110,10 +110,11 @@
     } catch (e) { error = e instanceof Error ? e.message : '無法取得完整音訊。'; }
     finally { adding = false; }
   }
-  function home() { player.clearFailure(); collection = null; selected = []; input = ''; previous = []; continuous = false; }
+  function home() { searchRequest?.abort(); searchRequest = undefined; loading = false; artists = []; artistsLoading = false; player.clearFailure(); collection = null; selected = []; input = ''; previous = []; continuous = false; }
   function back() {
     const last = previous.at(-1);
     if (!last) return;
+    searchRequest?.abort(); searchRequest = undefined; loading = false; artistsLoading = false; artists = last.artists;
     previous = previous.slice(0, -1); collection = last.collection; selected = last.selected; format = last.format;
     input = viewInput = last.input; source = viewSource = last.source; continuous = false; panel.scrollTop = 0;
   }
@@ -177,7 +178,7 @@
   <nav class="mobile-nav" aria-label="行動版導覽"><a class="icon-button" href="/guide" aria-label="使用指南"><Library size={18} /></a><button class="icon-button" aria-label="下載佇列" aria-expanded={queueOpen} onclick={openQueue}><Download size={18} /></button></nav>
   <nav class="header-links" aria-label="項目連結"><a href="https://github.com/LZSMIAO/ismusicnow" target="_blank" rel="noreferrer" aria-label="GitHub，於新分頁開啟"><CodeXml size={18} /><span>GitHub</span></a><a href="https://t.me/muismbot" target="_blank" rel="noreferrer" aria-label="Telegram，於新分頁開啟"><Send size={18} /><span>Telegram</span></a></nav>
 </header>
-<div class="workspace" class:preview-hidden={!previewVisible} class:empty={!collection && !loading} class:search-results={collection?.kind === 'search'}>
+<div inert={lyricsPage} class="workspace" class:preview-hidden={!previewVisible} class:empty={!collection && !loading} class:search-results={collection?.kind === 'search'}>
   <aside class="library" aria-label="音樂導覽">
     <div class="library-head"><Library size={22} /><span>你的音樂</span></div><nav class="side-nav"><button class:active={collection?.kind !== 'search'} onclick={home} aria-label="最近開啟"><House size={20} /><span>最近開啟</span></button><button class:active={collection?.kind === 'search'} onclick={() => searchInput?.focus()} aria-label="搜尋音樂"><Search size={20} /><span>搜尋</span></button><button onclick={openQueue} aria-label="下載佇列"><Download size={20} /><span>下載佇列</span>{#if queue.jobs.length}<span class="badge">{queue.jobs.length}</span>{/if}</button></nav>
     {#if recent.length}<div class="recent-heading">最近開啟</div>{#each recent as item (`${item.provider}:${item.input}`)}<button class="recent-album" aria-label={`重新開啟 ${item.title}`} onclick={() => void resolve(item.input, item.provider)}><span class="recent-cover">{#if item.cover}<img src={item.cover} alt="" width="48" height="48" referrerpolicy="no-referrer" onerror={(e) => (e.currentTarget as HTMLImageElement).hidden = true} />{:else}<Music2 size={22} />{/if}</span><span><strong>{item.title}</strong><small>{item.artist}</small></span></button>{/each}{/if}
@@ -221,7 +222,7 @@
     </aside>
   {/if}
 </div>
-<PlayerLyrics track={player.track} elapsed={player.elapsed} ready={player.ready} onseek={(time) => player.seek(time)} />
+<PlayerLyrics track={player.track} elapsed={player.elapsed} ready={player.ready} playing={isPlaying} length={player.length} gettime={() => player.currentTime} bind:pageOpen={lyricsPage} onseek={(time) => player.seek(time)} />
 <section class="player" bind:this={playerElement} aria-label="音樂播放器">
   <div class="now-playing"><span class="player-cover">{#if active?.cover}<img src={active.cover} alt="" width="56" height="56" referrerpolicy="no-referrer" onerror={(e) => (e.currentTarget as HTMLImageElement).hidden = true} />{:else}<Music2 size={24} />{/if}</span><span><strong>{active?.title || '尚未播放'}</strong><small>{#if active}<span class="player-source">{providerNames[active.provider]} · </span>{/if}{active?.artists.join(' / ') || 'MUISM · 音樂主義'}</small></span></div>
   <div class="player-center"><div class="transport"><button aria-label="上一首" disabled={!collection?.tracks.length} onclick={() => { continuous = false; void adjacent(-1); }}><SkipBack size={18} fill="currentColor" /></button><button class="player-play" aria-label={isPlaying ? '暫停播放' : player.error ? '重試播放' : '播放音樂'} disabled={!active} onclick={() => active && preview(active)}>{#if player.status === 'loading'}<LoaderCircle size={18} class="loading-icon" />{:else if isPlaying}<Pause size={18} fill="currentColor" />{:else if player.error}<RotateCcw size={18} />{:else}<Play size={18} fill="currentColor" />{/if}</button><button aria-label="下一首" disabled={!collection?.tracks.length} onclick={() => { continuous = false; void adjacent(1); }}><SkipForward size={18} fill="currentColor" /></button></div><div class="seek-line"><span>{player.elapsed ? duration(player.elapsed * 1000) : '0:00'}</span><input type="range" min="0" max={player.length} step=".1" value={player.elapsed} disabled={!player.ready} aria-label="播放進度" style={`--played:${player.length ? player.elapsed / player.length * 100 : 0}%`} oninput={(e) => player.seek(Number(e.currentTarget.value))} /><span>{player.ready ? duration(player.length * 1000) : '—'}</span></div></div>

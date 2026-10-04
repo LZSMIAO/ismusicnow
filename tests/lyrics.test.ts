@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { toPlayerLines } from '../src/lib/lyric-player.js';
 import { parseLrc, lyricIndex } from '../src/lib/lyrics.js';
 
 test('timed lyrics handle multiple tags, offsets, instrumental gaps and backwards seeking', () => {
@@ -32,4 +33,11 @@ test('lyrics use original NetEase ID and exact LRCLIB metadata without substitut
     await trackLyrics(spotify); assert.equal(urls.length, 2, 'replays reuse the metadata-scoped cache');
     assert.deepEqual((await trackLyrics({ ...spotify, title: 'missing' })).lines, []);
   } finally { globalThis.fetch = realFetch; delete process.env.NETEASE_API_URL; }
+});
+
+test('AMLL conversion preserves sentence timing and instrumental gaps without invented word times', () => {
+  const lines = toPlayerLines([{ time: 1.25, text: 'one sentence' }, { time: 3, text: '' }, { time: 8, text: 'last sentence' }], 12);
+  assert.equal(lines.length, 2); assert.equal(lines[0]?.endTime, 3000);
+  assert.deepEqual(lines[0]?.words, [{ word: 'one sentence', startTime: 1250, endTime: 3000 }]);
+  assert.equal(lines[1]?.endTime, 12000); assert.deepEqual(toPlayerLines([], 0), []);
 });

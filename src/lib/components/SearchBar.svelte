@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ArrowRight, Music2, Search } from '@lucide/svelte';
+  import { ArrowRight, Check, Music2, Search } from '@lucide/svelte';
   import { onMount } from 'svelte';
   import { providerNames } from '#lib/ui.js';
   import type { SearchSource } from '#lib/types.js';
@@ -108,7 +108,7 @@
   <div class="search-sources" role="radiogroup" tabindex="-1" aria-label="搜尋來源" onkeydown={optionKeyboard}>
     {#each options as option (option.value)}
       <button type="button" role="radio" aria-label={option.label} aria-checked={source === option.value} tabindex={source === option.value ? 0 : -1} onclick={() => { source = option.value; inputElement?.focus({ preventScroll: true }); }}>
-        {#if option.value === 'ytm'}<span class="source-name-desktop">YouTube Music</span><span class="source-name-mobile" aria-hidden="true">YTM</span>{:else}<span>{option.label}</span>{/if}
+        <span>{option.label}</span>{#if source === option.value}<Check size={16} aria-hidden="true" />{/if}
       </button>
     {/each}
   </div>

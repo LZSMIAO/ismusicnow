@@ -22,6 +22,7 @@
     "bot": "node --env-file-if-exists=.env --import tsx scripts/bot.ts"
   },
   "dependencies": {
+    "@applemusic-like-lyrics/core": "0.6.0",
     "@lucide/svelte": "1.51.0",
     "@neteasecloudmusicapienhanced/api": "4.41.0",
     "music-metadata": "12.0.0",

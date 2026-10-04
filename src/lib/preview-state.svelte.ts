@@ -13,6 +13,7 @@ export function createPreviewState(onfinish: () => void) {
   }
   return {
     get track() { return track; }, get status() { return status; }, get elapsed() { return elapsed; },
+    get currentTime() { return audio?.currentTime ?? elapsed; },
     get length() { return length; }, get volume() { return volume; }, get error() { return error; }, get ready() { return ready; }, get limited() { return limited; }, get canDownload() { return canDownload; }, get preparing() { return preparing; }, get remaining() { return remaining; },
     mount() {
       audio = new Audio(); audio.preload = 'metadata'; audio.volume = volume;
