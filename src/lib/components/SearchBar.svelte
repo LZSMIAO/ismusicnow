@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ArrowRight, Check, Music2, Search } from '@lucide/svelte';
+  import { ArrowRight, Music2, Search } from '@lucide/svelte';
   import { onMount } from 'svelte';
   import { providerNames } from '#lib/ui.js';
   import type { SearchSource } from '#lib/types.js';
@@ -99,16 +99,16 @@
 </script>
 
 <form bind:this={form} class="searchbar" class:search-expanded={open} role="search" onsubmit={submit}>
-  <Search size={22} aria-hidden="true" />
+  <Search size={24} aria-hidden="true" />
   <input id="music-input" bind:this={inputElement} bind:value aria-label="搜尋音樂或貼上連結" aria-controls="search-options" aria-expanded={open} aria-describedby="search-current-source" placeholder={source === 'all' ? '搜尋或貼上連結' : `搜尋 ${selected.label}，或貼上連結`} maxlength="1000" autocomplete="off" onfocus={expand} onclick={expand} onkeydown={inputKeyboard} />
   <span id="search-current-source" class="sr-only">搜尋來源：{selected.label}</span>
-  <button class="search-submit" type="submit" aria-label={loading ? '重新搜尋' : '搜尋'} disabled={!value.trim()}><ArrowRight size={18} /></button>
+  <button class="search-submit" type="submit" aria-label={loading ? '重新搜尋' : '搜尋'} disabled={!value.trim()}><ArrowRight size={24} /></button>
 </form>
 <div id="search-options" bind:this={panel} popover class="search-options" aria-label="搜尋選項" style={`top:${top}px;left:${left}px;width:${width}px;max-height:${maxHeight}px`} ontoggle={(event: ToggleEvent) => open = event.newState === 'open'}>
   <div class="search-sources" role="radiogroup" tabindex="-1" aria-label="搜尋來源" onkeydown={optionKeyboard}>
     {#each options as option (option.value)}
       <button type="button" role="radio" aria-label={option.label} aria-checked={source === option.value} tabindex={source === option.value ? 0 : -1} onclick={() => { source = option.value; inputElement?.focus({ preventScroll: true }); }}>
-        <span>{option.label}</span>{#if source === option.value}<Check size={16} aria-hidden="true" />{/if}
+        {#if option.value === 'ytm'}<span class="source-name-desktop">YouTube Music</span><span class="source-name-mobile" aria-hidden="true">YTM</span>{:else}<span>{option.label}</span>{/if}
       </button>
     {/each}
   </div>

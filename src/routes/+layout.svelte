@@ -3,9 +3,10 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { mountTelegram, setTelegramBack } from '#lib/telegram.js';
+  import { mountDeviceOrientation } from '#lib/device-orientation.js';
   import { page } from '$app/state';
   let { children } = $props();
-  onMount(() => mountTelegram());
+  onMount(() => { const stopTelegram = mountTelegram(), stopOrientation = mountDeviceOrientation(); return () => { stopTelegram(); stopOrientation(); }; });
   $effect(() => { if (page.url.pathname !== '/') return setTelegramBack(() => void goto('/')); });
 </script>
 <svelte:head><meta name="description" content="音樂主義 — 搜尋、試聽與保存網易雲、Spotify 和 YouTube Music 的音樂。" /><meta name="robots" content="noindex,nofollow" /></svelte:head>

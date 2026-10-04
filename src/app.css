@@ -97,8 +97,8 @@ html.telegram-app{height:var(--imn-height,100dvh);overflow:hidden}
 @media(max-width:700px){
   .search-results .search-heading{display:none}.search-results .panel-navigation{height:36px}.search-results .panel-navigation>span{text-align:left;padding-right:0}.search-results .back-button:disabled,.telegram-app .search-results .back-button{display:none}
 }
-@media(max-width:700px) and (max-height:500px) and (orientation:landscape){
-  .app-header,.telegram-app .app-header{height:60px;flex-wrap:nowrap;gap:12px;align-content:center;padding:8px 12px}.app-header .brand-mark,.mobile-nav a{display:none}.app-header .brand strong{font-size:1rem}.searchbar{flex-basis:auto;flex:1;order:0}.mobile-nav{margin-left:0}.player,.telegram-app .player{min-height:80px;padding:6px 12px}.now-playing img,.player-cover{width:32px;height:32px}.playback-status{display:flex;align-items:center;gap:12px}.playback-status p{flex:1}.playback-status-actions{margin:0;flex-shrink:0}.seek-line{margin:0}.queue-drawer,.telegram-app .queue-drawer{top:calc(60px + var(--imn-safe-top,0px))}
+@media(max-width:700px) and (max-height:500px){
+  .device-landscape .app-header,.device-landscape.telegram-app .app-header{height:60px;flex-wrap:nowrap;gap:12px;align-content:center;padding:8px 12px}.device-landscape .app-header .brand-mark,.device-landscape .mobile-nav a{display:none}.device-landscape .app-header .brand strong{font-size:1rem}.device-landscape .searchbar{flex-basis:auto;flex:1;order:0}.device-landscape .mobile-nav{margin-left:0}.device-landscape .player,.device-landscape.telegram-app .player{min-height:80px;padding:6px 12px}.device-landscape .now-playing img,.device-landscape .player-cover{width:32px;height:32px}.device-landscape .playback-status{display:flex;align-items:center;gap:12px}.device-landscape .playback-status p{flex:1}.device-landscape .playback-status-actions{margin:0;flex-shrink:0}.device-landscape .seek-line{margin:0}.device-landscape .queue-drawer,.device-landscape.telegram-app .queue-drawer{top:calc(60px + var(--imn-safe-top,0px))}
 }
 
 .playback-budget{grid-column:1/-1;font-size:.75rem;color:var(--muted);line-height:1.5}
@@ -182,17 +182,17 @@ html.telegram-app{height:var(--imn-height,100dvh);overflow:hidden}
 @media(max-width:700px){.player-lyrics{width:calc(100% - 24px);bottom:calc(var(--player-height,104px) + max(env(safe-area-inset-bottom,0px),var(--imn-safe-bottom,0px)) + 6px);padding:0 8px}.lyrics-toggle{font-size:.8125rem}.lyrics-lines{height:min(152px,25dvh)}.lyrics-lines>button{font-size:.875rem;min-height:40px}}
 @media(prefers-reduced-motion:reduce){.lyrics-lines{scroll-behavior:auto}}
 
-/* One calm search surface: source choices are text rows, not floating chips. */
-.searchbar.search-expanded{border-color:var(--edge);background:var(--hover)}
-.searchbar:focus-within{outline:none;box-shadow:inset 0 0 0 1px var(--muted)}
-.searchbar .search-submit{display:grid;place-items:center;flex-shrink:0;width:36px;height:36px;min-height:36px;padding:0;border:0;border-radius:50%;line-height:1;color:var(--silver)}
-.search-submit svg{display:block;width:18px;height:18px}.search-submit:hover:not(:disabled){background:var(--edge)}.search-submit:disabled{opacity:.35}
-.search-sources{display:grid;grid-template-columns:1fr 1fr;gap:2px;padding:0 4px 8px;overflow:visible}
-.search-sources button{justify-content:space-between;gap:12px;min-height:44px;padding:10px 12px;border-radius:4px;background:transparent;color:var(--muted);font-weight:500;font-size:.875rem}
-.search-sources button:hover{background:oklch(.96 .005 260 / .08);color:var(--ink)}
-.search-sources button[aria-checked=true]{color:var(--ink);background:transparent;font-weight:600}
-.search-sources button svg{flex-shrink:0;color:var(--silver)}
-@media(max-width:700px){.search-sources{padding:0 8px 8px}.search-sources button{font-size:.8125rem}.searchbar .search-submit{width:36px;height:40px;min-height:40px}}
+/* Search edge rendering: one contour, no stacked border/inset rings or icon scaling. */
+.searchbar{position:relative;border:0;border-radius:24px;box-shadow:none;outline:none}
+.searchbar::before{content:'';position:absolute;inset:0;pointer-events:none;border:2px solid transparent;border-radius:inherit;transition:border-color 160ms var(--ease-out)}
+.searchbar:focus-within,.searchbar.search-expanded{border:0;box-shadow:none;outline:none;background:var(--raised)}
+.searchbar:focus-within::before{border-color:var(--silver)}
+.searchbar>svg{display:block;width:24px;height:24px;shape-rendering:geometricPrecision}
+.searchbar .search-submit{display:grid;place-items:center;flex-shrink:0;width:40px;height:40px;min-height:40px;padding:0;border:0;border-radius:50%;line-height:1;color:var(--silver)}
+.searchbar .search-submit svg{display:block;width:24px;height:24px;shape-rendering:geometricPrecision;transform:none}
+.search-submit:hover:not(:disabled){background:var(--hover)}.search-submit:disabled{opacity:.35}
+.search-submit:focus-visible{outline:2px solid var(--silver);outline-offset:2px}
+@media(max-width:700px){.searchbar .search-submit{width:36px;height:40px;min-height:40px}}
 .lyrics-page-trigger{flex-shrink:0;width:32px;height:36px;min-height:36px;padding:0;color:var(--muted)}
 .lyrics-page-trigger:hover{color:var(--ink)}
 /* Dedicated lyrics view shares the existing audio and transport. */
@@ -209,7 +209,11 @@ html.telegram-app{height:var(--imn-height,100dvh);overflow:hidden}
 .queue-open .lyrics-page{filter:blur(3px)}
 @media(max-width:960px) and (min-width:701px){.lyrics-page-body{gap:24px;padding:0 24px 24px}.lyrics-renderer{--amll-lp-font-size:2rem}}
 @media(max-width:700px){.lyrics-page,.telegram-app .lyrics-page{top:calc(108px + var(--imn-safe-top,0px));bottom:calc(var(--player-height,104px) + max(env(safe-area-inset-bottom,0px),var(--imn-safe-bottom,0px)));left:0;right:0;border-radius:0}.lyrics-page-header{height:40px;padding:0 12px}.lyrics-page-body{display:flex;flex-direction:column;gap:8px;padding:0 20px 8px}.lyrics-record{display:grid;grid-template-columns:48px minmax(0,1fr);grid-template-rows:auto auto;gap:0 12px;flex-shrink:0;padding:8px 0;justify-content:start;align-items:center}.lyrics-record-cover{width:48px;height:48px;grid-row:1/3;margin:0;border-radius:4px}.lyrics-record h1{font-size:1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0}.lyrics-record p{font-size:.8125rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.lyrics-record small{display:none}.lyrics-stage{flex:1}.lyrics-renderer{--amll-lp-font-size:1.75rem}.lyrics-page-fallback{font-size:1.125rem;padding:12px}}
-@media(max-width:700px) and (max-height:500px) and (orientation:landscape){.lyrics-page,.telegram-app .lyrics-page{top:calc(60px + var(--imn-safe-top,0px))}.lyrics-page-header{height:36px}.lyrics-page-body{display:grid;grid-template-columns:160px minmax(0,1fr);gap:16px}.lyrics-record{display:flex;justify-content:center}.lyrics-record-cover{display:none}.lyrics-renderer{--amll-lp-font-size:1.375rem}}
+@media(max-width:700px) and (max-height:500px){.device-landscape .lyrics-page,.device-landscape.telegram-app .lyrics-page{top:calc(60px + var(--imn-safe-top,0px))}.device-landscape .lyrics-page-header{height:36px}.device-landscape .lyrics-page-body{display:grid;grid-template-columns:160px minmax(0,1fr);gap:16px}.device-landscape .lyrics-record{display:flex;justify-content:center}.device-landscape .lyrics-record-cover{display:none}.device-landscape .lyrics-renderer{--amll-lp-font-size:1.375rem}}
 @media(prefers-reduced-motion:reduce){.lyrics-renderer *{animation:none!important;transition:none!important}}
 
 .lyrics-jump{position:absolute;left:12px;bottom:12px;max-width:calc(100% - 24px);width:1px;height:1px;clip-path:inset(50%);overflow:hidden}.lyrics-jump:focus{width:auto;height:44px;clip-path:none;padding:8px 12px;border:1px solid var(--line);border-radius:4px;background:var(--raised);color:var(--ink);z-index:2}
+
+@media(max-width:700px){.searchbar{height:48px;min-height:48px;max-height:48px;flex-shrink:0}.searchbar input{height:44px;min-height:44px;font-size:16px;line-height:24px}.telegram-app .app-header{flex-shrink:0}.telegram-app body{-webkit-text-size-adjust:100%;text-size-adjust:100%}.telegram-keyboard .player-lyrics{display:none}}
+
+.search-options{scrollbar-width:none}.search-options::-webkit-scrollbar{display:none}
