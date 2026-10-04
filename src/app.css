@@ -230,6 +230,6 @@ html.telegram-app{height:var(--imn-height,100dvh);overflow:hidden}
 
 
 /* The fixed blur texture fades; its blur radius never animates with the sheet. */
-.queue-focus-layer{position:absolute;left:0;right:min(420px,calc(100% - 24px));top:72px;bottom:var(--player-height,96px);pointer-events:none;opacity:0;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+.queue-focus-layer{position:absolute;left:0;right:min(420px,calc(100% - 24px));top:72px;bottom:var(--player-height,96px);pointer-events:none;opacity:0;-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
 .queue-sheet::before{content:'';position:absolute;top:0;bottom:0;right:100%;width:32px;pointer-events:none;background:linear-gradient(to left,#0003,transparent);mask-image:linear-gradient(to bottom,transparent,#000 16px,#000 calc(100% - 16px),transparent)}
-@media(max-width:700px){.queue-focus-layer{top:calc(108px + var(--imn-safe-top,0px));bottom:calc(var(--player-height,104px) + var(--imn-safe-bottom,0px));backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}.queue-sheet::before{width:24px}}
+@media(max-width:700px){.queue-focus-layer{top:calc(108px + var(--imn-safe-top,0px));bottom:calc(var(--player-height,104px) + var(--imn-safe-bottom,0px));-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}.queue-sheet::before{width:24px}}
