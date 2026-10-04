@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { checkBotUpload, botUploadFile } from './bot-transport.js';
 import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
 import { parseFile } from 'music-metadata';
@@ -41,20 +42,25 @@ export class BotPlayback {
     const key = await musicCacheKey(track);
     await Promise.all([this.cache.invalidate(key, record.fileId), this.cache.invalidate(telegramPlaybackKey(key), record.fileId)]);
   }
-  async get(track: Track, preferOriginalAudio = false): Promise<CachedMusic> {
+  async get(track: Track, preferOriginalAudio = track.provider === 'netease'): Promise<CachedMusic> {
     const native = preferOriginalAudio && track.provider === 'netease';
     const primaryKey = await musicCacheKey(track), playbackKey = telegramPlaybackKey(primaryKey);
     const key = native ? primaryKey : playbackKey;
-    const original = await this.cache.get(primaryKey);
+    let original = await this.cache.get(primaryKey);
     // A document ID cannot be resent as audio. Keep it for the original-file
     // action and use the independent playable cache for ordinary requests.
     if (native && original?.kind === 'audio') return original;
-    if (native && original?.kind === 'document') return this.get(track);
+    if (native && original?.kind === 'document') {
+      if (original.nativeAudioRejected) return this.get(track, false);
+      // Older Inline uploads were forced to document without probing FLAC.
+      // Refresh that one reference; preserve unrelated music and MP3 caches.
+      await this.cache.invalidate(primaryKey, original.fileId); original = undefined;
+    }
     if (original?.kind === 'audio' && isMp3(original.audio)) {
       await this.cache.put(key, original); return original;
     }
     let result: CachedMusic | undefined;
-    await this.cache.deliver(key, async record => { result = native && record.kind === 'document' ? await this.get(track) : record; }, async () => {
+    await this.cache.deliver(key, async record => { result = native && record.kind === 'document' ? await this.get(track, false) : record; }, async () => {
       const chatId = this.cacheChat();
       if (!chatId) throw new ServiceError('INLINE_CACHE_SETUP', 'Telegram cache channel not configured');
       const owner = `telegram-playback:${track.provider}:${track.id}`;
@@ -72,7 +78,7 @@ export class BotPlayback {
         const { path } = await this.store.file(owner, ready.id);
         const presentation = await this.presentation(path, track);
         const upload = async (audioPath: string, job: DownloadJob, document: boolean) => {
-          if ((await stat(audioPath)).size > 49 * 1024 * 1024) throw new ServiceError('FILE_TOO_LARGE', 'Audio exceeds Telegram upload limit');
+          checkBotUpload((await stat(audioPath)).size);
           let cached: CachedMusic | undefined;
           await sendMusic(async (method, form) => {
             form.set('disable_notification', 'true');
@@ -82,8 +88,8 @@ export class BotPlayback {
             return this.telegram(method, form);
           }, {
             chatId, job, track, ...presentation, asDocument: document, botUsername: this.username(), uiLanguage: 'en',
-            bytes: new Uint8Array(await readFile(audioPath)), filename: `${safeFilename(`${track.artists.join(' - ')} - ${track.title}`)}${extname(audioPath)}`,
-            onDelivered: (kind, message: any) => { if (message?.[kind]?.file_id) cached = { kind, fileId: message[kind].file_id, duration: presentation.duration, bytes: job.bytes!, audioSource: job.audioSource, audio: job.audio, presentation: job.presentation }; },
+            file: await botUploadFile(audioPath), filename: `${safeFilename(`${track.artists.join(' - ')} - ${track.title}`)}${extname(audioPath)}`,
+            onDelivered: (kind, message: any) => { if (message?.[kind]?.file_id) cached = { kind, fileId: message[kind].file_id, duration: presentation.duration, bytes: job.bytes!, audioSource: job.audioSource, audio: job.audio, ...(job.presentation ? { presentation: job.presentation } : {}), ...(native && kind === 'document' ? { nativeAudioRejected: true } : {}) }; },
           });
           if (!cached) throw new ServiceError('TELEGRAM_ERROR', 'No Telegram file reference');
           return cached;

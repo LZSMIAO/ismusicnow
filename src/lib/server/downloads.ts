@@ -15,7 +15,7 @@ import { downloadPublic } from './providers/public-audio.js';
 import { downloadYtm } from './providers/ytm.js';
 
 interface StoredJob extends DownloadJob { owner: string; path?: string }
-type Executor = (job: DownloadJob, directory: string) => Promise<string>;
+type Executor = (job: DownloadJob, directory: string, maxFileBytes: number) => Promise<string>;
 
 export function validateAudioUrl(raw: string): URL {
   const url = new URL(raw);
@@ -26,7 +26,7 @@ export function validateAudioUrl(raw: string): URL {
   return url;
 }
 
-async function saveNeteaseAudio(url: string, path: string): Promise<void> {
+async function saveNeteaseAudio(url: string, path: string, maxFileBytes: number): Promise<void> {
   let current = validateAudioUrl(url);
   for (let i = 0; i < 4; i++) {
     const response = await fetch(current, { redirect: 'manual', signal: AbortSignal.timeout(120_000) });
@@ -39,11 +39,11 @@ async function saveNeteaseAudio(url: string, path: string): Promise<void> {
     }
     if (!response.ok || !response.body) throw new ServiceError('AUDIO_UNAVAILABLE', '平台音源暫時無法下載。', 502);
     const length = Number(response.headers.get('content-length') || 0);
-    if (length > config.maxFileBytes) { await response.body.cancel(); throw new ServiceError('FILE_TOO_LARGE', '音訊檔案超過 256 MB 限制。', 413); }
+    if (length > maxFileBytes) { await response.body.cancel(); throw new ServiceError('FILE_TOO_LARGE', '音訊檔案超過下載大小限制。', 413); }
     let received = 0;
     const limiter = new Transform({ transform(chunk: Buffer, _encoding, callback) {
       received += chunk.length;
-      callback(received > config.maxFileBytes ? new ServiceError('FILE_TOO_LARGE', '音訊檔案超過 256 MB 限制。', 413) : null, chunk);
+      callback(received > maxFileBytes ? new ServiceError('FILE_TOO_LARGE', '音訊檔案超過下載大小限制。', 413) : null, chunk);
     } });
     await pipeline(Readable.fromWeb(response.body as import('node:stream/web').ReadableStream), limiter, createWriteStream(path, { mode: 0o600 }));
     return;
@@ -62,11 +62,11 @@ async function findAudio(directory: string): Promise<string[]> {
   return files;
 }
 
-export async function executeDownload(job: DownloadJob, directory: string): Promise<string> {
+export async function executeDownload(job: DownloadJob, directory: string, maxFileBytes = config.maxFileBytes): Promise<string> {
   if (job.track.provider === 'netease') {
     const audio = await neteaseAudio(job.track.id, job.format);
     const path = join(directory, `audio.${audio.extension}`);
-    await saveNeteaseAudio(audio.url, path);
+    await saveNeteaseAudio(audio.url, path, maxFileBytes);
     return path;
   }
   if (job.format !== 'original') throw new ServiceError('ORIGINAL_ONLY', '此來源只保留平台可用音源，不提供音質轉換。');
@@ -84,7 +84,7 @@ export class DownloadStore {
   private active = false;
   private initialized?: Promise<void>;
   private root: string;
-  constructor(namespace = 'web', private executor: Executor = executeDownload, root = config.dataDir) {
+  constructor(namespace = 'web', private executor: Executor = executeDownload, root = config.dataDir, private maxFileBytes = config.maxFileBytes) {
     this.root = resolve(root, namespace);
   }
   private initialize(): Promise<void> {
@@ -155,9 +155,10 @@ export class DownloadStore {
         try {
           await mkdir(directory, { recursive: true, mode: 0o700 });
           job.status = 'downloading'; job.stage = '正在獲取原始音源'; await this.persist(job);
-          const output = await this.executor(this.publicJob(job), directory);
+          const output = await this.executor(this.publicJob(job), directory, this.maxFileBytes);
           const size = (await stat(output)).size;
-          if (!size || size > config.maxFileBytes) throw new ServiceError('INVALID_FILE', '音訊檔案為空或超過大小限制。', 502);
+          if (!size) throw new ServiceError('INVALID_FILE', '音訊檔案為空。', 502);
+          if (size > this.maxFileBytes) throw new ServiceError('FILE_TOO_LARGE', '音訊檔案超過下載大小限制。', 413);
           const metadata = await parseFile(output, { duration: true });
           if (!metadata.format.codec || !metadata.format.duration || metadata.format.duration < 1) throw new ServiceError('INVALID_AUDIO', '下載的檔案不是完整可辨識音訊。', 502);
           if (job.track.durationMs && metadata.format.duration * 1000 < job.track.durationMs * 0.9) throw new ServiceError('INCOMPLETE_AUDIO', '音源長度不足，可能是試聽或未完成下載。', 502);

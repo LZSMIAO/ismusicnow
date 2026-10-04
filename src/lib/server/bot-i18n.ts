@@ -1,4 +1,5 @@
 import { Converter } from 'opencc-js';
+import { botTransport } from './bot-transport.js';
 
 export const botLanguages = ['zh-Hant', 'zh-Hans', 'en', 'ja', 'ko', 'es', 'fr', 'ru'] as const;
 export type BotLanguage = typeof botLanguages[number];
@@ -66,6 +67,8 @@ const catalog = {
   artist: ["藝術家", "Artists", "アーティスト", "아티스트", "Artistas", "Artistes", "Исполнители"],
   hotTracks: ["熱門單曲", "Top songs", "人気の曲", "인기곡", "Canciones populares", "Titres populaires", "Популярные песни"],
   backResults: ["返回", "Back", "戻る", "뒤로", "Volver", "Retour", "Назад"],
+  compatLayout: ["無法點選？使用按鈕", "Can't tap? Use buttons", "選択できない場合はボタン表示", "선택 안 되나요? 버튼 사용", "¿No puedes pulsar? Usa botones", "Impossible de cliquer ? Utiliser les boutons", "Не нажимается? Использовать кнопки"],
+  richLayout: ["切換表格模式", "Switch to table view", "表形式に切り替え", "표 보기로 전환", "Cambiar a tabla", "Passer à la vue tableau", "Переключить на таблицу"],
   close: ["關閉", "Close", "閉じる", "닫기", "Cerrar", "Fermer", "Закрыть"],
   chooseNumber: ["點序號選擇", "Choose a number", "番号を選択", "번호 선택", "Elige un número", "Choisissez un numéro", "Выберите номер"],
   chooseNumberGroup: ["點序號，或回覆列表輸入序號", "Choose a number, or reply to this list with its number", "番号を選ぶか、一覧に番号で返信", "번호 선택 또는 목록에 번호로 답장", "Elige un número o responde a esta lista con el número", "Choisissez un numéro ou répondez à cette liste avec le numéro", "Выберите номер или ответьте на список номером"],
@@ -94,7 +97,7 @@ const catalog = {
   back: ["返回設定", "Back to settings", "設定に戻る", "설정으로 돌아가기", "Volver a ajustes", "Retour aux paramètres", "Назад к настройкам"],
   wrongOwner: ["這是其他用戶的設定按鈕，請使用 /settings 開啟自己的設定。", "These settings belong to another user. Open yours with /settings.", "他のユーザーの設定です。/settings で自分の設定を開いてください。", "다른 사용자의 설정입니다. /settings로 본인 설정을 여세요.", "Estos ajustes son de otro usuario. Abre los tuyos con /settings.", "Ces paramètres appartiennent à un autre utilisateur. Ouvrez les vôtres avec /settings.", "Это настройки другого пользователя. Откройте свои командой /settings."],
   fetching: ["正在獲取「{title}」的 {source} 原始音源…", "Fetching the original {source} audio for “{title}”…", "「{title}」の {source} オリジナル音源を取得中…", "“{title}”의 {source} 원본 음원을 가져오는 중…", "Obteniendo el audio original de {source} para «{title}»…", "Récupération de l’audio original {source} pour « {title} »…", "Загрузка исходного аудио {source} для «{title}»…"],
-  tooLarge: ["音訊超過 Telegram 49 MB 發送限制，請使用網頁端獲取。", "Audio exceeds the 49 MB Telegram limit. Use the website to download it.", "Telegram の 49 MB 上限を超えています。ウェブサイトから取得してください。", "Telegram의 49 MB 한도를 초과했습니다. 웹사이트에서 다운로드하세요.", "El audio supera el límite de 49 MB de Telegram. Descárgalo en la web.", "L’audio dépasse la limite Telegram de 49 Mo. Téléchargez-le sur le site.", "Аудио превышает лимит Telegram в 49 МБ. Загрузите его через сайт."],
+  tooLarge: ["音訊超過 Telegram {limit} MB 發送限制，請使用網頁端獲取。", "Audio exceeds the {limit} MB Telegram limit. Use the website to download it.", "Telegram の {limit} MB 上限を超えています。ウェブサイトから取得してください。", "Telegram의 {limit} MB 한도를 초과했습니다. 웹사이트에서 다운로드하세요.", "El audio supera el límite de {limit} MB de Telegram. Descárgalo en la web.", "L’audio dépasse la limite Telegram de {limit} Mo. Téléchargez-le sur le site.", "Аудио превышает лимит Telegram в {limit} МБ. Загрузите его через сайт."],
   documentFallback: ["Telegram 未接受此格式為音樂卡片，已保留原始音訊以檔案發送。", "Telegram could not display this format as music. The original audio was sent as a file.", "Telegram がこの形式を音楽として表示できないため、元の音声をファイルで送信しました。", "Telegram이 이 형식을 음악으로 표시하지 못해 원본 음원을 파일로 보냈습니다.", "Telegram no pudo mostrar este formato como música. Se envió el audio original como archivo.", "Telegram ne peut pas afficher ce format comme musique. L’audio original a été envoyé comme fichier.", "Telegram не смог показать этот формат как музыку. Исходное аудио отправлено файлом."],
   pending: ["任務仍在佇列中，請稍後重試或使用網頁端。", "The task is still queued. Try again later or use the website.", "処理は待機中です。後でもう一度試すか、ウェブサイトをご利用ください。", "작업이 아직 대기 중입니다. 나중에 다시 시도하거나 웹사이트를 이용하세요.", "La tarea sigue en cola. Inténtalo más tarde o usa la web.", "La tâche est toujours en attente. Réessayez plus tard ou utilisez le site.", "Задача ещё в очереди. Повторите позже или используйте сайт."],
   notFound: ["沒有找到歌曲，請試試其他關鍵字。", "No songs found. Try other keywords.", "曲が見つかりません。別のキーワードを試してください。", "곡을 찾지 못했습니다. 다른 검색어를 사용하세요.", "No se encontraron canciones. Prueba otras palabras.", "Aucune chanson trouvée. Essayez d’autres mots-clés.", "Песни не найдены. Попробуйте другие слова."],
@@ -168,7 +171,7 @@ const errors: Record<string, BotTextKey> = {
   EXPIRED: 'unavailableFile', NOT_READY: 'unavailableFile', SERVICE_RESTARTED: 'restarted',
   BATCH_LIMIT: 'queryInput', ORIGINAL_ONLY: 'adapterFailed', NOT_LOSSLESS: 'unavailableAudio',
 };
-export const botError = (language: BotLanguage, code?: string) => botText(language, errors[code || ''] || 'serviceError');
+export const botError = (language: BotLanguage, code?: string) => botText(language, errors[code || ''] || 'serviceError', code === 'FILE_TOO_LARGE' ? { limit: botTransport().maxUploadBytes / 1024 / 1024 } : {});
 export function botCommands(language: BotLanguage) {
   return ([['search', 'cmdSearch'], ['album', 'cmdAlbum'], ['artist', 'cmdArtist'], ['playlist', 'cmdPlaylist'],
     ['download', 'cmdDownload'], ['netease', 'cmdNetease'], ['spotify', 'cmdSpotify'], ['ytm', 'cmdYtm'],

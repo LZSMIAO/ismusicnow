@@ -2,6 +2,9 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { config } from '../src/lib/server/config.js';
+import { botTransport, botRequestTimeout, checkBotUpload, botUploadFile } from '../src/lib/server/bot-transport.js';
+import { canCloseSelection } from '../src/lib/server/bot-close.js';
 import { DownloadStore } from '../src/lib/server/downloads.js';
 import { publicError, ServiceError } from '../src/lib/server/errors.js';
 import { artistAlbums, resolveMusic, getTrack } from '../src/lib/server/music.js';
@@ -14,7 +17,7 @@ import { audioPresentation, musicReferencePayload, sendMusic, TelegramRequestErr
 import { BotMusicCache, rejectedFileId, type CachedMusic } from '../src/lib/server/bot-cache.js';
 import { BotDispatch } from '../src/lib/server/bot-dispatch.js';
 import { BotPlayback } from '../src/lib/server/bot-playback.js';
-import { BotInline, parseInlineStart, type InlineQuery } from '../src/lib/server/bot-inline.js';
+import { BotInline, parseInlineStart, parseBrowseStart, type InlineQuery } from '../src/lib/server/bot-inline.js';
 import { musicCacheKey, telegramPlaybackKey } from '../src/lib/server/bot-cache-key.js';
 import { BotMessageCleanup } from '../src/lib/server/bot-cleanup.js';
 import { BotSelections, selectionLifetime, selectionPageSize, selectionCount, type MusicSelection } from '../src/lib/server/bot-selection.js';
@@ -29,9 +32,10 @@ const token = process.env.BOT_TOKEN;
 if (!token) { console.error('請在 .env 配置 BOT_TOKEN。'); process.exit(1); }
 const webAppUrl = new URL(process.env.BOT_WEB_APP_URL || 'https://music.ism.tw');
 if (webAppUrl.protocol !== 'https:' || webAppUrl.username || webAppUrl.password) throw new Error('BOT_WEB_APP_URL 必須是 HTTPS 網址。');
-const endpoint = `https://api.telegram.org/bot${token}/`;
+const transport = botTransport();
+const endpoint = `${transport.base}bot${token}/`;
 const allowed = new Set((process.env.BOT_ALLOWED_USERS || '').split(',').map((v) => v.trim()).filter(Boolean));
-const store = new DownloadStore('bot');
+const store = new DownloadStore('bot', undefined, undefined, Math.max(config.maxFileBytes, transport.maxUploadBytes));
 const mediaCache = new BotMusicCache(token.split(':')[0]!);
 const selections = new BotSelections();
 const lastRequest = new Map<number, number>();
@@ -41,13 +45,13 @@ let botUsername = 'muismbot';
 const statePath = resolve(process.env.DATA_DIR || '.data', 'bot-offset', `${token.split(':')[0]}.json`);
 
 interface User { id: number; language_code?: string; is_bot?: boolean; first_name?: string }
-interface Message { message_id: number; message_thread_id?: number; sender_chat?: { id: number }; via_bot?: { id: number; is_bot?: boolean }; chat: { id: number; type?: string }; from?: User; text?: string; reply_to_message?: { message_id: number; from?: { username?: string } } }
+interface Message { message_id: number; message_thread_id?: number; sender_chat?: { id: number }; via_bot?: { id: number; is_bot?: boolean }; chat: { id: number; type?: string }; from?: User; text?: string; entities?: { type: string; offset: number; url?: string; user?: { id: number } }[]; reply_to_message?: { message_id: number; from?: { username?: string } } }
 interface Update { update_id: number; message?: Message; callback_query?: { id: string; from: User; data?: string; message?: Message; inline_message_id?: string }; inline_query?: InlineQuery; chosen_inline_result?: { result_id: string; from: User; inline_message_id?: string; query: string } }
 
 export async function telegram<T>(method: string, body: Record<string, unknown> | FormData = {}): Promise<T> {
   const response = await fetch(`${endpoint}${method}`, { method: 'POST',
     headers: body instanceof FormData ? undefined : { 'Content-Type': 'application/json' },
-    body: body instanceof FormData ? body : JSON.stringify(body), signal: AbortSignal.timeout(method === 'getUpdates' ? 40_000 : 120_000) });
+    body: body instanceof FormData ? body : JSON.stringify(body), signal: AbortSignal.timeout(botRequestTimeout(method, body, transport.local)) });
   const data = await response.json() as { ok: boolean; result: T; error_code?: number; description?: string };
   if (!data.ok) throw new TelegramRequestError(data.error_code || response.status, data.description || '');
   return data.result;
@@ -102,9 +106,10 @@ const inline = new BotInline({
   preferences: async userId => ({ ui: await preferences.locale(userId), names: (await settingsStore.get(userId)).language }),
   cache: async track => {
     const key = await musicCacheKey(track);
-    return await mediaCache.get(telegramPlaybackKey(key)) || await mediaCache.get(key);
+    const original = await mediaCache.get(key);
+    return track.provider === 'netease' && original?.kind === 'audio' ? original : await mediaCache.get(telegramPlaybackKey(key)) || original;
   }, metadata: track => metadataForDisplay(track, 250),
-  acquire: track => playback.get(track), invalidate: (track, record) => playback.invalidate(track, record), chooseNames: (userId, language) => settingsStore.setNamesLanguage(userId, language),
+  acquire: track => playback.get(track), fallbackPlayback: track => playback.get(track, false), invalidate: (track, record) => playback.invalidate(track, record), chooseNames: (userId, language) => settingsStore.setNamesLanguage(userId, language),
 });
 
 async function sendTrack(chatId: number, userId: number, track: Track, language: AlbumLanguage, messageId: number, messageThreadId?: number, keepRequest = false, inlineMode = false, originalFile = false): Promise<void> {
@@ -120,7 +125,7 @@ async function sendTrack(chatId: number, userId: number, track: Track, language:
     }));
   };
   if (!originalFile) {
-    const native = track.provider === 'netease' && !inlineMode;
+    const native = track.provider === 'netease';
     const source = native ? await mediaCache.get(primaryKey) : undefined;
     const cached = source?.kind === 'audio' ? source : await mediaCache.get(telegramPlaybackKey(primaryKey));
     const progress = cached?.kind === 'audio' ? undefined : await send(chatId, botText(ui, native ? 'fetching' : 'preparePlayback', { title: visible.title, source: track.provider }), { message_thread_id: messageThreadId, deleteAfterMs: 7 * 60_000, reply_parameters: replyParameters(messageId) });
@@ -129,7 +134,7 @@ async function sendTrack(chatId: number, userId: number, track: Track, language:
       const candidates = selections.request(chatId, userId, messageId, messageThreadId)?.pendingSources || [track];
       for (let index = 0; index < candidates.length; index++) {
         const candidate = candidates[index]!;
-        try { record = await playback.get(candidate, candidate.provider === 'netease' && !inlineMode); }
+        try { record = await playback.get(candidate, candidate.provider === 'netease'); }
         catch (error) {
           if (index === candidates.length - 1 || !sourceFallbackAllowed(error)) throw error;
           continue;
@@ -144,7 +149,7 @@ async function sendTrack(chatId: number, userId: number, track: Track, language:
       try { await sendRecord(record); }
       catch (error) {
         if (!rejectedFileId(error)) throw error;
-        await playback.invalidate(track, record); await sendRecord(await playback.get(track, track.provider === 'netease' && !inlineMode));
+        await playback.invalidate(track, record); await sendRecord(await playback.get(track, track.provider === 'netease'));
       }
     }
     finally { if (progress) await removeNow(chatId, progress.message_id); }
@@ -158,12 +163,12 @@ async function sendTrack(chatId: number, userId: number, track: Track, language:
       if (job.status === 'failed') throw new ServiceError(job.errorCode || 'ADAPTER_FAILED', '下載失敗。', 502);
       if (job.status === 'completed') {
         const { path } = await store.file(owner, job.id);
-        if ((await stat(path)).size > 49 * 1024 * 1024) throw new ServiceError('FILE_TOO_LARGE', '音訊超過 Telegram 上限。', 413);
+        checkBotUpload((await stat(path)).size);
         const presentation = await audioPresentation(path, track);
         let record: CachedMusic | undefined;
         const asDocument = originalFile;
         const delivery = await sendMusic(telegram, { chatId, messageThreadId, job, track: visible, recipientId: chatId < 0 ? userId : undefined, recipientName: replyContext.getStore()?.userName, uiLanguage: ui, botUsername, asDocument,
-          bytes: new Uint8Array(await readFile(path)),
+          file: await botUploadFile(path),
           filename: `${safeFilename(`${track.artists.join(' - ')} - ${track.title}`)}${extname(path)}`, ...presentation,
           onDelivered: (kind, result) => {
             const message = result as { audio?: { file_id?: string }; document?: { file_id?: string } } | undefined;
@@ -208,10 +213,14 @@ async function prepareSelection(session: MusicSelection) {
   selections.rank(session, evidence);
 }
 async function showSelection(session: MusicSelection, ui: Parameters<typeof botText>[0], edit = false) {
-  const names = (await settingsStore.get(session.userId)).language || 'original';
+  const settings = await settingsStore.get(session.userId);
+  const names = settings.language || 'original';
+  session.rich ??= settings.richSearch;
+  if (session.closed || session.previousSession?.closed) throw new ServiceError('SELECTION_CLOSED', 'Selection closed');
   let menu: { message_id: number };
   try { menu = await selectionDelivery.show(session, ui, names, edit); }
   catch (error) { if (session.previousSession || !session.menuId) selections.abort(session); throw error; }
+  if (session.closed || session.previousSession?.closed) { await removeNow(session.chatId, menu.message_id); throw new ServiceError('SELECTION_CLOSED', 'Selection closed'); }
   selections.commit(session);
   session.busy = false;
   if (!edit) {
@@ -255,7 +264,7 @@ async function chooseSelection(session: MusicSelection, index: number, ui: Param
     await preferences.request(chatId, userId, track, inputId, messageThreadId, !!session.keepRequest && inputId === session.requestId);
   } catch (error) {
     session.busy = false;
-    if (session.collection.kind === 'search' && !session.collection.entities) {
+    if (!session.closed && session.collection.kind === 'search' && !session.collection.entities) {
       const replacement = selections.replace(session, session.collection, false);
       replacement.page = session.page;
       await prepareSelection(replacement);
@@ -331,8 +340,28 @@ async function handleUpdate(update: Update): Promise<void> {
       await sendCollection(chatId, userId, await resolveMusic(url, browse[1] as Provider), message.message_id, true);
       return;
     }
-    const close = update.callback_query?.data?.match(/^close:([a-f0-9]{16})$/);
-    if (close) { const session = selections.get(chatId, userId, close[1]!, message.message_id, message.message_thread_id); if (session.busy) return; selections.close(session); await removeNow(chatId, message.message_id); return; }
+    const close = update.callback_query?.data?.match(/^close:([a-f0-9]{16})(?::\d{1,16}:[a-f0-9]{16})?$/);
+    if (close) {
+      let session: MusicSelection | undefined;
+      try { session = selections.get(chatId, userId, close[1]!, message.message_id, message.message_thread_id); }
+      catch (error) {
+        if (!(error instanceof ServiceError && error.code === 'SELECTION_EXPIRED')) throw error;
+        if (!canCloseSelection(message, userId, update.callback_query!.data!, Number(token!.split(':')[0]), token!)) throw new ServiceError('SELECTION_OWNER', 'Wrong close owner', 403);
+      }
+      if (session) selections.close(session);
+      await removeNow(chatId, message.message_id); return;
+    }
+    const layout = update.callback_query?.data?.match(/^layout:([a-f0-9]{16}):(buttons|rich)$/);
+    if (layout) {
+      const session = selections.get(chatId, userId, layout[1]!, message.message_id, message.message_thread_id);
+      if (session.busy) return;
+      const previous = session.rich;
+      session.busy = true; session.rich = layout[2] === 'rich';
+      try { await showSelection(session, ui, true); await settingsStore.setRichSearch(userId, session.rich!); }
+      catch (error) { session.rich = previous; throw error; }
+      finally { session.busy = false; }
+      return;
+    }
     const back = update.callback_query?.data?.match(/^back:([a-f0-9]{16})$/);
     if (back) {
       const session = selections.get(chatId, userId, back[1]!, message.message_id, message.message_thread_id);
@@ -421,6 +450,11 @@ async function handleUpdate(update: Update): Promise<void> {
       }
       return;
     }
+    if (cmd === '/start' && isPrivate && args.startsWith('browse_')) {
+      const selected = parseBrowseStart(args);
+      if (!selected) throw new ServiceError('INVALID_INPUT', 'Invalid browse link');
+      await sendCollection(chatId, userId, await resolveMusic(selected.url, selected.provider), message.message_id); return;
+    }
     if (cmd === '/start' && isPrivate && args.startsWith('raw_')) {
       const selected = parseInlineStart(args.replace(/^raw_/, 'in_'));
       if (!selected) throw new ServiceError('INVALID_TRACK', 'Invalid original track');
@@ -475,7 +509,7 @@ async function handleUpdate(update: Update): Promise<void> {
         await listTracks(chatId, userId, text, 'all', message.message_id);
       }
     }
-  } catch (error) { await notice(chatId, botError(ui, publicError(error).code), message.message_id); }
+  } catch (error) { if (error instanceof ServiceError && error.code === 'SELECTION_CLOSED') return; await notice(chatId, botError(ui, publicError(error).code), message.message_id); }
 }
 
 async function main(): Promise<void> {

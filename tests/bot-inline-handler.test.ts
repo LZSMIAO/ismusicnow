@@ -68,12 +68,13 @@ test('real handler routes inline queries without chat IDs, deep-link onboarding 
     await cache.put({ provider: 'netease', id: '123', quality: 'original-lossless' }, { fileId: 'old-flac-audio', kind: 'audio', duration: 150, bytes: 1000, audioSource: 'netease', audio: { codec: 'FLAC', lossless: true } });
     await cache.put({ provider: 'netease', id: '123', quality: 'original-lossless:telegram-mp3-320-v1' }, { presentation: 'telegram-playback', fileId: 'prepared-mp3-playback', kind: 'audio', duration: 150, bytes: 1000, audioSource: 'netease', audio: { codec: 'MPEG 1 Layer 3', lossless: false } });
     await handle({ update_id: 11, inline_query: { id: 'flac-ready', from: { id: 42 }, query: 'netease 床', offset: '' } });
-    assert.equal(calls.at(-1)!.body.results[0].type, 'audio');
-    assert.equal(calls.at(-1)!.body.results[0].audio_file_id, 'prepared-mp3-playback');
-    assert.match(calls.at(-1)!.body.results[0].caption, /MP3/);
+    assert.equal(calls.at(-1)!.body.results[0].type, 'article','FLAC uses a placeholder because CachedAudio results accept only MP3');
+    await handle({ update_id: 111, chosen_inline_result: { result_id: calls.at(-1)!.body.results[0].id, from: { id: 42 }, inline_message_id: 'flac-native-inline', query: 'netease 床' } });
+    assert.equal(calls.at(-1)!.body.media.media,'old-flac-audio');
+    assert.doesNotMatch(calls.at(-1)!.body.media.caption,/MP3 conversion/);
     now += 4000;
     await handle({ update_id: 12, message: { message_id: 12, chat: { id: 42, type: 'private' }, from: { id: 42 }, text: '/start in_n_123' } });
-    assert.equal(calls.findLast(c => c.method === 'sendAudio')!.body.audio, 'prepared-mp3-playback');
+    assert.equal(calls.findLast(c => c.method === 'sendAudio')!.body.audio, 'old-flac-audio');
     now += 4000;
     await handle({ update_id: 13, message: { message_id: 13, chat: { id: 42, type: 'private' }, from: { id: 42 }, text: '/netease 123' } });
     assert.equal(calls.findLast(c => c.method === 'sendAudio')!.body.audio, 'old-flac-audio', 'ordinary playback retains its original audio cache');

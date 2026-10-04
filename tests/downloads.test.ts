@@ -62,3 +62,20 @@ test('short previews fail and their audio files are removed', async () => {
     assert.deepEqual((await readdir(join(root, 'test'))).filter((p) => !p.endsWith('.json')), []);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test('bot download ceilings reach the executor and fail with a size error; web defaults remain independent', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'muism-ceiling-'));
+  const fileBytes = wav(2);
+  try {
+    let ceiling = 0;
+    const limited = new DownloadStore('test', async (_job, dir, limit) => {
+      ceiling = limit; const file = join(dir, 'audio.wav'); await writeFile(file,fileBytes); return file;
+    }, root, fileBytes.length - 1);
+    await limited.create('limited',[track],'original');
+    const failed = await waitForJob(limited,'limited',root);
+    assert.equal(ceiling,fileBytes.length-1); assert.equal(failed.errorCode,'FILE_TOO_LARGE');
+    const normal = new DownloadStore('test',async (_job,dir) => { const file=join(dir,'audio.wav'); await writeFile(file,fileBytes); return file; },root);
+    await normal.create('normal',[track],'original');
+    assert.equal((await waitForJob(normal,'normal',root)).status,'completed');
+  } finally { await rm(root,{recursive:true,force:true}); }
+});

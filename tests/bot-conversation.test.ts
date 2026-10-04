@@ -31,7 +31,7 @@ test('selection numbers are scoped to user/chat, absolute across pages, and expi
   assert.match(page.rich_message.html, /<details><summary>/);
   assert.doesNotMatch(page.text, /tg-spoiler/);
   assert.equal(page.reply_markup.inline_keyboard.flat().find(button => button.callback_data.startsWith('pick:'))!.callback_data, `pick:${session.id}:8`);
-  assert.equal(page.reply_markup.inline_keyboard.at(-1)![0]!.callback_data, `page:${session.id}:0`);
+  assert.equal(page.reply_markup.inline_keyboard.flat().find(button => button.callback_data.startsWith('page:'))!.callback_data, `page:${session.id}:0`);
   now += 30 * 60_000;
   assert.equal(choices.number(7, 42, '1'), undefined);
   assert.throws(() => choices.get(7, 42, session.id), { code: 'SELECTION_EXPIRED' });

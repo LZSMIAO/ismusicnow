@@ -77,15 +77,15 @@ test('native NetEase requests preserve audio FLAC while sharing the original cac
     await f.playback.get(netease, true); assert.equal(f.uploads.length, 1);
   } finally { await rm(f.root, { recursive: true, force: true }); }
 });
-test('a cached original document is kept independent while ordinary NetEase requests use playable audio', async () => {
+test('legacy NetEase documents are refreshed as original FLAC audio instead of forcing an old MP3 derivative', async () => {
   const f = await fixture(-10042, netease);
   try {
     const key = await musicCacheKey(netease);
     const original = { fileId: 'original-document', kind: 'document' as const, duration: 1, bytes: 21, audioSource: 'netease' as const, audio: { codec: 'FLAC', lossless: true } };
     await f.cache.put(key, original);
     const a = await f.playback.get(netease, true);
-    assert.equal(a.kind, 'audio'); assert.equal(a.presentation, 'telegram-playback'); assert.ok(!a.audio?.lossless);
-    assert.deepEqual(await f.cache.get(key), original);
+    assert.equal(a.kind, 'audio'); assert.equal(a.presentation, undefined); assert.ok(a.audio?.lossless);
+    assert.deepEqual(await f.cache.get(key), a); assert.equal(f.counts.prepared,0);
     assert.deepEqual(await f.playback.get(netease, true), a);
     assert.deepEqual(f.uploads.map(x => x.method), ['sendAudio']); assert.equal(f.counts.create, 1);
   } finally { await rm(f.root, { recursive: true, force: true }); }

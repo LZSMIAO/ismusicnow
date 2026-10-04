@@ -4,6 +4,7 @@ build/
 .data/
 .env
 .env.*
+.telegram-api.env
 !.env.example
 .venv/
 secrets/

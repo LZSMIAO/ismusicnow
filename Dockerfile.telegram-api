@@ -1,0 +1,12 @@
+FROM ubuntu:24.04 AS build
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git cmake g++ make gperf libssl-dev zlib1g-dev && rm -rf /var/lib/apt/lists/*
+# Pin the official server and its TDLib submodule.
+ARG TELEGRAM_API_COMMIT=e3e9dd8e5b3d7ab8537cd5a10dc31d5ffa8f82d1
+RUN git clone https://github.com/tdlib/telegram-bot-api.git /source && cd /source && git checkout "$TELEGRAM_API_COMMIT" && git submodule update --init --recursive
+RUN cmake -S /source -B /source/build -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/install && cmake --build /source/build --target install -j2
+FROM ubuntu:24.04
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libssl3t64 zlib1g libstdc++6 && rm -rf /var/lib/apt/lists/* && useradd -u 10001 -m telegram && mkdir /var/lib/telegram-bot-api && chown telegram:telegram /var/lib/telegram-bot-api
+COPY --from=build /install/bin/telegram-bot-api /usr/local/bin/telegram-bot-api
+USER telegram
+WORKDIR /var/lib/telegram-bot-api
+ENTRYPOINT ["telegram-bot-api", "--local", "--http-port=8081", "--dir=/var/lib/telegram-bot-api", "--temp-dir=/var/lib/telegram-bot-api/temp"]

@@ -105,5 +105,7 @@ test('typed search → owned artist view → albums → tracks, stale callbacks 
     assert.match(panel().text, /1–8 \/ 11/, 'artist album pagination loads subsequent API pages');
     assert.doesNotMatch(panel().text, /Top songs/);
     assert.ok(!panel().reply_markup.inline_keyboard.flat().some((b: any) => b.callback_data.startsWith('view:')), 'Spotify artist view exposes available albums without a dead top-tracks tab');
+    await message(5, '/start browse_n_album_99'); assert.ok(upstream.at(-1)!.url.endsWith('/album')); assert.match(panel().text,/瓦合/);
+    await message(6, '/start browse_n_artist_123'); assert.ok(upstream.at(-1)!.url.endsWith('/artists')); assert.match(panel().text,/Top songs/);
   } finally { globalThis.fetch = realFetch; Date.now = realNow; process.env = env; await rm(root, { recursive: true, force: true }); }
 });

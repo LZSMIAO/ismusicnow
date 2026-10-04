@@ -85,3 +85,12 @@ test('new uploads, document fallback and cached file references target the reque
     assert.equal(form.get('message_thread_id'), '10'); assert.equal(form.get(kind), 'cached-file');
   }
 });
+
+test('collapsed caption ends before format and technical details', () => {
+  const track = { id:'123', provider:'netease' as const, title:'Song', artists:['Artist'], album:'Album', cover:'', durationMs:1000, sourceUrl:'https://music.163.com/song?id=123' };
+  const job = { id:'fixture', track, format:'original' as const, status:'completed' as const, stage:'', createdAt:'', updatedAt:'', bytes:1000, audioSource:'netease' as const, audio:{ codec:'FLAC', lossless:true } };
+  const caption = musicCaption(track,job,'en');
+  const quote=caption.match(/<blockquote expandable>([\s\S]*?)<\/blockquote>/)![1]!;
+  assert.deepEqual(quote.split('\n').slice(0,3),['Album：Album','Source：NetEase','']);
+  assert.match(quote.split('\n').slice(3).join('\n'),/Format：FLAC/);
+});

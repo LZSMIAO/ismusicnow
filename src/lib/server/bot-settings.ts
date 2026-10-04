@@ -19,7 +19,7 @@ const pendingSchema = z.object({
     metadataLanguages: z.object({ title: z.string().optional(), album: z.string().optional(), artists: z.array(z.string()).optional() }).optional() }),
 });
 const uiLanguageSchema = z.enum(botLanguages);
-const settingsSchema = z.object({ language: languageSchema.optional(), uiLanguage: uiLanguageSchema.optional(), telegramLanguage: uiLanguageSchema.optional(), pending: pendingSchema.optional() });
+const settingsSchema = z.object({ language: languageSchema.optional(), uiLanguage: uiLanguageSchema.optional(), richSearch: z.boolean().optional(), telegramLanguage: uiLanguageSchema.optional(), pending: pendingSchema.optional() });
 type UserSettings = z.infer<typeof settingsSchema>;
 export type PendingTrack = z.infer<typeof pendingSchema>;
 const pendingLifetime = 30 * 60_000;
@@ -103,6 +103,9 @@ export class BotSettingsStore {
       delete settings.pending;
       return pending;
     });
+  }
+  setRichSearch(userId: number, rich: boolean): Promise<void> {
+    return this.change(userId, settings => { settings.richSearch = rich; });
   }
   setUiLanguage(userId: number, language: BotLanguage): Promise<void> {
     uiLanguageSchema.parse(language);

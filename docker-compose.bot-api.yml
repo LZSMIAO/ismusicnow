@@ -1,0 +1,23 @@
+# Optional production override: docker compose -f docker-compose.yml -f docker-compose.bot-api.yml up -d
+services:
+  telegram-api:
+    image: muism:telegram-api-e3e9dd8e
+    build:
+      context: .
+      dockerfile: Dockerfile.telegram-api
+    container_name: muism-telegram-api
+    restart: unless-stopped
+    env_file: .telegram-api.env
+    volumes:
+      - ./data/telegram-api:/var/lib/telegram-bot-api
+    # No published ports. Only services in the Compose network can access it.
+    init: true
+    mem_limit: 1g
+    cpus: 1.0
+  bot:
+    environment:
+      BOT_API_BASE_URL: http://telegram-api:8081
+      BOT_API_LOCAL: "1"
+    depends_on:
+      telegram-api:
+        condition: service_started

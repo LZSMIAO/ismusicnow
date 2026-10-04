@@ -26,12 +26,13 @@ export function musicCaption(track: Track, job: DownloadJob, language: BotLangua
   const details = [
     `${escapeHtml(botText(language, 'album'))}：${album}`,
     `${escapeHtml(botText(language, 'source'))}：${escapeHtml(source)}`,
+    '', // The three-line collapsed preview ends before technical metadata.
     `${escapeHtml(botText(language, 'audioFormat'))}：${escapeHtml(audio?.codec || botText(language, 'originalAudio'))}`,
     job.bytes ? `${escapeHtml(botText(language, 'fileSize'))}：${(job.bytes / 1024 / 1024).toFixed(2)} MB` : '',
     audio?.bitrate ? `${escapeHtml(botText(language, 'bitrate'))}：${Math.round(audio.bitrate / 1000)} kbps` : '',
     job.presentation === 'telegram-playback' ? escapeHtml(botText(language, 'playbackVersion')) : '',
     `via @${escapeHtml(botUsername)} · 音樂主義`,
-  ].filter(Boolean).join('\n');
+  ].filter((value, index) => value || index === 2).join('\n');
   return [recipient?.id ? `<a href="tg://user?id=${recipient.id}">${escapeHtml(shortText(recipient.name || String(recipient.id), 40))}</a>` : '',
     `<b>「${title}」</b> — ${artists}`,
     `<blockquote expandable>${details}</blockquote>`].filter(Boolean).join('\n');
@@ -104,7 +105,7 @@ export async function audioPresentation(path: string, track: Track): Promise<{ d
 type Telegram = (method: string, form: FormData) => Promise<unknown>;
 export interface MusicUpload {
   chatId: number; messageThreadId?: number; replyTo?: number; job: DownloadJob; track: Track;
-  bytes: Uint8Array; filename: string; duration: number; thumbnail?: Uint8Array;
+  bytes?: Uint8Array; file?: Blob; filename: string; duration: number; thumbnail?: Uint8Array;
   uiLanguage?: BotLanguage; botUsername?: string; recipientId?: number; recipientName?: string;
   asDocument?: boolean;
   onDelivered?: (kind: 'audio' | 'document', result: unknown) => void;
@@ -135,7 +136,8 @@ export function musicPayload(upload: MusicUpload, document = false, withThumbnai
   const mime: Record<string, string> = { '.flac': 'audio/flac', '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.ogg': 'audio/ogg', '.opus': 'audio/ogg', '.aac': 'audio/aac', '.webm': 'audio/webm' };
   form.set('chat_id', String(upload.chatId));
   if (upload.messageThreadId !== undefined) form.set('message_thread_id', String(upload.messageThreadId));
-  form.set(document ? 'document' : 'audio', new Blob([new Uint8Array(upload.bytes)], { type: mime[extension] || 'application/octet-stream' }), upload.filename);
+  if (!upload.file && !upload.bytes) throw new ServiceError('INVALID_FILE', 'No audio file');
+  form.set(document ? 'document' : 'audio', upload.file || new Blob([new Uint8Array(upload.bytes!)], { type: mime[extension] || 'application/octet-stream' }), upload.filename);
   if (document) form.set('disable_content_type_detection', 'true');
   form.set('caption', musicCaption(upload.track, upload.job, language, upload.botUsername, { id: upload.recipientId, name: upload.recipientName }));
   form.set('parse_mode', 'HTML');

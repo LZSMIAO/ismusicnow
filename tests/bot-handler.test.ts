@@ -73,10 +73,10 @@ test('plain text → reply/pagination → numeric or owned callback selection �
     await callback(sent.body.reply_markup.inline_keyboard.flat().find((b: any) => b.callback_data.startsWith('pick:')).callback_data, nextMessage);
     audio = calls.findLast((call) => call.method === 'sendAudio')!;
     assert.equal(audio.body.reply_parameters, undefined);
-    // An Inline original-file upload can leave a document ID in the primary
-    // cache. A normal private request must use the playable reference instead.
+    // A confirmed Telegram native-audio rejection keeps the original document
+    // independently while subsequent requests reuse its playable reference.
     const sourceKey = { provider: 'netease' as const, id: '10000', quality: 'original-lossless' };
-    await cache.put(sourceKey, { fileId: 'original-flac-document', kind: 'document', duration: 150, bytes: 1234, audioSource: 'netease', audio: { codec: 'FLAC', lossless: true } });
+    await cache.put(sourceKey, { fileId: 'original-flac-document', kind: 'document', nativeAudioRejected: true, duration: 150, bytes: 1234, audioSource: 'netease', audio: { codec: 'FLAC', lossless: true } });
     await cache.put({ ...sourceKey, quality: sourceKey.quality + ':telegram-mp3-320-v1' }, { fileId: 'playable-mp3', kind: 'audio', duration: 150, bytes: 1234, audioSource: 'netease', presentation: 'telegram-playback', audio: { codec: 'MPEG 1 Layer 3', bitrate: 320000, lossless: false } });
     const cacheRequest = calls.length;
     await message(115, 'https://music.163.com/song?id=10000');

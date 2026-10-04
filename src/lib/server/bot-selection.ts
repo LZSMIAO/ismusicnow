@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { selectionCloseData } from './bot-close.js';
 import type { Collection, MusicEntity, Track } from '../types.js';
 import { ServiceError } from './errors.js';
 import { botText, type BotLanguage } from './bot-i18n.js';
@@ -13,7 +14,7 @@ export interface MusicSelection {
   messageThreadId?: number; menuId?: number; createdAt: number; collection: Collection; page: number; busy?: boolean; keepRequest?: boolean;
   history?: { collection: Collection; page: number }[]; userName?: string;
   groups: RecordingGroup[]; evidence: Map<string, SourceEvidence>;
-  panel?: 'providers' | { group: number }; rich?: boolean;
+  panel?: 'providers' | { group: number }; rich?: boolean; closed?: boolean;
   pendingSources?: Track[];
   previousSession?: MusicSelection;
 }
@@ -60,6 +61,7 @@ export class BotSelections {
     return session.collection.entities ? { session, entity: this.entity(session, Number(text) - 1) } : { session, track: this.track(session, Number(text) - 1) };
   }
   replace(session: MusicSelection, collection: Collection, remember = true): MusicSelection {
+    if (session.closed) throw new ServiceError('SELECTION_CLOSED', 'Selection closed');
     const next = this.create(session.chatId, session.userId, session.requestId, collection, session.messageThreadId, session.keepRequest);
     next.menuId = session.menuId; next.userName = session.userName; next.rich = session.rich;
     next.evidence = new Map(session.evidence);
@@ -74,7 +76,7 @@ export class BotSelections {
   abort(session: MusicSelection) {
     const previous = session.previousSession;
     this.drop(session);
-    if (previous && this.sessions.has(previous.id)) {
+    if (previous && !previous.closed && this.sessions.has(previous.id)) {
       previous.busy = false;
       this.latest.set(this.ownerKey(previous.chatId, previous.userId, previous.messageThreadId), previous.id);
       this.replies.set(this.key(previous.chatId, previous.requestId), previous);
@@ -87,7 +89,10 @@ export class BotSelections {
     next.history = history; next.page = previous.page;
     return next;
   }
-  close(session: MusicSelection): void { this.drop(session); }
+  close(session: MusicSelection): void {
+    session.closed = true; this.drop(session);
+    for (const pending of this.sessions.values()) if (pending.chatId === session.chatId && pending.userId === session.userId && pending.menuId === session.menuId && pending.requestId === session.requestId) { pending.closed = true; this.drop(pending); }
+  }
   entity(session: MusicSelection, index: number): MusicEntity {
     const entity = session.collection.entities?.[index];
     if (!Number.isInteger(index) || !entity) throw new ServiceError('SELECTION_NUMBER', 'Invalid selection');
@@ -145,8 +150,9 @@ export function selectionMessage(session: MusicSelection, ui: BotLanguage, names
   const navigation: Button[] = [];
   if (session.history?.length) navigation.push({ text: `↩ ${botText(ui, 'backResults')}`, callback_data: `back:${session.id}` });
   if (page > 0) navigation.push({ text: `‹ ${botText(ui, 'previousPage')}`, callback_data: `page:${session.id}:${page - 1}` });
-  navigation.push({ text: botText(ui, 'close'), callback_data: `close:${session.id}` });
+  navigation.push({ text: botText(ui, 'close'), callback_data: selectionCloseData(session) });
   if (start + visible.length < items.length) navigation.push({ text: `${botText(ui, 'nextPage')} ›`, callback_data: `page:${session.id}:${page + 1}` });
+  const layout: Button = { text: botText(ui, session.rich === false ? 'richLayout' : 'compatLayout'), callback_data: `layout:${session.id}:${session.rich === false ? 'rich' : 'buttons'}` };
   const footer = search && collection.total > collection.tracks.length + (collection.entities?.length || 0) ? botText(ui, 'partialResults') : '';
   const tabs: Button[] = search && collection.provider !== 'ytm' ? (['track', 'album', 'artist', 'playlist'] as const).map(type => ({
     text: `${(collection.searchType || 'track') === type ? '✓ ' : ''}${botText(ui, type === 'track' ? 'single' : type)}`, callback_data: `type:${session.id}:${type}`,
@@ -166,10 +172,10 @@ export function selectionMessage(session: MusicSelection, ui: BotLanguage, names
     const panelTitle = providers ? botText(ui, 'chooseSource') : `「${versionTitle(tracks![0]!.title, 70)}」`;
     const note = botText(ui, providers ? 'sourceSearchScope' : 'sourceAvailability');
     const rows = chunks(buttons, 2);
-    rows.push([{ text: botText(ui, 'backResults'), callback_data: `list:${session.id}` }, { text: botText(ui, 'close'), callback_data: `close:${session.id}` }]);
+    rows.push([{ text: botText(ui, 'backResults'), callback_data: `list:${session.id}` }, { text: botText(ui, 'close'), callback_data: selectionCloseData(session) }]);
     return { text: [owner, `<b>${escapeHtml(panelTitle)}</b>`, escapeHtml(note)].filter(Boolean).join('\n'), parse_mode: 'HTML' as const,
-      link_preview_options: { is_disabled: true }, reply_markup: { inline_keyboard: rows }, rich_message: { html: `<p>${[owner, `<b>${escapeHtml(panelTitle)}</b>`, escapeHtml(note)].filter(Boolean).join('<br>')}</p>` + rows.slice(0, -1).map(row => `<tg-button-row>${row.map(richButton).join('')}</tg-button-row>`).join(''), skip_entity_detection: true },
-      rich_keyboard: { inline_keyboard: [rows.at(-1)!] } };
+      link_preview_options: { is_disabled: true }, reply_markup: { inline_keyboard: [...rows, [layout]] }, rich_message: { html: `<p>${[owner, `<b>${escapeHtml(panelTitle)}</b>`, escapeHtml(note)].filter(Boolean).join('<br>')}</p>` + rows.slice(0, -1).map(row => `<tg-button-row>${row.map(richButton).join('')}</tg-button-row>`).join(''), skip_entity_detection: true },
+      rich_keyboard: { inline_keyboard: [rows.at(-1)!, [layout]] } };
   }
   const details: string[] = [], tableRows: string[] = [], fallbackRows: Button[][] = [];
   visible.forEach((item, i) => {
@@ -191,7 +197,7 @@ export function selectionMessage(session: MusicSelection, ui: BotLanguage, names
     tableRows.push(`<tr><td valign="top">${richButton(pick)}${artists ? `<br>${escapeHtml(artists)}` : ''}</td><td valign="top" align="right">${escapeHtml(extra)}</td><td valign="top">${richButton(sourcePick)}${more ? `<br>${richButton(more)}` : ''}</td></tr>`);
     fallbackRows.push([{ text: versionTitle(shown.title, 56), callback_data: pick.callback_data }, sourcePick, ...(more ? [more] : [])]);
   });
-  const rows = [...(search ? [[filter]] : []), ...(tabs.length ? [tabs] : []), ...fallbackRows, navigation];
+  const rows = [...(search ? [[filter]] : []), ...(tabs.length ? [tabs] : []), ...fallbackRows, navigation, [layout]];
   const heading = `<tr><th>${escapeHtml(botText(ui, collection.entities ? key === 'artist' ? 'artist' : key === 'playlist' ? 'playlist' : 'album' : 'songArtist'))}</th><th align="right">${escapeHtml(botText(ui, collection.entities ? 'details' : 'duration'))}</th><th>${escapeHtml(botText(ui, 'source'))}</th></tr>`;
   const rich = `<p>${[owner, `<b>${escapeHtml(title)}</b>`, search ? richButton(filter) + ` · ${escapeHtml(kind)} · ${visible.length ? `${start + 1}–${start + visible.length} / ${items.length}` : ''}` : escapeHtml(summary)].filter(Boolean).join('<br>')}</p>` +
     (tabs.length ? `<p>${tabs.map(richButton).join(' · ')}</p>` : '') +
@@ -203,7 +209,7 @@ export function selectionMessage(session: MusicSelection, ui: BotLanguage, names
     !visible.length ? escapeHtml(botText(ui, 'noResults')) : '', footer,
     collection.warnings.length ? escapeHtml(botText(ui, 'partialSources')) : '',
   ].filter(Boolean).join('\n'), parse_mode: 'HTML' as const, link_preview_options: { is_disabled: true }, reply_markup: { inline_keyboard: rows },
-    rich_message: { html: rich, skip_entity_detection: true }, rich_keyboard: { inline_keyboard: [navigation] } };
+    rich_message: { html: rich, skip_entity_detection: true }, rich_keyboard: { inline_keyboard: [navigation, [layout]] } };
 }
 export const escapeHtml = (value: string) => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 export function shortText(value: string, max: number): string { const chars = [...value.replace(/[\r\n\t]+/g, ' ').trim()]; return chars.length > max ? chars.slice(0, max - 1).join('') + '…' : chars.join(''); }

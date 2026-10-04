@@ -44,8 +44,8 @@ test('one-character searches return cached native audio and per-user Chinese cap
   assert.equal(body.cache_time, 0); assert.equal(body.is_personal, true);
   assert.equal(result.type, 'audio'); assert.equal(result.audio_file_id, audio.fileId);
   assert.match(result.caption, /人是貓.*張卡斯/); assert.match(result.caption, /<blockquote expandable>/); assert.doesNotMatch(result.caption, /tg-spoiler/);
-  assert.ok(result.reply_markup.inline_keyboard.flat().some((b: any) => b.switch_inline_query_current_chat === track.albumUrl));
-  assert.ok(result.reply_markup.inline_keyboard.flat().some((b: any) => b.switch_inline_query_current_chat === 'https://music.163.com/artist?id=999'));
+  assert.ok(result.reply_markup.inline_keyboard.flat().some((b: any) => b.url === 'https://t.me/muismbot?start=browse_n_album_555'));
+  assert.ok(result.reply_markup.inline_keyboard.flat().some((b: any) => b.url === 'https://t.me/muismbot?start=browse_n_artist_999'));
   assert.deepEqual(h.calls.map(c => c.method), ['answerInlineQuery']);
   h.setPreferences({ ui: 'ja', names: 'original' });
   await h.inline.answer(query());
@@ -134,7 +134,8 @@ test('channel browsing uses a destination chooser rather than an unsupported cur
   await h.inline.answer({ ...query(), chat_type: 'channel' });
   const buttons = h.calls[0]!.body.results[0].reply_markup.inline_keyboard.flat();
   assert.ok(!buttons.some((button: any) => button.switch_inline_query_current_chat));
-  assert.ok(buttons.some((button: any) => button.switch_inline_query_chosen_chat?.allow_channel_chats));
+  assert.ok(buttons.some((button: any) => button.url?.includes('start=browse_n_album_')));
+  assert.ok(buttons.some((button: any) => button.switch_inline_query === track.sourceUrl));
 });
 
 
@@ -148,8 +149,9 @@ test('FLAC and unknown cached audio never invalidate an inline page or trigger a
     assert.equal(result.type, 'article');
     assert.equal(result.reply_markup.inline_keyboard[0][0].callback_data, 'ip:42:n:123');
     await h.inline.callback({ id: 'cb', from: { id: 42 }, inline_message_id: 'older-card', data: 'ix:42:n:123' });
-    assert.equal(h.calls.at(-1)!.method, 'editMessageText');
-    assert.ok(!h.calls.some(c => c.method === 'editMessageMedia' || c.method === 'sendAudio'));
+    assert.equal(h.calls.at(-1)!.method, 'editMessageMedia');
+    assert.equal(h.calls.at(-1)!.body.media.media,audio.fileId);
+    assert.ok(!h.calls.some(c => c.method === 'sendAudio'));
   }
   const h = harness();
   await h.inline.answer(query('spotify 塵'));
@@ -223,4 +225,25 @@ test('duplicate selection feedback shares work and metadata failures leave a ret
   await failure.chosen({ ...selected, inline_message_id: 'failed-card' });
   assert.equal(h.calls.at(-1)!.method, 'editMessageText'); assert.equal(h.calls.at(-1)!.body.inline_message_id, 'failed-card');
   assert.equal(h.calls.at(-1)!.body.reply_markup.inline_keyboard[0][0].callback_data, 'ip:42:n:123'); assert.doesNotMatch(h.calls.at(-1)!.body.text, /private API/);
+});
+
+test('Inline inserts cached native FLAC without conversion; only a definitive format rejection requests a derivative', async () => {
+  for (const rejection of [false, true, 'network'] as const) {
+    const native={ ...audio, audio:{ codec:'FLAC',lossless:true } };
+    const h=harness({ names:'original', record:native }); let conversions=0, edits=0;
+    (h.deps as any).acquire=async()=>native;
+    (h.deps as any).fallbackPlayback=async()=>{ conversions++; return { ...audio,presentation:'telegram-playback' }; };
+    h.deps.telegram=async(method,body)=>{
+      h.calls.push({method,body});
+      if(method==='editMessageMedia' && ++edits===1 && rejection) {
+        if(rejection==='network') throw new Error('Network interruption');
+        throw new TelegramRequestError(400,'Unsupported audio file type');
+      }
+      return true;
+    };
+    await h.inline.chosen({ result_id:'netease:123', from:{id:42}, inline_message_id:'native-flac-inline',query:'Fixture' });
+    assert.equal(conversions,rejection===true?1:0);
+    if(!rejection) { assert.equal(h.calls.at(-1)!.method,'editMessageMedia'); assert.doesNotMatch(h.calls.at(-1)!.body.media.caption,/MP3 conversion/); }
+    if(rejection===true) assert.match(h.calls.at(-1)!.body.media.caption,/MP3 conversion/);
+  }
 });

@@ -45,7 +45,7 @@ test('localized music captions and buttons never change source names, file names
     const caption = String(form.get('caption'));
     const details = /<blockquote expandable>([\s\S]+)<\/blockquote>/.exec(caption)?.[1];
     assert.ok(details && details.split('\n').filter(Boolean).length > 3, 'short metadata must exceed Telegram’s three-line quote preview');
-    assert.doesNotMatch(caption, /tg-spoiler|\n\n/);
+    assert.doesNotMatch(caption, /tg-spoiler/);
     const cached = musicReferencePayload({ chatId: upload.chatId, track, job: upload.job, fileId: 'cached-audio', kind: 'audio', duration: upload.duration, uiLanguage: language });
     assert.equal(cached.get('caption'), caption);
     assert.equal((form.get('audio') as File).name, upload.filename);

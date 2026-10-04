@@ -25,6 +25,7 @@ interface Dependencies {
   cache: (track: Track) => Promise<CachedMusic | undefined>;
   metadata: (track: Track) => Promise<Track>;
   acquire?: (track: Track) => Promise<CachedMusic>;
+  fallbackPlayback?: (track: Track) => Promise<CachedMusic>;
   invalidate?: (track: Track, record: CachedMusic) => Promise<void>;
   chooseNames?: (userId: number, language: AlbumLanguage) => Promise<void>;
 }
@@ -66,6 +67,19 @@ export function parseInlineQuery(value: string) {
   if (link && !providers.includes(link.provider)) throw new ServiceError('UNSUPPORTED_LINK', '此來源請使用網頁播放器。');
   if (link) provider = link.provider;
   return { input, provider, kind, albums: albums && link?.kind === 'artist' };
+}
+export function browseStart(provider: Provider, kind: 'album' | 'artist', id: string): string {
+  validateTrackId(provider, id);
+  const code = codes[provider];
+  if (!code) throw new ServiceError('UNSUPPORTED_LINK', 'Unsupported browse source');
+  return `browse_${code}_${kind}_${id}`;
+}
+export function parseBrowseStart(value: string): { provider: Provider; kind: 'album' | 'artist'; id: string; url: string } | undefined {
+  const match = /^browse_([ns])_(album|artist)_([a-zA-Z0-9]{1,22})$/.exec(value);
+  if (!match) return;
+  const provider = codeProviders[match[1]!]!, kind = match[2] as 'album' | 'artist', id = match[3]!;
+  validateTrackId(provider, id);
+  return { provider, kind, id, url: provider === 'netease' ? `https://music.163.com/${kind}?id=${id}` : `https://open.spotify.com/${kind}/${id}` };
 }
 function thumbnail(raw: string): Record<string, string> {
   try {
@@ -117,10 +131,10 @@ export class BotInline {
     const row: Record<string, string>[] = [];
     try {
       const album = track.albumUrl ? parseMusicLink(track.albumUrl) : undefined;
-      if (album?.kind === 'album' && album.provider === track.provider) row.push({ text: botText(ui, 'album'), switch_inline_query_current_chat: album.url });
+      if (album?.kind === 'album' && album.provider === track.provider) row.push({ text: botText(ui, 'album'), url: `https://t.me/${this.deps.username()}?start=${browseStart(album.provider, 'album', album.id)}` });
     } catch { /* Untrusted upstream reference. */ }
     const artist = track.artistIds?.[0];
-    if (artist && (track.provider === 'netease' ? /^\d{1,16}$/ : /^[a-zA-Z0-9]{22}$/).test(artist) && track.provider !== 'ytm') row.push({ text: shortText(track.artists[0] || botText(ui, 'artist'), 20), switch_inline_query_current_chat: track.provider === 'netease' ? `https://music.163.com/artist?id=${artist}` : `https://open.spotify.com/artist/${artist}` });
+    if (artist && (track.provider === 'netease' ? /^\d{1,16}$/ : /^[a-zA-Z0-9]{22}$/).test(artist) && track.provider !== 'ytm') row.push({ text: shortText(track.artists[0] || botText(ui, 'artist'), 20), url: `https://t.me/${this.deps.username()}?start=${browseStart(track.provider, 'artist', artist)}` });
     row.push({ text: `${botText(ui, 'source')} ↗`, url: track.sourceUrl });
     rows.push(row);
     rows.push([...(playback ? [{ text: botText(ui, 'originalFile'), url: `https://t.me/${this.deps.username()}?start=${inlineStart(track).replace(/^in_/, 'raw_')}` }] : []), { text: botText(ui, 'share'), switch_inline_query: track.sourceUrl }]);
@@ -244,8 +258,11 @@ export class BotInline {
       let record = await acquire(track);
       try { await edit(record); }
       catch (error) {
-        if (!rejectedFileId(error) || !this.deps.invalidate) throw error;
-        await this.deps.invalidate(track, record); record = await acquire(track); await edit(record);
+        if (rejectedFileId(error) && this.deps.invalidate) {
+          await this.deps.invalidate(track, record); record = await acquire(track); await edit(record);
+        } else if (track.provider === 'netease' && record.audio?.lossless && this.deps.fallbackPlayback && error instanceof TelegramRequestError && error.errorCode === 400 && /audio|file type|wrong file|MEDIA_INVALID/i.test(error.description)) {
+          record = await this.deps.fallbackPlayback(track); await edit(record);
+        } else throw error;
       }
     } catch (error) {
       if (error instanceof TelegramRequestError && /message is not modified/i.test(error.description)) return;
@@ -293,7 +310,7 @@ export class BotInline {
     try {
       const track = await this.deps.getTrack(codeProviders[match[2]!]!, match[3]!);
       const [record, visible] = await Promise.all([this.deps.cache(track), this.visible(track, names)]);
-      if (!record || record.kind === 'audio' && !cachedInlineAudio(record)) {
+      if (!record) {
         await this.deps.telegram('editMessageText', { inline_message_id: callback.inline_message_id, text: `${escapeHtml(visible.title)}\n${escapeHtml(botText(ui, 'inlinePrivate'))}`, parse_mode: 'HTML', reply_markup: markup(visible, { url: this.privateUrl(track) }) }); return;
       }
       await this.deps.telegram('editMessageMedia', { inline_message_id: callback.inline_message_id,
