@@ -123,7 +123,7 @@ export function selectionMessage(session: MusicSelection, ui: BotLanguage) {
   return { text: [session.chatId < 0 ? `<a href="tg://user?id=${session.userId}">${escapeHtml(shortText(session.userName || String(session.userId), 40))}</a>` : '', `<b>${escapeHtml(shortText(collection.title, 90))}</b>`, escapeHtml(summary), artistView ? escapeHtml(artistView) : '', '',
     ...(details.length ? details : [escapeHtml(botText(ui, 'noResults')), '']),
     details.length && session.chatId < 0 ? escapeHtml(botText(ui, 'chooseNumberGroup')) : '',
-    collection.total > items.length ? `<tg-spoiler>${escapeHtml(botText(ui, 'resultsLimit', { total: collection.total, loaded: items.length }))}</tg-spoiler>` : '',
+    collection.total > items.length ? `<blockquote expandable>${escapeHtml(botText(ui, 'resultsLimit', { total: collection.total, loaded: items.length }))}</blockquote>` : '',
   ].filter((text, index, all) => text || (index > 0 && all[index - 1])).join('\n'), parse_mode: 'HTML', link_preview_options: { is_disabled: true }, reply_markup: { inline_keyboard: rows } };
 }
 export const escapeHtml = (value: string) => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');

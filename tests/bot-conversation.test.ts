@@ -27,6 +27,8 @@ test('selection numbers are scoped to user/chat, absolute across pages, and expi
   const page = selectionMessage(session, 'en');
   assert.match(page.text, /6–10 \/ 10/); assert.match(page.text, /Loaded 10 \/ 12 results/);
   assert.match(page.text, /醜奴兒 · 2:30/);
+  assert.match(page.text, /<blockquote expandable>Loaded 10 \/ 12 results<\/blockquote>/);
+  assert.doesNotMatch(page.text, /tg-spoiler/);
   assert.equal(page.reply_markup.inline_keyboard[1]![0]!.callback_data, `pick:${session.id}:5`);
   assert.equal(page.reply_markup.inline_keyboard.at(-1)![0]!.callback_data, `page:${session.id}:0`);
   now += 30 * 60_000;
