@@ -18,6 +18,6 @@ export async function api<T>(url: string, init: RequestInit = {}): Promise<T> {
   catch {
     throw new Error(response.status === 504 ? '音樂服務回應超時，請稍後重試。' : response.ok ? '服務回應格式異常，請重新整理後再試。' : '音樂服務暫時無法連接，請稍後重試。');
   }
-  if (!response.ok) throw new Error(typeof body?.message === 'string' ? body.message : '操作失敗，請稍後再試。');
+  if (!response.ok) throw Object.assign(new Error(typeof body?.message === 'string' ? body.message : '操作失敗，請稍後再試。'), { code: typeof body?.code === 'string' ? body.code : undefined });
   return body as T;
 }

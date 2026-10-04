@@ -2,7 +2,7 @@
   import { onMount, tick } from 'svelte';
   import { fade } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
-  import { Library, House, Search, Download, ArrowRight, ChevronLeft, PanelRight, X, Play, Pause, SkipBack, SkipForward, Volume2, Music2, LoaderCircle, ExternalLink } from '@lucide/svelte';
+  import { Library, House, Search, Download, ArrowRight, ChevronLeft, PanelRight, X, Play, Pause, SkipBack, SkipForward, Volume2, Music2, LoaderCircle, ExternalLink, RotateCcw } from '@lucide/svelte';
   import TrackList from './MusicTrackList.svelte';
   import SelectMenu from './SelectMenu.svelte';
   import DownloadQueue from './QueueList.svelte';
@@ -19,7 +19,7 @@
   type View = { collection: Collection; selected: string[]; format: string; input: string; source: string };
   let previous = $state<View[]>([]), viewInput = '', viewSource = 'all';
   let queueTrigger: HTMLElement | undefined;
-  let searchInput: HTMLInputElement, panel: HTMLElement, drawer: HTMLElement;
+  let searchInput: HTMLInputElement, panel: HTMLElement, drawer: HTMLElement, playerElement: HTMLElement;
   let searchRequest: AbortController | undefined, noticeTimer: ReturnType<typeof setTimeout> | undefined;
   const queue = createDownloadState();
   const player = createPreviewState(() => { if (continuous) void adjacent(1, false); });
@@ -42,10 +42,12 @@
 
   onMount(() => {
     const stopQueue = queue.start(), stopPlayer = player.mount();
+    const resizePlayer = new ResizeObserver(() => document.documentElement.style.setProperty('--player-height', `${playerElement.getBoundingClientRect().height}px`));
+    resizePlayer.observe(playerElement);
     const media = matchMedia('(prefers-reduced-motion: reduce)'); reduced = media.matches;
     const motion = () => reduced = media.matches; media.addEventListener('change', motion);
     try { const saved: unknown = JSON.parse(localStorage.getItem('ismusicnow-recent') || '[]'); if (Array.isArray(saved)) recent = saved.filter((item) => item && typeof item.input === 'string' && typeof item.title === 'string' && typeof item.artist === 'string' && typeof item.cover === 'string' && ['track', 'album', 'playlist', 'search'].includes(item.kind) && ['all', 'netease', 'spotify', 'ytm'].includes(item.provider)).slice(0, 8); } catch { /* Browsing works without local storage. */ }
-    return () => { searchRequest?.abort(); clearTimeout(noticeTimer); stopQueue(); stopPlayer(); media.removeEventListener('change', motion); };
+    return () => { resizePlayer.disconnect(); document.documentElement.style.removeProperty('--player-height'); searchRequest?.abort(); clearTimeout(noticeTimer); stopQueue(); stopPlayer(); media.removeEventListener('change', motion); };
   });
   $effect(() => {
     return setTelegramBack(queueOpen ? closeQueue : collection ? (previous.length ? back : home) : null);
@@ -60,7 +62,7 @@
       if (searchRequest !== request) return;
       if (collection) previous = [...previous.slice(-11), { collection, selected: [...selected], format, input: viewInput, source: viewSource }];
       viewInput = value; viewSource = provider;
-      collection = result; selected = result.tracks.slice(0, 1).map((track) => `${track.provider}:${track.id}`); format = 'original';
+      player.clearFailure(); collection = result; selected = result.tracks.slice(0, 1).map((track) => `${track.provider}:${track.id}`); format = 'original';
       const track = result.tracks[0];
       if (track) {
         recent = [{ input: value, provider, title: result.title, artist: result.kind === 'search' ? '搜尋結果' : track.artists.join(' / '), cover: track.cover, kind: result.kind }, ...recent.filter((item) => item.input !== value || item.provider !== provider)].slice(0, 8);
@@ -96,7 +98,7 @@
     } catch (e) { error = e instanceof Error ? e.message : '無法取得完整音訊。'; }
     finally { adding = false; }
   }
-  function home() { collection = null; selected = []; input = ''; previous = []; continuous = false; }
+  function home() { player.clearFailure(); collection = null; selected = []; input = ''; previous = []; continuous = false; }
   function back() {
     const last = previous.at(-1);
     if (!last) return;
@@ -132,14 +134,14 @@
   <nav class="mobile-nav" aria-label="行動版導覽"><a class="icon-button" href="/guide" aria-label="使用指南"><Library size={18} /></a><button class="icon-button" aria-label="下載佇列" aria-expanded={queueOpen} onclick={openQueue}><Download size={18} /></button></nav>
   <div class="header-links"><a href="https://github.com/LZSMIAO/ismusicnow" target="_blank" rel="noreferrer">GitHub ↗</a><a href="https://t.me/muismbot" target="_blank" rel="noreferrer">Telegram ↗</a></div>
 </header>
-<div class="workspace" class:preview-hidden={!previewVisible} class:empty={!collection && !loading}>
+<div class="workspace" class:preview-hidden={!previewVisible} class:empty={!collection && !loading} class:search-results={collection?.kind === 'search'}>
   <aside class="library" aria-label="音樂導覽">
     <div class="library-head"><Library size={22} /><span>你的音樂</span></div><nav class="side-nav"><button class:active={collection?.kind !== 'search'} onclick={home} aria-label="最近開啟"><House size={20} /><span>最近開啟</span></button><button class:active={collection?.kind === 'search'} onclick={() => searchInput.focus()} aria-label="搜尋音樂"><Search size={20} /><span>搜尋</span></button><button onclick={openQueue} aria-label="下載佇列"><Download size={20} /><span>下載佇列</span>{#if queue.jobs.length}<span class="badge">{queue.jobs.length}</span>{/if}</button></nav>
     {#if recent.length}<div class="recent-heading">最近開啟</div>{#each recent as item (`${item.provider}:${item.input}`)}<button class="recent-album" aria-label={`重新開啟 ${item.title}`} onclick={() => void resolve(item.input, item.provider)}><span class="recent-cover">{#if item.cover}<img src={item.cover} alt="" width="48" height="48" referrerpolicy="no-referrer" onerror={(e) => (e.currentTarget as HTMLImageElement).hidden = true} />{:else}<Music2 size={22} />{/if}</span><span><strong>{item.title}</strong><small>{item.artist}</small></span></button>{/each}{/if}
     <div class="side-footer"><a href="/guide">使用指南 ↗</a><a href="/downloads">全部下載 ↗</a></div>
   </aside>
   <main class="main-panel" id="main" bind:this={panel} aria-busy={loading}>
-    <div class="panel-navigation"><button class="back-button" aria-label="回到上一頁" disabled={!previous.length} onclick={back}><ChevronLeft size={20} /></button><span>{loading ? '正在搜尋' : collection?.title || '音樂'}</span><button class="icon-button" aria-label={previewVisible ? '收起預覽面板' : '展開預覽面板'} aria-pressed={previewVisible} onclick={() => previewVisible = !previewVisible}><PanelRight size={20} /></button></div>
+    <div class="panel-navigation"><button class="back-button" aria-label="回到上一頁" disabled={!previous.length} onclick={back}><ChevronLeft size={20} /></button><span>{loading ? '正在搜尋' : collection?.kind === 'search' ? `歌曲 · ${collection.tracks.length} 首` : collection?.title || '音樂'}</span><button class="icon-button" aria-label={previewVisible ? '收起預覽面板' : '展開預覽面板'} aria-pressed={previewVisible} onclick={() => previewVisible = !previewVisible}><PanelRight size={20} /></button></div>
     {#if error}<div class="error-banner" role="alert"><span>{error}</span><button class="icon-button" aria-label="關閉錯誤訊息" onclick={() => error = ''}><X size={18} /></button></div>{/if}
     {#if loading}<div class="loading-results" aria-label="正在讀取音樂資料"><div class="skeleton-album"><div class="skeleton skeleton-cover"></div><div><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-text"></div></div></div>{#each [1,2,3,4,5] as n (n)}<div class="skeleton skeleton-row"></div>{/each}</div>
     {:else if collection}
@@ -167,17 +169,18 @@
       <div class="preview-head"><h2>歌曲預覽</h2><button class="icon-button" aria-label="收起預覽面板" onclick={() => previewVisible = false}><X size={18} /></button></div>
       {#if active}<div class="preview-cover">{#if active.cover}<img src={active.cover} alt={`${active.album || active.title} 封面`} referrerpolicy="no-referrer" onerror={(e) => (e.currentTarget as HTMLImageElement).hidden = true} />{:else}<Music2 size={56} />{/if}</div><div class="preview-title"><h3>{active.title}</h3><p>{active.artists.join(' / ')}</p></div><div class="preview-info"><span>{providerNames[active.provider]}</span>{#if player.track && player.status !== 'loading' && player.status !== 'unavailable' && player.status !== 'error'}<span>{player.limited ? '平台試聽片段' : '完整播放'}</span>{/if}</div>
         {#if player.error && player.track}<p class="preview-message" role="status">{player.error}</p><a class="text-button" href={player.track.sourceUrl} target="_blank" rel="noreferrer">在原平台播放 <ExternalLink size={14} /></a>{/if}
-        {#if player.track && (player.error || player.limited)}<button class="text-button" disabled={adding} onclick={() => player.track && void downloadForPlayback(player.track)}><Download size={14} />{adding ? '正在加入' : '下載完整音訊'}</button>{/if}
+        {#if player.track && player.canDownload && (player.error || player.limited)}<button class="text-button" disabled={adding} onclick={() => player.track && void downloadForPlayback(player.track)}><Download size={14} />{adding ? '正在加入' : '下載完整音訊'}</button>{/if}
         {#if nextTrack}<section class="next-preview"><h3>下一首</h3><button class="next-song" onclick={() => preview(nextTrack!)}><span class="next-cover">{#if nextTrack.cover}<img src={nextTrack.cover} alt="" width="40" height="40" referrerpolicy="no-referrer" onerror={(e) => (e.currentTarget as HTMLImageElement).hidden = true} />{:else}<Music2 size={16} />{/if}</span><span><strong>{nextTrack.title}</strong><small>{nextTrack.artists.join(' / ')}</small></span><Play size={18} /></button></section>{/if}
       {:else}<p class="preview-empty">尚未選擇歌曲</p>{/if}
     </aside>
   {/if}
 </div>
-<section class="player" aria-label="音樂播放器">
-  <div class="now-playing"><span class="player-cover">{#if active?.cover}<img src={active.cover} alt="" width="56" height="56" referrerpolicy="no-referrer" onerror={(e) => (e.currentTarget as HTMLImageElement).hidden = true} />{:else}<Music2 size={24} />{/if}</span><span><strong>{active?.title || '尚未播放'}</strong><small>{active?.artists.join(' / ') || 'MUISM · 音樂主義'}</small></span></div>
-  <div class="player-center"><div class="transport"><button aria-label="上一首" disabled={!collection?.tracks.length} onclick={() => { continuous = false; void adjacent(-1); }}><SkipBack size={18} fill="currentColor" /></button><button class="player-play" aria-label={isPlaying ? '暫停播放' : '播放音樂'} disabled={!active} onclick={() => active && preview(active)}>{#if player.status === 'loading'}<LoaderCircle size={18} class="loading-icon" />{:else if isPlaying}<Pause size={18} fill="currentColor" />{:else}<Play size={18} fill="currentColor" />{/if}</button><button aria-label="下一首" disabled={!collection?.tracks.length} onclick={() => { continuous = false; void adjacent(1); }}><SkipForward size={18} fill="currentColor" /></button></div><div class="seek-line"><span>{player.elapsed ? duration(player.elapsed * 1000) : '0:00'}</span><input type="range" min="0" max={player.length} step=".1" value={player.elapsed} disabled={!player.ready} aria-label="播放進度" style={`--played:${player.length ? player.elapsed / player.length * 100 : 0}%`} oninput={(e) => player.seek(Number(e.currentTarget.value))} /><span>{duration(player.length * 1000)}</span></div></div>
+<section class="player" bind:this={playerElement} aria-label="音樂播放器">
+  <div class="now-playing"><span class="player-cover">{#if active?.cover}<img src={active.cover} alt="" width="56" height="56" referrerpolicy="no-referrer" onerror={(e) => (e.currentTarget as HTMLImageElement).hidden = true} />{:else}<Music2 size={24} />{/if}</span><span><strong>{active?.title || '尚未播放'}</strong><small>{#if active}<span class="player-source">{providerNames[active.provider]} · </span>{/if}{active?.artists.join(' / ') || 'MUISM · 音樂主義'}</small></span></div>
+  <div class="player-center"><div class="transport"><button aria-label="上一首" disabled={!collection?.tracks.length} onclick={() => { continuous = false; void adjacent(-1); }}><SkipBack size={18} fill="currentColor" /></button><button class="player-play" aria-label={isPlaying ? '暫停播放' : player.error ? '重試播放' : '播放音樂'} disabled={!active} onclick={() => active && preview(active)}>{#if player.status === 'loading'}<LoaderCircle size={18} class="loading-icon" />{:else if isPlaying}<Pause size={18} fill="currentColor" />{:else if player.error}<RotateCcw size={18} />{:else}<Play size={18} fill="currentColor" />{/if}</button><button aria-label="下一首" disabled={!collection?.tracks.length} onclick={() => { continuous = false; void adjacent(1); }}><SkipForward size={18} fill="currentColor" /></button></div><div class="seek-line"><span>{player.elapsed ? duration(player.elapsed * 1000) : '0:00'}</span><input type="range" min="0" max={player.length} step=".1" value={player.elapsed} disabled={!player.ready} aria-label="播放進度" style={`--played:${player.length ? player.elapsed / player.length * 100 : 0}%`} oninput={(e) => player.seek(Number(e.currentTarget.value))} /><span>{player.ready ? duration(player.length * 1000) : '—'}</span></div></div>
   <div class="player-right"><button class="icon-button" aria-label="下載佇列" aria-expanded={queueOpen} onclick={openQueue}><Download size={18} /></button><Volume2 size={18} /><input type="range" min="0" max="1" step=".01" value={player.volume} aria-label="音量" oninput={(e) => player.setVolume(Number(e.currentTarget.value))} /><button class="icon-button" aria-label="切換預覽面板" aria-pressed={previewVisible} onclick={() => previewVisible = !previewVisible}><PanelRight size={18} /></button></div>
+  {#if player.track?.provider === 'spotify' && player.remaining !== undefined}<p class="playback-budget">今日剩餘 {player.remaining} / 5 首 · 00:00 重置</p>{/if}
+  {#if player.error || player.preparing}<div class="playback-status" class:preview-collapsed={!previewVisible} role="status"><p>{player.error || player.preparing}</p><div class="playback-status-actions">{#if player.error && player.track && player.canDownload}<button class="text-button" disabled={adding} onclick={() => player.track && void downloadForPlayback(player.track)}><Download size={16} />{adding ? '正在加入' : '下載後播放'}</button>{/if}{#if player.error && player.track}<a class="text-button" href={player.track.sourceUrl} target="_blank" rel="noreferrer">在 {providerNames[player.track.provider]} 播放 <ExternalLink size={14} /></a>{/if}</div></div>{/if}
 </section>
-{#if player.error}<div class="mobile-preview-error" class:preview-collapsed={!previewVisible} role="status"><span>{player.error}</span>{#if player.track}<button class="text-button" disabled={adding} onclick={() => player.track && void downloadForPlayback(player.track)}>下載完整音訊</button>{/if}{#if player.track}<a href={player.track.sourceUrl} target="_blank" rel="noreferrer">原平台 ↗</a>{/if}</div>{/if}
 <div role="dialog" aria-modal="false" class="queue-drawer" bind:this={drawer} popover tabindex="-1" onkeydown={queueKeyboard} aria-label="下載佇列面板" ontoggle={(event) => queueOpen = event.newState === 'open'}><button class="icon-button queue-close" aria-label="關閉下載佇列" onclick={closeQueue}><X size={18} /></button><DownloadQueue jobs={queue.jobs} busy={queue.busy} error={queue.error} onclear={() => queue.clear()} onretry={(job) => queue.retry(job)} /></div>
 {#if notice}<div class="toast" role="status" in:fade={{ duration: reduced ? 0 : 160 }} out:fade={{ duration: reduced ? 0 : 120 }}><span>{notice}</span><button class="icon-button" aria-label="關閉提示" onclick={() => notice = ''}><X size={16} /></button></div>{/if}

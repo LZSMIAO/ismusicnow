@@ -68,3 +68,63 @@ test('platform clips retain their real duration and are marked limited', async (
     assert.equal(player.status, 'playing');
   } finally { stop(); globalThis.Audio = originalAudio; globalThis.fetch = originalFetch; }
 });
+
+test('missing Spotify audio exposes the real capability and clears when leaving the failed song', async () => {
+  const originalAudio = globalThis.Audio, originalFetch = globalThis.fetch;
+  globalThis.Audio = Media as unknown as typeof Audio;
+  globalThis.fetch = async () => new Response(JSON.stringify({ available: false, downloadable: false, message: 'Spotify 未提供此曲試聽。請在原平台播放。' }));
+  const player = createPreviewState(() => {}), stop = player.mount();
+  try {
+    await player.play({ ...track, provider: 'spotify' }, []);
+    assert.equal(player.status, 'unavailable');
+    assert.equal(player.ready, false);
+    assert.equal(player.canDownload, false);
+    assert.equal(Media.latest.src, '');
+    assert.match(player.error, /Spotify/);
+    player.clearFailure();
+    assert.equal(player.track, null);
+    assert.equal(player.error, '');
+    assert.equal(player.length, 0);
+    assert.equal(player.status, 'idle');
+    await player.play(track, [job]);
+    assert.equal(player.status, 'playing');
+    assert.equal(player.canDownload, true);
+    player.clearFailure();
+    assert.equal(player.status, 'playing'); // A new search never cuts off healthy playback.
+  } finally { stop(); globalThis.Audio = originalAudio; globalThis.fetch = originalFetch; }
+});
+
+test('Spotify full playback uses the listening endpoint, not the 30-second preview endpoint', async () => {
+  const originalAudio = globalThis.Audio, originalFetch = globalThis.fetch;
+  const calls: string[] = [];
+  globalThis.Audio = Media as unknown as typeof Audio;
+  globalThis.fetch = async input => {
+    calls.push(String(input));
+    return new Response(JSON.stringify({available:true,status:'completed',url:'https://music.ism.tw/api/listen/spotify/test/audio?grant=signed',limited:false,downloadable:true,remaining:4}));
+  };
+  const player = createPreviewState(() => {}), stop = player.mount();
+  try {
+    await player.play({...track,provider:'spotify'},[]);
+    assert.deepEqual(calls,['/api/listen/spotify']);
+    assert.equal(player.limited,false);
+    assert.equal(player.length,245.5);
+    assert.equal(player.remaining,4);
+    assert.equal(player.status,'playing');
+    player.seek(120); assert.equal(player.elapsed,120);
+  } finally {stop();globalThis.Audio=originalAudio;globalThis.fetch=originalFetch;}
+});
+
+test('iPhone gesture blocking leaves prepared full audio ready for the next tap', async () => {
+  const originalAudio=globalThis.Audio,originalFetch=globalThis.fetch;
+  let attempts=0,requests=0;
+  class GestureMedia extends Media { async play() { if (++attempts===1) throw new DOMException('Gesture needed','NotAllowedError'); await super.play(); } }
+  globalThis.Audio=GestureMedia as unknown as typeof Audio;
+  globalThis.fetch=async()=>{requests++;return new Response(JSON.stringify({available:true,url:'https://music.ism.tw/full.m4a',limited:false,downloadable:true}));};
+  const player=createPreviewState(()=>{}),stop=player.mount();
+  try {
+    await player.play({...track,provider:'spotify'},[]);
+    assert.equal(player.status,'paused'); assert.match(player.error,/按播放/); assert.equal(player.ready,false);
+    await player.play({...track,provider:'spotify'},[]);
+    assert.equal(player.status,'playing'); assert.equal(player.error,''); assert.equal(requests,1);
+  }finally{stop();globalThis.Audio=originalAudio;globalThis.fetch=originalFetch;}
+});

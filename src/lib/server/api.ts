@@ -1,3 +1,4 @@
+import { clientAddress } from './client-address.js';
 import { json } from '@sveltejs/kit';
 import type { RequestEvent } from '@sveltejs/kit';
 import type { ZodType } from 'zod';
@@ -18,7 +19,7 @@ export async function readInput<T>(request: Request, schema: ZodType<T>): Promis
 
 const windows = new Map<string, { count: number; until: number }>();
 export function rateLimit(event: RequestEvent): void {
-  const key = event.getClientAddress();
+  const key = clientAddress(event);
   const now = Date.now();
   for (const [ip, window] of windows) if (window.until < now) windows.delete(ip);
   const window = windows.get(key) || { count: 0, until: now + 60_000 };

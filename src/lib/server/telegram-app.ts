@@ -33,7 +33,7 @@ export function telegramUserAllowed(raw: string, allowed = process.env.BOT_ALLOW
  * No user data or bot credentials are placed in the URL. */
 export class MediaGrants {
   constructor(private secret: string | Buffer = randomBytes(32)) {}
-  issue(owner: string, job: string, purpose: 'file' | 'preview', now = Date.now()): string {
+  issue(owner: string, job: string, purpose: 'file' | 'preview' | 'listen', now = Date.now()): string {
     const payload = Buffer.from(JSON.stringify({ owner, job, purpose, expires: now + (purpose === 'file' ? 600_000 : 3_600_000) })).toString('base64url');
     return `${payload}.${createHmac('sha256', this.secret).update(`ismusicnow:media:${payload}`).digest('base64url')}`;
   }

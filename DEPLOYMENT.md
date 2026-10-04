@@ -2,7 +2,7 @@
 
 MUISM 品牌與 Telegram 視窗修正：網頁標題、頁首、播放器與指南統一 MUISM · 音樂主義，bot 選單改「開啟播放器」。Mini App 使用固定 WebView 殼層，搜尋框與播放器固定，曲目及指南內部捲動；空白頁不再因最低內容高度撐出整頁捲動條。
 
-Telegram Mini App：bot 選單「ismusicnow」和 `/app` 直接開啟 https://music.ism.tw，支援安全區、動態視窗與原生返回鍵。API 驗證 Telegram initData 的 HMAC 與 24 小時時效，帳號下載佇列持久隔離；已下載音訊與原生保存使用限定用途的短效簽名連結（保存 10 分鐘、播放 1 小時），不依賴第三方 Cookie。Telegram 8.0+ 使用原生下載，較舊版本開啟同一短效連結。`BOT_WEB_APP_URL` 可改 HTTPS 入口，預設正式網址；主 Mini App 的 profile Open App 若需要可另外由 BotFather 開啟。
+Telegram Mini App：bot 選單「開啟播放器」和 `/app` 直接開啟 https://music.ism.tw，支援安全區、動態視窗與原生返回鍵。API 驗證 Telegram initData 的 HMAC 與 24 小時時效，帳號下載佇列持久隔離；已下載音訊與原生保存使用限定用途的短效簽名連結（保存 10 分鐘、播放 1 小時），不依賴第三方 Cookie。Telegram 8.0+ 使用原生下載，較舊版本開啟同一短效連結。`BOT_WEB_APP_URL` 可改 HTTPS 入口，預設正式網址；主 Mini App 的 profile Open App 若需要可另外由 BotFather 開啟。
 
 2026-10-04：網頁播放器移除本站固定 30 秒上限，使用音訊實際時長，真正播放結束才自動換曲；完整網易雲音源及同一 session 已下載檔案均可完整播放。Spotify 官方片段與網易雲試聽權限明確標示，無直接播放來源時提供完整音訊下載入口。線上 FLAC 驗證時長 4:05，播放至 1:36；55 項測試通過。
 
@@ -58,3 +58,9 @@ docker compose up -d --build
 備份 `.env`、`secrets/` 和 `data/` 至私人位置。原始碼更新不要覆蓋這些內容。
 
 `main` 是重寫版本，`v2` 保留原版。2026-10-04 已解除 GitHub fork 關係，成為獨立倉庫；完整 Git 歷史已先備份。不推送 codex 分支。
+
+## Spotify 完整在線播放
+
+每個 IP 每日最多 5 首不同的 Spotify 曲目，UTC+8 每日 00:00 重置；同曲重播不重複計數，準備失敗退回預留額度。額度保存在 DATA_DIR/spotify-listening，重啟服務不清空。前五首使用獨立的原音源快取，準備完後串流完整 AAC/M4A 播放副本，支援 iPhone WebView 與 HTTP Range；下載仍保留原始音訊。第六首顯示下載操作，完成的使用者下載檔可播放，不再占在線額度。
+
+反向代理需覆寫 X-MUISM-Client-IP，web 容器設定 SPOTIFY_LISTEN_IP_HEADER=x-muism-client-ip；不能直接信任使用者傳入的 X-Forwarded-For/CF-Connecting-IP。Cloudflare 真實 IP 只接受官方 IP 網段。播放授權綁定 IP、曲目、檔案及用途，不接受下載用途授權。手機版播放器與狀態訊息在同一版面，列表獨立捲動，來源與下載操作保持可見。
