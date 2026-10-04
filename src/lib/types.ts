@@ -1,6 +1,12 @@
 export type Provider = 'netease' | 'spotify' | 'ytm';
 export type SearchSource = Provider | 'all';
 export type DownloadFormat = 'original' | 'mp3' | 'flac';
+export type MusicSearchKind = 'track' | 'album' | 'artist' | 'playlist';
+export interface MusicEntity {
+  id: string; provider: Provider; kind: Exclude<MusicSearchKind, 'track'>;
+  title: string; artists: string[]; sourceUrl: string; cover: string;
+  year?: string; count?: number;
+}
 
 export interface Track {
   id: string;
@@ -19,11 +25,15 @@ export interface Track {
 export interface Collection {
   title: string;
   provider: Provider;
-  kind: 'search' | 'track' | 'album' | 'playlist';
+  kind: 'search' | MusicSearchKind;
   tracks: Track[];
   total: number;
   warnings: string[];
   providers?: Provider[];
+  entities?: MusicEntity[];
+  searchType?: MusicSearchKind;
+  query?: string;
+  sourceUrl?: string;
 }
 
 export interface DownloadJob {
