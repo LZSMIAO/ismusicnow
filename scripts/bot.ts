@@ -1,11 +1,13 @@
 import { readFile, stat } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { extname, resolve } from 'node:path';
 import { DownloadStore } from '../src/lib/server/downloads.js';
 import { publicError, ServiceError } from '../src/lib/server/errors.js';
 import { resolveMusic, getTrack } from '../src/lib/server/music.js';
 import { neteaseLyrics } from '../src/lib/server/providers/netease.js';
 import { safeFilename } from '../src/lib/server/links.js';
 import { resolveNeteaseCommand } from '../src/lib/server/bot-input.js';
+import { BotLanguageSettings, BotSettingsStore, displayTrack, type AlbumLanguage } from '../src/lib/server/bot-settings.js';
+import { audioPresentation, sendMusic, TelegramRequestError } from '../src/lib/server/bot-media.js';
 import type { Track, Provider, Collection } from '../src/lib/types.js';
 
 const token = process.env.BOT_TOKEN;
@@ -24,16 +26,18 @@ export async function telegram<T>(method: string, body: Record<string, unknown> 
   const response = await fetch(`${endpoint}${method}`, { method: 'POST',
     headers: body instanceof FormData ? undefined : { 'Content-Type': 'application/json' },
     body: body instanceof FormData ? body : JSON.stringify(body), signal: AbortSignal.timeout(method === 'getUpdates' ? 40_000 : 120_000) });
-  const data = await response.json() as { ok: boolean; result: T };
-  if (!data.ok) throw new ServiceError('TELEGRAM_ERROR', 'Telegram 暫時無法處理請求。', 502);
+  const data = await response.json() as { ok: boolean; result: T; error_code?: number; description?: string };
+  if (!data.ok) throw new TelegramRequestError(data.error_code || response.status, data.description || '');
   return data.result;
 }
 const send = (chatId: number, text: string, extra: Record<string, unknown> = {}) => telegram('sendMessage', { chat_id: chatId, text: text.slice(0, 4000), ...extra });
 function permitted(id: number): boolean { return !allowed.size || allowed.has(String(id)); }
+const preferences = new BotLanguageSettings(new BotSettingsStore(), send, sendTrack);
 
-async function sendTrack(chatId: number, userId: number, track: Track): Promise<void> {
+async function sendTrack(chatId: number, userId: number, track: Track, language: AlbumLanguage, messageId: number): Promise<void> {
   const owner = `tg:${chatId}:${userId}`;
-  await send(chatId, `正在獲取「${track.title}」的 ${track.provider === 'ytm' ? 'YTM' : track.provider} 原始音源…`);
+  const visible = displayTrack(track, language);
+  await send(chatId, `正在獲取「${visible.title}」的 ${track.provider === 'ytm' ? 'YTM' : track.provider} 原始音源…`);
   const [created] = await store.create(owner, [track], 'original');
   const until = Date.now() + 360_000;
   while (Date.now() < until && !stopping) {
@@ -42,13 +46,11 @@ async function sendTrack(chatId: number, userId: number, track: Track): Promise<
     if (job.status === 'completed') {
       const { path } = await store.file(owner, job.id);
       if ((await stat(path)).size > 49 * 1024 * 1024) { await send(chatId, '音訊超過 Telegram 49 MB 發送限制，請使用網頁端重新獲取並保存。'); return; }
-      const audio = /\.(mp3|m4a)$/i.test(path);
-      const payload = new FormData();
-      payload.set('chat_id', String(chatId));
-      payload.set(audio ? 'audio' : 'document', new Blob([new Uint8Array(await readFile(path))]), job.filename!);
-      payload.set('caption', `ismusicnow · 音樂主義\n來源：${job.audioSource}\n編碼：${job.audio?.codec || '原始音源'}${job.audio?.bitrate ? ` · ${Math.round(job.audio.bitrate / 1000)} kbps` : ''}`);
-      if (audio) { payload.set('title', track.title); payload.set('performer', track.artists.join(' / ')); }
-      await telegram(audio ? 'sendAudio' : 'sendDocument', payload);
+      const presentation = await audioPresentation(path, track);
+      const delivery = await sendMusic(telegram, { chatId, replyTo: messageId, job, track: visible,
+        bytes: new Uint8Array(await readFile(path)),
+        filename: `${safeFilename(`${visible.artists.join(' - ')} - ${visible.title}`)}${extname(path)}`, ...presentation });
+      if (delivery === 'document') await send(chatId, 'Telegram 未接受此格式為音樂卡片，已保留原始音訊以檔案發送。');
       return;
     }
     await new Promise((done) => setTimeout(done, 1500));
@@ -56,14 +58,14 @@ async function sendTrack(chatId: number, userId: number, track: Track): Promise<
   if (!stopping) await send(chatId, '任務仍在佇列中，請稍後重試或使用網頁端。');
 }
 
-async function listTracks(chatId: number, userId: number, input: string, provider: Provider): Promise<void> {
+async function listTracks(chatId: number, userId: number, input: string, provider: Provider, messageId: number): Promise<void> {
   const collection = await resolveMusic(input, provider);
-  await sendCollection(chatId, userId, collection);
+  await sendCollection(chatId, userId, collection, messageId);
 }
 
-async function sendCollection(chatId: number, userId: number, collection: Collection): Promise<void> {
+async function sendCollection(chatId: number, userId: number, collection: Collection, messageId: number): Promise<void> {
   if (!collection.tracks.length) { await send(chatId, '沒有找到歌曲，請試試其他關鍵字。'); return; }
-  if (collection.kind === 'track') return sendTrack(chatId, userId, collection.tracks[0]!);
+  if (collection.kind === 'track') return preferences.request(chatId, userId, collection.tracks[0]!, messageId);
   const rows = collection.tracks.slice(0, 8).map((track, i) => [{ text: `${i + 1}. ${track.title} — ${track.artists.join(' / ')}`.slice(0, 60), callback_data: `dl:${track.provider}:${track.id}` }]);
   await send(chatId, `${collection.title}\n來源：${collection.provider}\n選擇下方曲目獲取（顯示前 ${rows.length} 首）。`, { reply_markup: { inline_keyboard: rows } });
 }
@@ -85,21 +87,24 @@ async function handle(update: Update): Promise<void> {
   const chatId = message.chat.id;
   try {
     if (update.callback_query) await telegram('answerCallbackQuery', { callback_query_id: update.callback_query.id });
+    const text = message.text?.trim() || '';
+    const [command, ...rest] = text.split(/\s+/); const args = rest.join(' ');
+    const cmd = command?.split('@')[0];
+    if (update.callback_query?.data === 'open-settings') { await preferences.show(chatId, userId); return; }
+    if (update.callback_query && await preferences.callback(chatId, userId, update.callback_query.data || '')) return;
+    if (!update.callback_query && (cmd === '/settings' || cmd === '/setting')) { await preferences.show(chatId, userId); return; }
     if (Date.now() - (lastRequest.get(userId) || 0) < 3000) { await send(chatId, '請稍候幾秒再發送下一個請求。'); return; }
     lastRequest.set(userId, Date.now());
     for (const [id, time] of lastRequest) if (Date.now() - time > 60_000) lastRequest.delete(id);
     if (update.callback_query) {
       const [, provider, id] = update.callback_query.data?.match(/^dl:(netease|spotify|ytm):([a-zA-Z0-9_-]+)$/) || [];
-      if (provider && id) await sendTrack(chatId, userId, await getTrack(provider as Provider, id));
+      if (provider && id) await preferences.request(chatId, userId, await getTrack(provider as Provider, id), message.message_id);
       return;
     }
-    const text = message.text?.trim() || '';
-    const [command, ...rest] = text.split(/\s+/); const args = rest.join(' ');
-    const cmd = command?.split('@')[0];
     if (cmd === '/start' && /^\d{1,16}$/.test(args)) {
-      await sendCollection(chatId, userId, await resolveNeteaseCommand(args));
+      await sendCollection(chatId, userId, await resolveNeteaseCommand(args), message.message_id);
     } else if (['/start', '/help', '/about'].includes(cmd || '')) {
-      await send(chatId, 'ismusicnow · 音樂主義\n\n直接貼上網易雲、Spotify 或 YouTube Music 連結。\n/netease 歌名／歌曲ID／連結 — 直接獲取網易雲；關鍵字取第一個結果\n/music 或 /musicid — 同 /netease\n/search 歌名 — 搜尋網易雲並選曲\n/spotify 歌名 — 搜尋 Spotify\n/ytm 連結 — 獲取 YouTube Music\n/lyric 歌名／歌曲ID／連結 — 獲取網易雲 LRC 歌詞\n\nSpotify 只使用 Spotify 原始音源；YTM 是獨立適配器。\n開源授權 GPL-3.0，不附帶擔保。');
+      await send(chatId, 'ismusicnow · 音樂主義\n\n直接貼上網易雲、Spotify 或 YouTube Music 連結。\n/netease 歌名／歌曲ID／連結 — 直接獲取網易雲；關鍵字取第一個結果\n/music 或 /musicid — 同 /netease\n/search 歌名 — 搜尋網易雲並選曲\n/spotify 歌名 — 搜尋 Spotify\n/ytm 連結 — 獲取 YouTube Music\n/lyric 歌名／歌曲ID／連結 — 獲取網易雲 LRC 歌詞\n/settings — Album 顯示語言：Original／繁中／簡中\n首次獲取先選語言，之後記住你的偏好。\n\nSpotify 只使用 Spotify 原始音源；YTM 是獨立適配器。\n開源授權 GPL-3.0，不附帶擔保。');
     } else if (cmd === '/lyric') {
       if (!args) { await send(chatId, '請輸入 /lyric 網易雲歌名、歌曲 ID 或連結。'); return; }
       const collection = await resolveNeteaseCommand(args);
@@ -109,12 +114,12 @@ async function handle(update: Update): Promise<void> {
       const form = new FormData(); form.set('chat_id', String(chatId)); form.set('document', new Blob([lyric], { type: 'text/plain' }), `${safeFilename(`${track.artists.join(' - ')} - ${track.title}`)}.lrc`);
       await telegram('sendDocument', form);
     } else if (cmd === '/netease' || cmd === '/music' || cmd === '/musicid') {
-      await sendCollection(chatId, userId, await resolveNeteaseCommand(args));
+      await sendCollection(chatId, userId, await resolveNeteaseCommand(args), message.message_id);
     } else if (cmd === '/search' || cmd === '/spotify' || cmd === '/ytm' || cmd === '/download') {
       if (!args) { await send(chatId, '請在命令後輸入關鍵字或音樂連結。'); return; }
-      await listTracks(chatId, userId, args, cmd === '/spotify' ? 'spotify' : cmd === '/ytm' ? 'ytm' : 'netease');
+      await listTracks(chatId, userId, args, cmd === '/spotify' ? 'spotify' : cmd === '/ytm' ? 'ytm' : 'netease', message.message_id);
     } else if (/https?:\/\/|^spotify:/.test(text)) {
-      await listTracks(chatId, userId, text, 'netease');
+      await listTracks(chatId, userId, text, 'netease', message.message_id);
     }
   } catch (error) { await send(chatId, publicError(error).message); }
 }
@@ -123,7 +128,7 @@ async function main(): Promise<void> {
   const me = await telegram<{ username: string }>('getMe');
   const webhook = await telegram<{ url: string }>('getWebhookInfo');
   if (webhook.url) throw new Error('此 bot 已設定 webhook，請先確認其用途；輪詢模式沒有更改現有 webhook。');
-  await telegram('setMyCommands', { commands: [{ command: 'netease', description: '透過關鍵詞、歌曲 ID 或連結獲取網易雲' }, { command: 'music', description: '透過關鍵詞、歌曲 ID 或連結獲取網易雲' }, { command: 'search', description: '搜尋網易雲音樂並選曲' }, { command: 'spotify', description: '搜尋 Spotify' }, { command: 'ytm', description: '獲取 YouTube Music 連結' }, { command: 'download', description: '解析音樂連結並獲取' }, { command: 'lyric', description: '透過歌名、ID 或連結獲取網易雲 LRC 歌詞' }, { command: 'about', description: '關於音樂主義' }] });
+  await telegram('setMyCommands', { commands: [{ command: 'netease', description: '透過關鍵詞、歌曲 ID 或連結獲取網易雲' }, { command: 'music', description: '透過關鍵詞、歌曲 ID 或連結獲取網易雲' }, { command: 'search', description: '搜尋網易雲音樂並選曲' }, { command: 'spotify', description: '搜尋 Spotify' }, { command: 'ytm', description: '獲取 YouTube Music 連結' }, { command: 'download', description: '解析音樂連結並獲取' }, { command: 'lyric', description: '透過歌名、ID 或連結獲取網易雲 LRC 歌詞' }, { command: 'settings', description: 'Album 顯示語言：Original／繁中／簡中' }, { command: 'about', description: '關於音樂主義' }] });
   try { offset = JSON.parse(await readFile(statePath, 'utf8')).offset || 0; } catch { /* First launch. */ }
   console.log(`ismusicnow bot @${me.username} 已啟動（long polling）`);
   while (!stopping) {
