@@ -107,7 +107,7 @@ export function selectionMessage(session: MusicSelection, ui: BotLanguage) {
     text: `${(collection.searchType || 'track') === type ? '✓ ' : ''}${botText(ui, type === 'track' ? 'single' : type)}`,
     callback_data: `type:${session.id}:${type}`,
   })));
-  if (collection.kind === 'artist') rows.push([
+  if (collection.kind === 'artist' && collection.provider === 'netease') rows.push([
     { text: `${!collection.entities ? '✓ ' : ''}${botText(ui, 'hotTracks')}`, callback_data: `view:${session.id}:track` },
     { text: `${collection.entities ? '✓ ' : ''}${botText(ui, 'album')}`, callback_data: `view:${session.id}:album` },
   ]);
