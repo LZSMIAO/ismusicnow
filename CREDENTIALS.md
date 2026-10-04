@@ -76,6 +76,8 @@ YTM_COOKIES_PATH=/app/secrets/ytm-cookies.txt
 
 可選 `BOT_ALLOWED_USERS=你的TelegramUserID`，多個 ID 用逗號分隔；留空則 bot 公開可用。
 
+`/settings` 的 Original／繁體／簡體顯示偏好在本機使用 OpenCC 轉換，不需要新 API、翻譯 key 或 `.env` 配置。首次獲取時每位用戶自己選擇；資料保存在 `data/bot/bot-users/`，需隨 bot 資料一同備份。只轉換顯示歌名、歌手、專輯及顯示檔名，原始音訊與檔案內標籤保持原文。
+
 ## 權限與套用
 
 cookies 檔上傳後，在 1Panel 終端執行（沒有上傳的檔名不要包含在命令中）：
