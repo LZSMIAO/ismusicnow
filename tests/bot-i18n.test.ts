@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { botLanguages, botCommands, botError, botHelp, botText, telegramLanguage } from '../src/lib/server/bot-i18n.js';
-import { musicPayload, type MusicUpload } from '../src/lib/server/bot-media.js';
+import { musicPayload, musicReferencePayload, type MusicUpload } from '../src/lib/server/bot-media.js';
 
 test('Telegram IETF tags map to eight UI languages with an English fallback and script precedence', () => {
   for (const [tag, language] of [['zh-Hant', 'zh-Hant'], ['zh_TW', 'zh-Hant'], ['zh-HK', 'zh-Hant'], ['zh-Hans', 'zh-Hans'], ['zh-CN', 'zh-Hans'], ['zh-SG', 'zh-Hans'], ['zh', 'zh-Hans'], ['en-GB', 'en'], ['JA', 'ja'], ['ko-KR', 'ko'], ['es-MX', 'es'], ['fr-CA', 'fr'], ['ru-RU', 'ru'], ['de', 'en'], ['zh-Hant-CN', 'zh-Hant'], ['zh-Hans-TW', 'zh-Hans'], ['zh-MO', 'zh-Hant'], ['it', 'en']] as const) {
@@ -41,5 +41,19 @@ test('localized music captions and buttons never change source names, file names
     assert.equal(JSON.parse(String(form.get('reply_markup'))).inline_keyboard.flat().length, 1);
     assert.doesNotMatch(String(form.get('reply_markup')), /open-settings/);
     assert.doesNotMatch(String(form.get('reply_markup')), /中文顯示字形/);
+  }
+});
+
+test('group instructions and both fresh/cached captions use the active bot identity', () => {
+  for (const language of botLanguages) {
+    assert.ok(botHelp(language, true, 'another_music_bot').includes('/search@another_music_bot'));
+    assert.doesNotMatch(botHelp(language, true, 'another_music_bot'), /muismbot|ismusicnow_bot|\{botUsername\}/);
+  }
+  const track = { id: '123', provider: 'netease' as const, title: '床', artists: ['草東沒有派對'], album: '醜奴兒', cover: '', durationMs: 1000, sourceUrl: 'https://music.163.com/song?id=123' };
+  const job = { id: 'job', track, format: 'original' as const, status: 'completed' as const, stage: '', createdAt: '', updatedAt: '', audioSource: 'netease' as const };
+  const identity = { chatId: 1, replyTo: 2, track, job, duration: 1, botUsername: 'another_music_bot' };
+  for (const form of [musicPayload({ ...identity, bytes: new Uint8Array([1]), filename: '床.flac' }), musicReferencePayload({ ...identity, fileId: 'cached-audio', kind: 'audio' })]) {
+    assert.match(String(form.get('caption')), /via @another_music_bot/);
+    assert.doesNotMatch(String(form.get('caption')), /via @muismbot|via @ismusicnow_bot/);
   }
 });

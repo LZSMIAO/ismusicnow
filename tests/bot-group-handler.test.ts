@@ -36,7 +36,7 @@ test('group commands, mentions, member languages, owned reply selection and conc
     const message = async (id: number, text: string, user = 90, thread?: number, replyTo?: number, chat = -100, language = 'en') => {
       now += 3100;
       await handle({ update_id: id, message: { message_id: id, message_thread_id: thread, chat: { id: chat, type: chat === -101 ? 'group' : 'supergroup' }, from: { id: user, language_code: language }, text,
-        ...(replyTo === undefined ? {} : { reply_to_message: { message_id: replyTo, from: { username: 'ismusicnow_bot' } } }) } });
+        ...(replyTo === undefined ? {} : { reply_to_message: { message_id: replyTo, from: { username: 'muismbot' } } }) } });
     };
     const callback = async (data: string, menu: number, user = 90, thread?: number, language = 'en') => {
       now += 1000;
@@ -47,17 +47,17 @@ test('group commands, mentions, member languages, owned reply selection and conc
     const audioCount = () => calls.filter((call) => call.method === 'sendAudio').length;
     const selector = () => ({ id: nextMessage, pick: sent().body.reply_markup.inline_keyboard[0][0].callback_data, page: sent().body.reply_markup.inline_keyboard.at(-1)[0].callback_data });
     await message(10, '普通聊天'); await message(11, '1'); await message(12, '/search@another_bot 床');
-    await message(13, '@ismusicnow_bot_other 床'); await message(14, '/unknown@ismusicnow_bot 床');
+    await message(13, '@muismbot_other 床'); await message(14, '/unknown@muismbot 床');
     await handle({ update_id: 15, message: { message_id: 15, chat: { id: -100, type: 'supergroup' }, from: { id: 90, is_bot: true }, text: '/start' } });
     await handle({ update_id: 16, message: { message_id: 16, chat: { id: -100, type: 'supergroup' }, sender_chat: { id: -100 }, from: { id: 90 }, text: '/start' } });
     assert.equal(calls.length, 0); assert.equal(queries.length, 0);
 
-    await message(20, '/start@ismusicnow_bot', 90, 10);
+    await message(20, '/start@muismbot', 90, 10);
     assert.equal(sent().body.message_thread_id, 10); assert.equal(sent().body.reply_parameters.message_id, 20);
-    assert.match(sent().body.text, /In groups, use \/search@ismusicnow_bot/);
+    assert.match(sent().body.text, /In groups, use \/search@muismbot/);
     assert.equal(sent().body.reply_markup.inline_keyboard.flat().length, 1);
     assert.deepEqual(calls.findLast((call) => call.method === 'setMyCommands')!.body.scope, { type: 'chat_member', chat_id: -100, user_id: 90 });
-    await message(21, '/settings@ismusicnow_bot', 91, 20, undefined, -100, 'ja');
+    await message(21, '/settings@muismbot', 91, 20, undefined, -100, 'ja');
     assert.deepEqual(calls.findLast((call) => call.method === 'setMyCommands')!.body.scope, { type: 'chat_member', chat_id: -100, user_id: 91 });
     assert.equal(sent().body.message_thread_id, 20); assert.match(sent().body.text, /日本語/);
     const settingsMenu = nextMessage;
@@ -69,14 +69,14 @@ test('group commands, mentions, member languages, owned reply selection and conc
     assert.deepEqual(commands.body.scope, { type: 'chat_member', chat_id: -100, user_id: 91 });
     assert.match(commands.body.commands.find((c: { command: string }) => c.command === 'search').description, /Chercher/);
 
-    await Promise.all([message(30, '/search@ismusicnow_bot 草東', 90, 10), message(31, '/search@ismusicnow_bot 人是猫', 91, 20)]);
+    await Promise.all([message(30, '/search@muismbot 草東', 90, 10), message(31, '/search@muismbot 人是猫', 91, 20)]);
     const topicMenus = calls.filter((call) => call.method === 'sendMessage' && [30, 31].includes(call.body.reply_parameters?.message_id));
     assert.equal(topicMenus.length, 2);
     assert.equal(topicMenus.find((call) => call.body.reply_parameters.message_id === 30)!.body.message_thread_id, 10);
     assert.equal(topicMenus.find((call) => call.body.reply_parameters.message_id === 31)!.body.message_thread_id, 20);
     assert.match(topicMenus.find((call) => call.body.reply_parameters.message_id === 30)!.body.text, /reply to this list/);
 
-    await message(40, '@ismusicnow_bot 床', 90, 10);
+    await message(40, '@muismbot 床', 90, 10);
     assert.equal(queries.at(-1), '床'); assert.equal(sent().body.message_thread_id, 10);
     const choices = selector();
     await callback(choices.page, choices.id, 90, 10);
@@ -100,22 +100,22 @@ test('group commands, mentions, member languages, owned reply selection and conc
     await callback(replyChoices.pick, replyChoices.id, 90, 20);
     assert.equal(calls.findLast((call) => call.method === 'sendAudio')!.body.message_thread_id, '20');
     assert.equal(calls.findLast((call) => call.method === 'sendAudio')!.body.reply_parameters.message_id, 50);
-    await message(60, '/netease@ismusicnow_bot 10000', 90, undefined, undefined, -101);
+    await message(60, '/netease@muismbot 10000', 90, undefined, undefined, -101);
     assert.equal(calls.findLast((call) => call.method === 'sendAudio')!.body.chat_id, '-101');
     assert.equal(calls.findLast((call) => call.method === 'sendAudio')!.body.message_thread_id, undefined);
-    await message(61, '/lyric@ismusicnow_bot 10000', 90, 20);
+    await message(61, '/lyric@muismbot 10000', 90, 20);
     assert.equal(calls.findLast((call) => call.method === 'sendDocument')!.body.message_thread_id, '20');
 
     // A name preference prompt persists its original topic, even if changed
     // from a different topic after the settings store is recreated.
-    await message(70, '/netease@ismusicnow_bot 10000', 92, 10);
+    await message(70, '/netease@muismbot 10000', 92, 10);
     const firstPrompt = nextMessage;
     assert.equal(sent().body.message_thread_id, 10); assert.match(sent().body.text, /first NetEase download/);
     assert.equal((await new BotSettingsStore().get(92)).pending?.messageThreadId, 10);
     await callback('lang:92:original', firstPrompt, 92, 20);
     assert.equal(calls.findLast((call) => call.method === 'sendAudio')!.body.message_thread_id, '10');
     assert.equal(calls.findLast((call) => call.method === 'sendAudio')!.body.reply_parameters.message_id, 70);
-    await message(71, '/netease@ismusicnow_bot 10000', 92, 20);
+    await message(71, '/netease@muismbot 10000', 92, 20);
     assert.equal(calls.at(-1)!.method, 'sendAudio', 'Chinese choice is only asked once');
   } finally {
     globalThis.fetch = realFetch; Date.now = realNow; process.env = env;
