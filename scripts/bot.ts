@@ -5,7 +5,7 @@ import { extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DownloadStore } from '../src/lib/server/downloads.js';
 import { publicError, ServiceError } from '../src/lib/server/errors.js';
-import { resolveMusic, getTrack } from '../src/lib/server/music.js';
+import { artistAlbums, resolveMusic, getTrack } from '../src/lib/server/music.js';
 import { neteaseLyrics } from '../src/lib/server/providers/netease.js';
 import { safeFilename } from '../src/lib/server/links.js';
 import { resolveNeteaseCommand } from '../src/lib/server/bot-input.js';
@@ -13,11 +13,11 @@ import { BotLanguageSettings, BotSettingsStore, displayTrack, type AlbumLanguage
 import { audioPresentation, musicReferencePayload, sendMusic, TelegramRequestError } from '../src/lib/server/bot-media.js';
 import { BotMusicCache, type CachedMusic } from '../src/lib/server/bot-cache.js';
 import { BotMessageCleanup } from '../src/lib/server/bot-cleanup.js';
-import { BotSelections, selectionLifetime, selectionPageSize, selectionMessage } from '../src/lib/server/bot-selection.js';
+import { BotSelections, selectionLifetime, selectionPageSize, selectionMessage, type MusicSelection } from '../src/lib/server/bot-selection.js';
 import { config } from '../src/lib/server/config.js';
 import { metadataForDisplay } from '../src/lib/server/bot-metadata.js';
 import { botCommands, botHelp, botText, botError } from '../src/lib/server/bot-i18n.js';
-import type { Track, Provider, Collection } from '../src/lib/types.js';
+import type { Track, Provider, Collection, MusicSearchKind } from '../src/lib/types.js';
 
 const token = process.env.BOT_TOKEN;
 if (!token) { console.error('請在 .env 配置 BOT_TOKEN。'); process.exit(1); }
@@ -31,7 +31,7 @@ let stopping = false, offset = 0, handlers = 0;
 let botUsername = 'muismbot';
 const statePath = resolve(process.env.DATA_DIR || '.data', 'bot-offset', `${token.split(':')[0]}.json`);
 
-interface User { id: number; language_code?: string; is_bot?: boolean }
+interface User { id: number; language_code?: string; is_bot?: boolean; first_name?: string }
 interface Message { message_id: number; message_thread_id?: number; sender_chat?: { id: number }; chat: { id: number; type?: string }; from?: User; text?: string; reply_to_message?: { message_id: number; from?: { username?: string } } }
 interface Update { update_id: number; message?: Message; callback_query?: { id: string; from: User; data?: string; message?: Message }; inline_query?: { id: string; from: User; query: string } }
 
@@ -44,8 +44,9 @@ export async function telegram<T>(method: string, body: Record<string, unknown> 
   return data.result;
 }
 const cleanup = new BotMessageCleanup(token.split(':')[0]!, (chatId, messageId) => telegram('deleteMessage', { chat_id: chatId, message_id: messageId }));
+const removeNow = (chatId: number, messageId: number) => cleanup.removeNow(chatId, messageId).catch(() => console.error('Bot 訊息清理稍後重試。'));
 const deleteLater = (chatId: number, messageId: number, delayMs: number) => cleanup.schedule(chatId, messageId, delayMs).catch(() => console.error('Bot 訊息清理排程失敗。'));
-const replyContext = new AsyncLocalStorage<{ chatId: number; messageId: number; messageThreadId?: number }>();
+const replyContext = new AsyncLocalStorage<{ chatId: number; messageId: number; messageThreadId?: number; userName?: string }>();
 async function send(chatId: number, text: string, extra: Record<string, unknown> = {}) {
   const context = replyContext.getStore();
   const defaults = context?.chatId === chatId ? { message_thread_id: context.messageThreadId, reply_parameters: replyParameters(context.messageId) } : {};
@@ -66,9 +67,20 @@ async function updateCommands(chatId: number, language: Parameters<typeof botCom
   if (commandLanguages.size >= 1000) commandLanguages.delete(commandLanguages.keys().next().value!);
   commandLanguages.set(key, language);
 }
-const preferences = new BotLanguageSettings(new BotSettingsStore(), send, sendTrack, updateCommands);
+const settingsPanel = new AsyncLocalStorage<{ chatId: number; messageId: number } | undefined>();
+async function sendSettings(chatId: number, text: string, extra: Record<string, unknown> = {}) {
+  const panel = settingsPanel.getStore();
+  if (panel?.chatId === chatId && extra.reply_markup) {
+    const { deleteAfterMs, reply_parameters, ...body } = extra;
+    try { await telegram('editMessageText', { chat_id: chatId, message_id: panel.messageId, text, ...body }); }
+    catch (error) { if (!(error instanceof TelegramRequestError && /message is not modified/i.test(error.description))) throw error; }
+    return { message_id: panel.messageId };
+  }
+  return send(chatId, text, { ...extra, reply_parameters: undefined });
+}
+const preferences = new BotLanguageSettings(new BotSettingsStore(), sendSettings, sendTrack, updateCommands);
 
-async function sendTrack(chatId: number, userId: number, track: Track, language: AlbumLanguage, messageId: number, messageThreadId?: number): Promise<void> {
+async function sendTrack(chatId: number, userId: number, track: Track, language: AlbumLanguage, messageId: number, messageThreadId?: number, keepRequest = false): Promise<void> {
   const owner = `tg:${chatId}:${userId}`;
   const ui = await preferences.locale(userId);
   const visible = displayTrack(language !== 'original' ? await metadataForDisplay(track) : track, language);
@@ -81,7 +93,7 @@ async function sendTrack(chatId: number, userId: number, track: Track, language:
     const job = { ...record, id: 'telegram-cache', track, format: 'original' as const, status: 'completed' as const,
       stage: '', createdAt: '', updatedAt: '' };
     await telegram(record.kind === 'audio' ? 'sendAudio' : 'sendDocument', musicReferencePayload({
-      chatId, messageThreadId, replyTo: messageId, track: visible, job, fileId: record.fileId, kind: record.kind, duration: record.duration, uiLanguage: ui, botUsername,
+      chatId, messageThreadId, track: visible, job, recipientId: chatId < 0 ? userId : undefined, recipientName: replyContext.getStore()?.userName, fileId: record.fileId, kind: record.kind, duration: record.duration, uiLanguage: ui, botUsername,
     }));
   }, async () => {
     const progress = await send(chatId, botText(ui, 'fetching', { title: visible.title, source: track.provider === 'ytm' ? 'YTM' : track.provider }), { message_thread_id: messageThreadId, deleteAfterMs: 7 * 60_000, reply_parameters: replyParameters(messageId) });
@@ -96,7 +108,7 @@ async function sendTrack(chatId: number, userId: number, track: Track, language:
         if ((await stat(path)).size > 49 * 1024 * 1024) throw new ServiceError('FILE_TOO_LARGE', '音訊超過 Telegram 上限。', 413);
         const presentation = await audioPresentation(path, track);
         let record: CachedMusic | undefined;
-        const delivery = await sendMusic(telegram, { chatId, messageThreadId, replyTo: messageId, job, track: visible, uiLanguage: ui, botUsername,
+        const delivery = await sendMusic(telegram, { chatId, messageThreadId, job, track: visible, recipientId: chatId < 0 ? userId : undefined, recipientName: replyContext.getStore()?.userName, uiLanguage: ui, botUsername,
           bytes: new Uint8Array(await readFile(path)),
           filename: `${safeFilename(`${track.artists.join(' - ')} - ${track.title}`)}${extname(path)}`, ...presentation,
           onDelivered: (kind, result) => {
@@ -113,34 +125,65 @@ async function sendTrack(chatId: number, userId: number, track: Track, language:
       await new Promise((done) => setTimeout(done, 1500));
     }
     throw new ServiceError('DOWNLOAD_TIMEOUT', '下載等待超時。', 504);
-    } finally { await deleteLater(chatId, progress.message_id, 2000); }
+    } finally { await removeNow(chatId, progress.message_id); }
   });
   // Reply first, then remove only the request that was actually fulfilled.
   const delivered = selections.delivered(chatId, messageId);
-  for (const inputId of delivered.inputIds) await deleteLater(chatId, inputId, 2000);
-  if (delivered.menuId) await deleteLater(chatId, delivered.menuId, 2000);
+  for (const inputId of delivered.inputIds.filter(id => !keepRequest || id !== messageId)) await removeNow(chatId, inputId);
+  if (delivered.menuId) await removeNow(chatId, delivered.menuId);
 }
 
-async function listTracks(chatId: number, userId: number, input: string, provider: Provider, messageId: number): Promise<void> {
-  const collection = await resolveMusic(input, provider);
+async function listTracks(chatId: number, userId: number, input: string, provider: Provider, messageId: number, searchType: MusicSearchKind = 'track'): Promise<void> {
+  const collection = await resolveMusic(input, provider, searchType);
   await sendCollection(chatId, userId, collection, messageId);
 }
 
-async function sendCollection(chatId: number, userId: number, collection: Collection, messageId: number): Promise<void> {
+async function sendCollection(chatId: number, userId: number, collection: Collection, messageId: number, keepRequest = false): Promise<void> {
   const ui = await preferences.locale(userId);
-  if (!collection.tracks.length) { await notice(chatId, botText(ui, 'notFound'), messageId); return; }
+  if (!collection.tracks.length && !collection.entities?.length && collection.kind !== 'search' && collection.kind !== 'artist') { await notice(chatId, botText(ui, 'notFound'), messageId); return; }
   if (collection.kind === 'track') return preferences.request(chatId, userId, collection.tracks[0]!, messageId, replyContext.getStore()?.messageThreadId);
   const messageThreadId = replyContext.getStore()?.messageThreadId;
-  const session = selections.create(chatId, userId, messageId, collection, messageThreadId);
-  const { text, reply_markup } = selectionMessage(session, ui);
-  const menu = await send(chatId, text, { reply_parameters: replyParameters(messageId), reply_markup, deleteAfterMs: selectionLifetime });
+  const session = selections.create(chatId, userId, messageId, collection, messageThreadId, keepRequest);
+  session.userName = replyContext.getStore()?.userName;
+  const { text, ...presentation } = selectionMessage(session, ui);
+  const menu = await send(chatId, text, { reply_parameters: undefined, ...presentation, deleteAfterMs: selectionLifetime });
   session.menuId = menu.message_id;
+  if (!keepRequest && (collection.entities?.length || collection.tracks.length)) await removeNow(chatId, messageId);
+}
+
+async function chooseSelection(session: MusicSelection, index: number, ui: Parameters<typeof botText>[0], inputId = session.requestId): Promise<void> {
+  if (session.busy) return;
+  session.busy = true;
+  const { chatId, userId, messageThreadId } = session;
+  try {
+    if (session.collection.entities) {
+      const entity = selections.entity(session, index);
+      const collection = await resolveMusic(entity.sourceUrl, entity.provider);
+      const replacement = selections.replace(session, collection);
+      await telegram('editMessageText', { chat_id: chatId, message_id: session.menuId, ...selectionMessage(replacement, ui) });
+      if (inputId !== session.requestId) await removeNow(chatId, inputId);
+      return;
+    }
+    const track = selections.track(session, index);
+    if (session.collection.kind === 'search' && session.menuId) await removeNow(chatId, session.menuId);
+    await preferences.request(chatId, userId, track, inputId, messageThreadId, !!session.keepRequest && inputId === session.requestId);
+  } catch (error) {
+    session.busy = false;
+    // A failed download remains retryable; a consumed search panel is rebuilt.
+    if (session.collection.kind === 'search' && !session.collection.entities) {
+      const replacement = selections.replace(session, session.collection, false);
+      const { text, ...presentation } = selectionMessage(replacement, ui);
+      const menu = await send(chatId, text, { ...presentation, message_thread_id: messageThreadId, reply_parameters: undefined, deleteAfterMs: selectionLifetime });
+      replacement.menuId = menu.message_id;
+    }
+    throw error;
+  }
 }
 
 export async function handle(update: Update): Promise<void> {
   const message = update.message || update.callback_query?.message;
   if (!message) return handleUpdate(update);
-  return replyContext.run({ chatId: message.chat.id, messageId: message.message_id, messageThreadId: message.message_thread_id }, () => handleUpdate(update));
+  return replyContext.run({ chatId: message.chat.id, messageId: message.message_id, messageThreadId: message.message_thread_id, userName: update.callback_query?.from.first_name || message.from?.first_name }, () => handleUpdate(update));
 }
 
 async function handleUpdate(update: Update): Promise<void> {
@@ -174,24 +217,57 @@ async function handleUpdate(update: Update): Promise<void> {
     const cmd = command?.split('@')[0];
     if (!update.callback_query && command?.startsWith('/') && command.includes('@') && command.split('@')[1]?.toLowerCase() !== botUsername.toLowerCase()) return;
     if (!update.callback_query) {
-      if (cmd?.startsWith('/') && !['/start', '/help', '/about', '/settings', '/setting', '/lyric', '/netease', '/music', '/musicid', '/search', '/spotify', '/ytm', '/download'].includes(cmd)) return;
+      if (cmd?.startsWith('/') && !['/start', '/help', '/about', '/settings', '/setting', '/lyric', '/netease', '/music', '/musicid', '/search', '/spotify', '/ytm', '/download', '/album', '/artist', '/playlist'].includes(cmd)) return;
       if (!cmd?.startsWith('/') && !/https?:\/\/|^spotify:/.test(text) && !isPrivate && !replyToBot && !mentionsBot) return;
-      if (!text) return;
+      if (!text || (isPrivate && /^@[a-zA-Z0-9_]+$/.test(text))) { await preferences.start(chatId, userId, botUsername); return; }
     }
     await updateCommands(chatId, ui, userId).catch(() => {});
     if (update.callback_query?.data === 'open-settings') { await preferences.show(chatId, userId); return; }
     if (update.callback_query && /^(lang|ui|setting):/.test(update.callback_query.data || '')) {
       const own = Number(update.callback_query.data?.split(':')[1]) === userId;
-      try { await preferences.callback(chatId, userId, update.callback_query.data || ''); }
-      finally { if (own && !text.startsWith('ismusicnow · 音樂主義\n')) await deleteLater(chatId, message.message_id, 2000); }
+      await settingsPanel.run(own ? { chatId, messageId: message.message_id } : undefined, () => preferences.callback(chatId, userId, update.callback_query!.data || '', () => removeNow(chatId, message.message_id)));
       return;
     }
     if (!update.callback_query && (cmd === '/settings' || cmd === '/setting')) { await preferences.show(chatId, userId); return; }
+    const browse = update.callback_query?.data?.match(/^browse:(netease|spotify):(album|artist):([a-zA-Z0-9]{1,22})$/);
+    if (browse) {
+      const url = browse[1] === 'netease' ? `https://music.163.com/${browse[2]}?id=${browse[3]}` : `https://open.spotify.com/${browse[2]}/${browse[3]}`;
+      await sendCollection(chatId, userId, await resolveMusic(url, browse[1] as Provider), message.message_id, true);
+      return;
+    }
+    const close = update.callback_query?.data?.match(/^close:([a-f0-9]{16})$/);
+    if (close) { const session = selections.get(chatId, userId, close[1]!, message.message_id, message.message_thread_id); selections.close(session); await removeNow(chatId, message.message_id); return; }
+    const back = update.callback_query?.data?.match(/^back:([a-f0-9]{16})$/);
+    if (back) {
+      const session = selections.get(chatId, userId, back[1]!, message.message_id, message.message_thread_id);
+      if (session.busy) return;
+      await telegram('editMessageText', { chat_id: chatId, message_id: message.message_id, ...selectionMessage(selections.back(session), ui) });
+      return;
+    }
+    const category = update.callback_query?.data?.match(/^(type|view):([a-f0-9]{16}):(track|album|artist|playlist)$/);
+    if (category) {
+      const session = selections.get(chatId, userId, category[2]!, message.message_id, message.message_thread_id);
+      if (session.busy) return;
+      session.busy = true;
+      try {
+        const type = category[3] as MusicSearchKind;
+        if (type === (session.collection.searchType || 'track')) return;
+        const collection = category[1] === 'type' && session.collection.kind === 'search'
+          ? await resolveMusic(session.collection.query || session.collection.title, session.collection.provider, type)
+          : category[1] === 'view' && session.collection.kind === 'artist' && session.collection.sourceUrl
+            ? type === 'album' ? await artistAlbums(session.collection.sourceUrl) : await resolveMusic(session.collection.sourceUrl, session.collection.provider)
+            : undefined;
+        if (!collection) throw new ServiceError('SELECTION_EXPIRED', 'Invalid category');
+        const replacement = selections.replace(session, collection, false);
+        await telegram('editMessageText', { chat_id: chatId, message_id: message.message_id, ...selectionMessage(replacement, ui) });
+      } finally { session.busy = false; }
+      return;
+    }
     const selectionCallback = update.callback_query?.data?.match(/^(pick|page):([a-f0-9]{16}):(\d{1,3})$/);
     if (selectionCallback?.[1] === 'page') {
       const session = selections.get(chatId, userId, selectionCallback[2]!, message.message_id, message.message_thread_id);
       const page = Number(selectionCallback[3]);
-      if (page >= Math.ceil(session.collection.tracks.length / selectionPageSize)) throw new ServiceError('SELECTION_NUMBER', '頁碼無效。');
+      if (page >= Math.ceil((session.collection.entities || session.collection.tracks).length / selectionPageSize)) throw new ServiceError('SELECTION_NUMBER', '頁碼無效。');
       session.page = page;
       await telegram('editMessageText', { chat_id: chatId, message_id: message.message_id, ...selectionMessage(session, ui) });
       return;
@@ -203,7 +279,7 @@ async function handleUpdate(update: Update): Promise<void> {
     if (update.callback_query) {
       if (selectionCallback?.[1] === 'pick') {
         const session = selections.get(chatId, userId, selectionCallback[2]!, message.message_id, message.message_thread_id);
-        await preferences.request(chatId, userId, selections.track(session, Number(selectionCallback[3])), session.requestId, session.messageThreadId);
+        await chooseSelection(session, Number(selectionCallback[3]), ui);
       } else if (/^dl:/.test(update.callback_query.data || '')) {
         // Old cards lack a request/owner context. Ask for a fresh list rather
         // than downloading a different user's selection or deleting a card.
@@ -226,11 +302,14 @@ async function handleUpdate(update: Update): Promise<void> {
       if (!lyric) { await notice(chatId, botText(ui, 'noLyric'), message.message_id); return; }
       const form = new FormData(); form.set('chat_id', String(chatId)); form.set('document', new Blob([lyric], { type: 'text/plain' }), `${safeFilename(`${track.artists.join(' - ')} - ${track.title}`)}.lrc`);
       if (message.message_thread_id !== undefined) form.set('message_thread_id', String(message.message_thread_id));
-      form.set('reply_parameters', JSON.stringify(replyParameters(message.message_id)));
+      if (chatId < 0) { form.set('caption', `<a href="tg://user?id=${userId}">${String(userId)}</a>`); form.set('parse_mode', 'HTML'); }
       await telegram('sendDocument', form);
-      await deleteLater(chatId, message.message_id, 2000);
+      await removeNow(chatId, message.message_id);
     } else if (cmd === '/netease' || cmd === '/music' || cmd === '/musicid') {
       await sendCollection(chatId, userId, await resolveNeteaseCommand(args), message.message_id);
+    } else if (cmd === '/album' || cmd === '/artist' || cmd === '/playlist') {
+      if (!args) { await notice(chatId, botText(ui, 'queryInput'), message.message_id); return; }
+      await listTracks(chatId, userId, args, 'netease', message.message_id, cmd.slice(1) as MusicSearchKind);
     } else if (cmd === '/search' || cmd === '/spotify' || cmd === '/ytm' || cmd === '/download') {
       if (!args) { await notice(chatId, botText(ui, 'queryInput'), message.message_id); return; }
       await listTracks(chatId, userId, args, cmd === '/spotify' ? 'spotify' : cmd === '/ytm' ? 'ytm' : 'netease', message.message_id);
@@ -240,7 +319,7 @@ async function handleUpdate(update: Update): Promise<void> {
       const choice = numberChoice;
       if (choice) {
         selections.reply(choice.session, message.message_id);
-        await preferences.request(chatId, userId, choice.track, message.message_id, message.message_thread_id);
+        await chooseSelection(choice.session, Number(text) - 1, ui, message.message_id);
       } else if (/^\d{1,3}$/.test(text)) {
         await notice(chatId, botText(ui, 'selectionExpired'), message.message_id);
       } else {
@@ -255,11 +334,11 @@ async function main(): Promise<void> {
   botUsername = me.username;
   const webhook = await telegram<{ url: string }>('getWebhookInfo');
   if (webhook.url) throw new Error('此 bot 已設定 webhook，請先確認其用途；輪詢模式沒有更改現有 webhook。');
-  await telegram('setMyCommands', { commands: botCommands('en') });
+  for (const type of ['default', 'all_private_chats', 'all_group_chats']) await telegram('setMyCommands', { commands: botCommands('en'), scope: { type } });
   // Telegram command menus accept ISO 639-1 codes; Chinese script preferences
   // are applied separately with each user's private/chat-member scope.
   for (const [code, language] of [['en', 'en'], ['zh', 'zh-Hans'], ['ja', 'ja'], ['ko', 'ko'], ['es', 'es'], ['fr', 'fr'], ['ru', 'ru']] as const) {
-    await telegram('setMyCommands', { commands: botCommands(language), language_code: code });
+    for (const type of ['default', 'all_private_chats', 'all_group_chats']) await telegram('setMyCommands', { commands: botCommands(language), language_code: code, scope: { type } });
   }
   await telegram('setChatMenuButton', { menu_button: { type: 'commands' } });
   await cleanup.flush().catch(() => console.error('Bot 訊息清理失敗，稍後重試。'));
