@@ -2,6 +2,11 @@ node_modules
 .svelte-kit
 build
 .data
+data
+bot-migration-*
+.deploy-*
+*.log
+*.tar.gz
 .env
 .env.*
 !.env.example
