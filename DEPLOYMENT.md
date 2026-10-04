@@ -14,12 +14,13 @@
 
 ## 已驗證與待設定
 
-- TypeScript / Svelte 檢查：0 errors、0 warnings；7 個測試通過；production build 通過。
+- TypeScript / Svelte 檢查、下載佇列、來源隔離與 bot 命令回歸測試、production build 通過。
 - VPS web / bot 容器啟動；Telegram 身份驗證成功，啟動 long polling。
 - 公網 HTTPS 可載入網頁，網易雲搜尋與單曲元資料可正常解析。
-- 網易雲歌曲下載在未配置帳號的現有 VPS 測試中未取得授權音源；需要帳號／地區權限驗證。
+- 網易雲 `MUSIC_U` 已載入容器且登入成功；`Minecraft`（4010201）完成原生 FLAC 下載，11.8 MB、16 bit／44.1 kHz。原 `晴天` 範例（186016）仍回傳無音源（404），已換掉範例。
+- bot 恢復 `/netease 歌名／ID／連結`，關鍵詞直接獲取首個搜尋結果；`/music`、`/musicid` 使用相同流程，`/search` 保留選曲列表。`/lyric` 接受歌名、ID、連結；`/start ID` 恢復單曲獲取。
 - Spotify 尚需 API 憑證與 cookies，原始音源下載尚未完成實際驗證。
-- YTM 工具已安裝，實際曲目下載尚未驗證。
+- YTM 工具已安裝；VPS 測試遭遇「登入以確認不是機器人」，仍需 YTM cookies 後驗證實際下載。
 
 依 [CREDENTIALS.md](CREDENTIALS.md) 設定帳號後，再完成實際下載驗證。服務可用及元資料解析成功不代表歌曲下載已全部驗證。
 

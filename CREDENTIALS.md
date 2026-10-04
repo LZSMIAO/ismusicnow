@@ -56,6 +56,8 @@ NETEASE_API_URL=
 
 `NETEASE_API_URL` 是給已有自建相容 API 服務的使用者；目前使用內置 SDK，保持空白即可。
 
+修改 `.env` 後必須在 `/opt/ismusicnow` 執行 `docker compose up -d --force-recreate`。容器啟動時才載入環境變數，單純保存文件或 `docker compose restart` 不會更新容器的環境值。若能正常登入但某首歌回傳無音源，請測試另一首帳號可播放的歌；這是曲目可用性與權限問題，無須再填 Spotify API 或第三方網易雲 API。
+
 ## YouTube Music
 
 獨立 YTM 適配器使用 yt-dlp，只接受 `music.youtube.com` 的單曲／歌單連結，無須 Google Cloud API key。若曲目需要帳號登入，依 [yt-dlp cookies 說明](https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp) 匯出自己的該網站 Netscape cookies.txt，上傳到 `/opt/ismusicnow/secrets/ytm-cookies.txt`，再填：
@@ -65,6 +67,8 @@ YTM_COOKIES_PATH=/app/secrets/ytm-cookies.txt
 ```
 
 公開連結可先保持空白。此適配器保存取得的原始音訊容器，不作 Spotify 音源替代。
+
+目前 VPS 的測試連結受到 YouTube「登入以確認不是機器人」驗證，需提供 YTM cookies 後再驗證，單純安裝 yt-dlp 不代表所有公開連結都能直接下載。
 
 ## Telegram
 
