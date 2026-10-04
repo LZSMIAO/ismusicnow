@@ -114,10 +114,10 @@ export class BotLanguageSettings {
     const settings = await this.store.get(userId);
     return settings.uiLanguage || settings.telegramLanguage || 'en';
   }
-  async start(chatId: number, userId: number): Promise<void> {
+  async start(chatId: number, userId: number, botUsername = 'muismbot'): Promise<void> {
     const ui = await this.locale(userId);
     await this.onUiChange?.(chatId, ui, userId).catch(() => {});
-    await this.send(chatId, botHelp(ui, chatId < 0), { reply_markup: { inline_keyboard: [
+    await this.send(chatId, botHelp(ui, chatId < 0, botUsername), { reply_markup: { inline_keyboard: [
       [{ text: `${botLanguageNames[ui]} ｜ ${botText(ui, 'changeLanguage')}`, callback_data: `setting:${userId}:ui` }],
     ] } });
   }
