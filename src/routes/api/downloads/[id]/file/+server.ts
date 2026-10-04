@@ -9,7 +9,8 @@ export const GET: RequestHandler = async ({ locals, params }) => {
     const { path, job } = await downloads.file(locals.sessionId, params.id);
     return new Response(Readable.toWeb(createReadStream(path)) as ReadableStream, { headers: {
       'Content-Type': 'application/octet-stream', 'Content-Length': String(job.bytes),
-      'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(job.filename!)}`,
+      'Content-Disposition': `attachment; filename="audio${job.filename!.slice(job.filename!.lastIndexOf('.')).replace(/[^a-zA-Z0-9.]/g, '')}"; filename*=UTF-8''${encodeURIComponent(job.filename!)}`,
+      'Access-Control-Allow-Origin': 'https://web.telegram.org',
     } });
   } catch (error) { return apiError(error); }
 };

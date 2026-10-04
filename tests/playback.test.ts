@@ -9,7 +9,8 @@ const source = await readFile(new URL('../src/lib/preview-state.svelte.ts', impo
 const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.ESNext } }).outputText;
 const compiled = compileModule(js, { filename: 'preview-state.svelte.js', generate: 'client' }).js.code
   .replace(/(['"])svelte\/internal\/client\1/g, JSON.stringify(import.meta.resolve('svelte/internal/client')))
-  .replaceAll("'./ui.js'", JSON.stringify(new URL('../src/lib/ui.ts', import.meta.url).href));
+  .replaceAll("'./ui.js'", JSON.stringify(new URL('../src/lib/ui.ts', import.meta.url).href))
+  .replaceAll("'./telegram.js'", JSON.stringify(new URL('../src/lib/telegram.ts', import.meta.url).href));
 const { createPreviewState } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 
 class Media {

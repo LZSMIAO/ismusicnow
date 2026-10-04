@@ -21,6 +21,8 @@ import type { Track, Provider, Collection, MusicSearchKind } from '../src/lib/ty
 
 const token = process.env.BOT_TOKEN;
 if (!token) { console.error('請在 .env 配置 BOT_TOKEN。'); process.exit(1); }
+const webAppUrl = new URL(process.env.BOT_WEB_APP_URL || 'https://music.ism.tw');
+if (webAppUrl.protocol !== 'https:' || webAppUrl.username || webAppUrl.password) throw new Error('BOT_WEB_APP_URL 必須是 HTTPS 網址。');
 const endpoint = `https://api.telegram.org/bot${token}/`;
 const allowed = new Set((process.env.BOT_ALLOWED_USERS || '').split(',').map((v) => v.trim()).filter(Boolean));
 const store = new DownloadStore('bot');
@@ -290,8 +292,10 @@ async function handleUpdate(update: Update): Promise<void> {
     if (cmd === '/start' && /^\d{1,16}$/.test(args)) {
       await preferences.start(chatId, userId, botUsername);
       await sendCollection(chatId, userId, await resolveNeteaseCommand(args), message.message_id);
-    } else if (cmd === '/start') {
+    } else if (cmd === '/start' && args !== 'app') {
       await preferences.start(chatId, userId, botUsername);
+    } else if (cmd === '/app' || (cmd === '/start' && args === 'app')) {
+      await send(chatId, 'ismusicnow · 音樂主義', { reply_markup: { inline_keyboard: [[isPrivate ? { text: 'ismusicnow ↗', web_app: { url: webAppUrl.href } } : { text: 'ismusicnow ↗', url: `https://t.me/${botUsername}?start=app` }]] } });
     } else if (['/help', '/about'].includes(cmd || '')) {
       await send(chatId, botHelp(ui, !isPrivate, botUsername), { reply_parameters: replyParameters(message.message_id) });
     } else if (cmd === '/lyric') {
@@ -340,7 +344,7 @@ async function main(): Promise<void> {
   for (const [code, language] of [['en', 'en'], ['zh', 'zh-Hans'], ['ja', 'ja'], ['ko', 'ko'], ['es', 'es'], ['fr', 'fr'], ['ru', 'ru']] as const) {
     for (const type of ['default', 'all_private_chats', 'all_group_chats']) await telegram('setMyCommands', { commands: botCommands(language), language_code: code, scope: { type } });
   }
-  await telegram('setChatMenuButton', { menu_button: { type: 'commands' } });
+  await telegram('setChatMenuButton', { menu_button: { type: 'web_app', text: 'ismusicnow', web_app: { url: webAppUrl.href } } });
   await cleanup.flush().catch(() => console.error('Bot 訊息清理失敗，稍後重試。'));
   let cleaning = false;
   const cleanupTimer = setInterval(() => {

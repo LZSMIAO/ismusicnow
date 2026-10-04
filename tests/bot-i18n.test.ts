@@ -14,7 +14,7 @@ test('the requested eight UI languages localize help, commands and errors while 
   assert.deepEqual(botLanguages, ['zh-Hant', 'zh-Hans', 'en', 'ja', 'ko', 'es', 'fr', 'ru']);
   for (const language of botLanguages) {
     const help = botHelp(language), commands = botCommands(language);
-    assert.ok(help.length < 4000); assert.equal(commands.length, 12);
+    assert.ok(help.length < 4000); assert.equal(commands.length, 13);
     assert.ok(commands.every((c) => c.description.length > 0 && c.description.length <= 256));
     assert.doesNotMatch(help, /\{\w+\}/);
     assert.doesNotMatch(help, /GPL|warranty|擔保|担保|adapter|適配器|适配器/);

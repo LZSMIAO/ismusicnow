@@ -43,3 +43,18 @@
 @media(max-width:700px){.mobile-nav{display:flex;align-items:center;margin-left:auto;gap:4px}.mobile-nav .icon-button{width:40px;height:40px}.app-header{gap:4px 8px}.searchbar{order:3}}
 
 @media(min-width:1251px){.mobile-preview-error.preview-collapsed{position:fixed;bottom:108px;right:16px;max-width:420px;display:flex;align-items:center;gap:16px;padding:12px 16px;background:var(--raised);color:var(--ink);border:1px solid var(--line);border-radius:6px;font-size:.875rem;z-index:var(--layer-toast)}.mobile-preview-error.preview-collapsed a{white-space:nowrap;text-decoration:underline}}
+
+/* Telegram Mini App: keep the same music workspace inside native chrome. */
+.telegram-app body{padding:var(--imn-safe-top,0px) var(--imn-safe-right,0px) 0 var(--imn-safe-left,0px);min-height:var(--imn-height,100dvh)}
+.telegram-app .workspace{height:calc(var(--imn-stable-height,100svh) - 168px - var(--imn-safe-top,0px) - var(--imn-safe-bottom,0px));min-height:0}
+.telegram-app .document-main{padding-bottom:calc(64px + var(--imn-safe-bottom,0px))}
+.telegram-app .queue-drawer{top:calc(80px + var(--imn-safe-top,0px));bottom:calc(104px + var(--imn-safe-bottom,0px));height:auto;max-height:calc(var(--imn-height,100dvh) - 184px - var(--imn-safe-top,0px) - var(--imn-safe-bottom,0px))}
+@media(max-width:700px){
+  .telegram-app .workspace,.telegram-app .workspace.preview-hidden{height:auto;padding-bottom:calc(120px + var(--imn-safe-bottom,0px))}
+  .telegram-app .player{left:var(--imn-safe-left,0px);right:var(--imn-safe-right,0px);height:calc(104px + var(--imn-safe-bottom,0px));padding-bottom:calc(12px + var(--imn-safe-bottom,0px))}
+  .telegram-app .queue-drawer{top:calc(124px + var(--imn-safe-top,0px));bottom:calc(116px + var(--imn-safe-bottom,0px));max-height:calc(var(--imn-height,100dvh) - 240px - var(--imn-safe-top,0px) - var(--imn-safe-bottom,0px))}
+  .telegram-app .toast,.telegram-app .mobile-preview-error{bottom:calc(112px + var(--imn-safe-bottom,0px))}
+  .telegram-keyboard .player{visibility:hidden;pointer-events:none}
+  .telegram-app .searchbar input{font-size:16px}
+  .telegram-app .mobile-nav .icon-button,.telegram-app .save-button{min-height:44px;min-width:44px}
+}

@@ -1,4 +1,5 @@
 import type { DownloadJob, Track } from './types.js';
+import { telegramBridge } from './telegram.js';
 import { api } from './ui.js';
 
 export function createPreviewState(onfinish: () => void) {
@@ -49,7 +50,10 @@ export function createPreviewState(onfinish: () => void) {
       audio.removeAttribute('src'); audio.load(); track = next; status = 'loading'; elapsed = 0; length = next.durationMs / 1000; ready = false; limited = false; error = ''; finished = false;
       try {
         const local = jobs.find((job) => job.status === 'completed' && job.track.provider === next.provider && job.track.id === next.id);
-        const result = local ? { available: true, url: `/api/downloads/${local.id}/preview`, limited: false }
+        const localUrl = local && telegramBridge()
+          ? (await api<{ url: string }>(`/api/downloads/${local.id}/access`, { method: 'POST', body: JSON.stringify({ purpose: 'preview' }), signal: request.signal })).url
+          : local ? `/api/downloads/${local.id}/preview` : undefined;
+        const result = local ? { available: true, url: localUrl, limited: false }
           : await api<{ available: boolean; url?: string; limited?: boolean; message?: string }>(`/api/preview?provider=${next.provider}&id=${encodeURIComponent(next.id)}`, { signal: request.signal });
         if (sequence !== generation || !audio) return;
         if (!result.available || !result.url) { status = 'unavailable'; error = 'message' in result && result.message || '此來源沒有可用的播放音訊。'; return; }

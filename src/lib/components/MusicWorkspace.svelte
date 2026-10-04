@@ -9,6 +9,7 @@
   import { createDownloadState } from '#lib/download-state.svelte.js';
   import { createPreviewState } from '#lib/preview-state.svelte.js';
   import { api, duration, providerNames } from '#lib/ui.js';
+  import { setTelegramBack } from '#lib/telegram.js';
   import type { Collection, SearchSource, Track } from '#lib/types.js';
 
   type Recent = { input: string; provider: SearchSource; title: string; artist: string; cover: string; kind: Collection['kind'] };
@@ -45,6 +46,9 @@
     const motion = () => reduced = media.matches; media.addEventListener('change', motion);
     try { const saved: unknown = JSON.parse(localStorage.getItem('ismusicnow-recent') || '[]'); if (Array.isArray(saved)) recent = saved.filter((item) => item && typeof item.input === 'string' && typeof item.title === 'string' && typeof item.artist === 'string' && typeof item.cover === 'string' && ['track', 'album', 'playlist', 'search'].includes(item.kind) && ['all', 'netease', 'spotify', 'ytm'].includes(item.provider)).slice(0, 8); } catch { /* Browsing works without local storage. */ }
     return () => { searchRequest?.abort(); clearTimeout(noticeTimer); stopQueue(); stopPlayer(); media.removeEventListener('change', motion); };
+  });
+  $effect(() => {
+    return setTelegramBack(queueOpen ? closeQueue : collection ? (previous.length ? back : home) : null);
   });
   function feedback(text: string) { notice = text; clearTimeout(noticeTimer); noticeTimer = setTimeout(() => notice = '', 5000); }
   async function resolve(value = input, provider = source as SearchSource) {

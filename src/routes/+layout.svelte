@@ -1,7 +1,12 @@
 <script lang="ts">
   import '../app.css';
+  import { onMount } from 'svelte';
+  import { goto } from '$app/navigation';
+  import { mountTelegram, setTelegramBack } from '#lib/telegram.js';
   import { page } from '$app/state';
   let { children } = $props();
+  onMount(() => mountTelegram());
+  $effect(() => { if (page.url.pathname !== '/') return setTelegramBack(() => void goto('/')); });
 </script>
 <svelte:head><meta name="description" content="音樂主義 — 搜尋、試聽與保存網易雲、Spotify 和 YouTube Music 的音樂。" /><meta name="robots" content="noindex,nofollow" /></svelte:head>
 <a class="skip-link" href="#main">跳到主要內容</a>
