@@ -32,7 +32,7 @@ test('queue persists real metadata, isolates owners and clears only the owner fi
     }, root);
     await store.create('alice', [track], 'original');
     const job = await waitForJob(store, 'alice');
-    assert.equal(job.status, 'completed'); assert.ok(job.audio?.codec); assert.equal(job.audio?.sampleRate, 8000);
+    assert.equal(job.status, 'completed', job.error); assert.ok(job.audio?.codec); assert.equal(job.audio?.sampleRate, 8000);
     assert.equal(job.filename, 'Test - Fixture.wav'); assert.equal('path' in job, false); assert.equal('owner' in job, false);
     assert.deepEqual(await store.list('bob'), []);
     await assert.rejects(store.file('bob', job.id), { code: 'NOT_FOUND' });
@@ -52,7 +52,8 @@ test('short previews fail and their audio files are removed', async () => {
     }, root);
     await store.create('alice', [track], 'original');
     const job = await waitForJob(store, 'alice'); assert.equal(job.status, 'failed');
-    assert.match(job.error!, /音源長度不足/);
+    assert.match(job.error!, /音源長度不足/); assert.equal(job.errorCode, 'INCOMPLETE_AUDIO');
+    assert.equal((await new DownloadStore('test', undefined, root).list('alice'))[0]?.errorCode, 'INCOMPLETE_AUDIO');
     assert.deepEqual((await readdir(join(root, 'test'))).filter((p) => !p.endsWith('.json')), []);
   } finally { await rm(root, { recursive: true, force: true }); }
 });

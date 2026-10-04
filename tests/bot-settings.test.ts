@@ -8,13 +8,18 @@ import type { Track } from '../src/lib/types.js';
 
 const track: Track = { id: '123', provider: 'netease', title: '人是猫', artists: ['张卡斯', '洛天依'], album: '人是猫', durationMs: 136000, cover: '', sourceUrl: 'https://music.163.com/song?id=123' };
 
-test('Original preserves all names; Chinese preferences convert metadata without changing the source track', () => {
+test('NetEase Chinese preferences convert metadata; other providers always preserve source names', () => {
   assert.deepEqual(displayTrack(track, 'original'), track);
   const traditional = displayTrack(track, 'zh-Hant');
   assert.equal(traditional.title, '人是貓'); assert.equal(traditional.album, '人是貓'); assert.deepEqual(traditional.artists, ['張卡斯', '洛天依']);
   assert.equal(traditional.id, track.id); assert.equal(traditional.sourceUrl, track.sourceUrl);
   assert.deepEqual(displayTrack(traditional, 'zh-Hans'), track);
   assert.equal(track.title, '人是猫');
+  for (const provider of ['spotify', 'ytm'] as const) {
+    const other = { ...track, provider };
+    assert.deepEqual(displayTrack(other, 'zh-Hant'), other);
+    assert.deepEqual(displayTrack({ ...traditional, provider }, 'zh-Hans'), { ...traditional, provider });
+  }
 });
 
 test('TC and SC normalize Chinese parts while native English, Japanese and Korean names remain unchanged', () => {
@@ -32,7 +37,7 @@ test('TC and SC normalize Chinese parts while native English, Japanese and Korea
   assert.deepEqual(displayTrack(duet, 'zh-Hant').artists, ['張卡斯', '宇多田ヒカル']);
 });
 
-test('first acquisition pauses, offers the requested choices, and resumes exactly once after a restart', async () => {
+test('first NetEase acquisition pauses, offers choices and resumes exactly once after a restart', async () => {
   const root = await mkdtemp(join(tmpdir(), 'ismusicnow-settings-'));
   try {
     const messages: { text: string; extra?: Record<string, unknown> }[] = [], acquisitions: unknown[][] = [];
@@ -41,7 +46,7 @@ test('first acquisition pauses, offers the requested choices, and resumes exactl
     const flow = new BotLanguageSettings(new BotSettingsStore(root), send, acquire);
     await flow.request(7, 42, track, 90);
     assert.equal(acquisitions.length, 0);
-    assert.match(messages[0]!.text, /首次獲取/);
+    assert.match(messages[0]!.text, /首次獲取網易雲/);
     assert.match(JSON.stringify(messages[0]!.extra), /Original.*中文統一繁體.*中文统一简体/);
     assert.doesNotMatch(JSON.stringify(messages[0]!.extra), /其他語言/);
     const restored = new BotLanguageSettings(new BotSettingsStore(root), send, acquire);
@@ -51,6 +56,49 @@ test('first acquisition pauses, offers the requested choices, and resumes exactl
     await restored.request(8, 42, track, 91);
     assert.deepEqual(acquisitions.at(-1), [8, 42, track, 'zh-Hant', 91]);
     assert.equal((await new BotSettingsStore(root).get(42)).language, 'zh-Hant');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('Spotify and YTM bypass Chinese settings without consuming a pending NetEase request', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ismusicnow-settings-'));
+  try {
+    const store = new BotSettingsStore(root), acquisitions: unknown[][] = [], messages: string[] = [];
+    const flow = new BotLanguageSettings(store, async (_id, text) => { messages.push(text); }, async (...args) => { acquisitions.push(args); });
+    await flow.request(7, 42, { ...track, provider: 'spotify' }, 80);
+    assert.equal(messages.length, 0); assert.deepEqual(await store.get(42), {});
+    await flow.request(7, 42, track, 90);
+    await flow.request(7, 42, { ...track, provider: 'ytm' }, 91);
+    assert.equal((await store.get(42)).pending?.track.provider, 'netease');
+    await flow.callback(7, 42, 'lang:42:zh-Hant');
+    assert.deepEqual(acquisitions.map((a) => [a[2], a[3]]), [[{ ...track, provider: 'spotify' }, 'original'], [{ ...track, provider: 'ytm' }, 'original'], [track, 'zh-Hant']]);
+    await flow.request(7, 42, { ...track, provider: 'spotify' }, 92);
+    assert.equal(acquisitions.at(-1)?.[3], 'original');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test('UI language persists independently of NetEase spelling and pending first-use requests', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ismusicnow-settings-'));
+  try {
+    const store = new BotSettingsStore(root), messages: { text: string; extra?: Record<string, unknown> }[] = [], acquisitions: unknown[][] = [];
+    const send = async (_chat: number, text: string, extra?: Record<string, unknown>) => { messages.push({ text, extra }); };
+    const flow = new BotLanguageSettings(store, send, async (...args) => { acquisitions.push(args); }, async () => { throw new Error('Menu update failed'); });
+    await flow.request(7, 42, track, 90);
+    await flow.callback(7, 42, 'ui:42:en');
+    assert.equal(acquisitions.length, 0);
+    assert.equal((await store.get(42)).pending?.track.title, '人是猫');
+    assert.equal((await store.get(42)).language, undefined);
+    assert.equal(await new BotLanguageSettings(new BotSettingsStore(root), send, async () => {}).locale(42), 'en');
+    assert.match(messages.at(-1)!.text, /Bot settings/);
+    await flow.callback(7, 42, 'lang:42:zh-Hant');
+    assert.equal(acquisitions.at(-1)?.[3], 'zh-Hant');
+    await flow.callback(7, 42, 'ui:42:ja');
+    assert.equal((await store.get(42)).language, 'zh-Hant');
+    await flow.callback(7, 11, 'ui:42:ru');
+    assert.equal(await flow.locale(42), 'ja'); assert.equal(await flow.locale(11), 'zh-Hant');
+    await flow.showUi(7, 42);
+    const keyboard = (messages.at(-1)!.extra?.reply_markup as { inline_keyboard: { callback_data: string }[][] }).inline_keyboard;
+    assert.equal(keyboard.flat().filter((b) => b.callback_data.startsWith('ui:')).length, 8);
+    assert.doesNotMatch(JSON.stringify(keyboard), /Deutsch|Português/);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
