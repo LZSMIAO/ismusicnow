@@ -76,7 +76,7 @@ YTM_COOKIES_PATH=/app/secrets/ytm-cookies.txt
 
 可選 `BOT_ALLOWED_USERS=你的TelegramUserID`，多個 ID 用逗號分隔；留空則 bot 公開可用。
 
-`/settings` 的 Original／繁體／簡體顯示偏好在本機使用 OpenCC 轉換，不需要新 API、翻譯 key 或 `.env` 配置。首次獲取時每位用戶自己選擇；資料保存在 `data/bot/bot-users/`，需隨 bot 資料一同備份。只統一中文顯示歌名、歌手、專輯及顯示檔名的 TC／SC 字形；其他語言保留原文，原始音訊與檔案內標籤保持原文。
+`/settings` 提供獨立的「Bot 介面語言」與「網易雲中文名稱字形」。Bot 語言支援繁中、簡中、English、日本語、한국어、Español、Français、Русский，只影響提示、按鈕、指令及卡片欄位標籤；網易雲字形選擇 Original／TC／SC，只作用於網易雲中文歌名、歌手、專輯及顯示檔名。Spotify／YTM 的名稱保持來源原文；只有首次網易雲獲取會提示選擇字形。兩項偏好分別按用戶保存在 `data/bot/bot-users/`，需隨 bot 資料一同備份。翻譯文案與 OpenCC 在本機運行，不需要新 API、翻譯 key 或 `.env` 配置，原始音訊與檔案內標籤保持原文。
 
 ## 權限與套用
 
