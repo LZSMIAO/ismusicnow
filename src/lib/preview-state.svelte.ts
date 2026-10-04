@@ -22,7 +22,13 @@ export function createPreviewState(onfinish: () => void) {
       audio.ontimeupdate = () => { elapsed = Math.min(length, audio!.currentTime); if (length > 0 && audio!.currentTime >= length) finish(); };
       audio.onended = finish;
       audio.onerror = () => { status = 'error'; error = '此音訊無法在瀏覽器播放，請改用原平台播放。'; ready = false; };
-      return () => { generation++; request?.abort(); audio!.pause(); audio!.removeAttribute('src'); audio!.load(); audio = undefined; };
+      const mounted = audio;
+      return () => {
+        generation++; request?.abort();
+        // Media events can be queued by pause/load after the component unmounts.
+        mounted.onplaying = mounted.onpause = mounted.onwaiting = mounted.onloadedmetadata = mounted.ontimeupdate = mounted.onended = mounted.onerror = null;
+        mounted.pause(); mounted.removeAttribute('src'); mounted.load(); audio = undefined;
+      };
     },
     pause() { generation++; request?.abort(); audio?.pause(); if (status === 'loading' || status === 'playing') status = 'paused'; },
     async play(next: Track, jobs: DownloadJob[]) {
