@@ -76,7 +76,13 @@
     event.preventDefault(); source = options[next]!.value; buttons[next]?.focus({ preventScroll: true });
   }
   onMount(() => {
+    // Manual popover: native light-dismiss sees the input outside the panel and
+    // closes it between focus and click, causing a close/open flash. One owner
+    // handles outside clicks, focus departure and Escape instead.
     const reposition = () => { if (panel.matches(':popover-open')) position(); };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && panel.matches(':popover-open')) { event.preventDefault(); close(true); }
+    };
     const focused = (event: FocusEvent) => {
       const target = event.target as Node;
       if (panel.matches(':popover-open') && !form.contains(target) && !panel.contains(target)) close();
@@ -87,11 +93,13 @@
     };
     window.addEventListener('resize', reposition); window.addEventListener('scroll', reposition, true);
     window.visualViewport?.addEventListener('resize', reposition); window.visualViewport?.addEventListener('scroll', reposition);
+    document.addEventListener('keydown', escape);
     document.addEventListener('focusin', focused);
     document.addEventListener('pointerdown', outside, true);
     return () => {
       window.removeEventListener('resize', reposition); window.removeEventListener('scroll', reposition, true);
       window.visualViewport?.removeEventListener('resize', reposition); window.visualViewport?.removeEventListener('scroll', reposition);
+      document.removeEventListener('keydown', escape);
       document.removeEventListener('focusin', focused);
       document.removeEventListener('pointerdown', outside, true);
     };
@@ -104,7 +112,7 @@
   <span id="search-current-source" class="sr-only">搜尋來源：{selected.label}</span>
   <button class="search-submit" type="submit" aria-label={loading ? '重新搜尋' : '搜尋'} disabled={!value.trim()}><ArrowRight size={24} /></button>
 </form>
-<div id="search-options" bind:this={panel} popover class="search-options" aria-label="搜尋選項" style={`top:${top}px;left:${left}px;width:${width}px;max-height:${maxHeight}px`} ontoggle={(event: ToggleEvent) => open = event.newState === 'open'}>
+<div id="search-options" bind:this={panel} popover="manual" class="search-options" aria-label="搜尋選項" style={`top:${top}px;left:${left}px;width:${width}px;max-height:${maxHeight}px`} onbeforetoggle={(event: ToggleEvent) => open = event.newState === 'open'}>
   <div class="search-sources" role="radiogroup" tabindex="-1" aria-label="搜尋來源" onkeydown={optionKeyboard}>
     {#each options as option (option.value)}
       <button type="button" role="radio" aria-label={option.label} aria-checked={source === option.value} tabindex={source === option.value ? 0 : -1} onclick={() => { source = option.value; inputElement?.focus({ preventScroll: true }); }}>
