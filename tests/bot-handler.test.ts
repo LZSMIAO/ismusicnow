@@ -39,14 +39,18 @@ test('plain text → reply/pagination → numeric or owned callback selection �
       now += 3100;
       await handle({ update_id: id, message: { message_id: id, chat: { id: chatId, type }, from: { id: user, language_code: 'de' }, text } });
     };
-    const callback = async (data: string, menuId: number, user = 42) => {
+    const callback = async (data: string, menuId: number, user = 42, text?: string) => {
       now += 1000;
-      await handle({ update_id: 500, callback_query: { id: 'stub', from: { id: user, language_code: 'de' }, data, message: { message_id: menuId, chat: { id: 7, type: 'private' } } } });
+      await handle({ update_id: 500, callback_query: { id: 'stub', from: { id: user, language_code: 'de' }, data, message: { message_id: menuId, chat: { id: 7, type: 'private' }, text } } });
     };
     await message(90, '/start');
     let sent = calls.filter((call) => call.method === 'sendMessage').at(-1)!;
     assert.equal(sent.body.reply_markup.inline_keyboard.flat().length, 1);
     assert.equal(sent.body.reply_markup.inline_keyboard[0][0].text, 'English ｜ Switch language');
+    const startId = nextMessage;
+    await callback(sent.body.reply_markup.inline_keyboard[0][0].callback_data, startId, 42, sent.body.text);
+    const expanded = calls.findLast((call) => call.method === 'sendMessage')!;
+    assert.equal(expanded.body.reply_markup.inline_keyboard.flat().filter((button: { callback_data: string }) => button.callback_data.startsWith('ui:')).length, 8);
     await message(100, '草東沒有派對');
     sent = calls.filter((call) => call.method === 'sendMessage').at(-1)!;
     assert.equal(sent.body.reply_parameters.message_id, 100);
@@ -88,7 +92,7 @@ test('plain text → reply/pagination → numeric or owned callback selection �
     const removed: number[] = [];
     await new BotMessageCleanup('999000', async (_chat, id) => { removed.push(id); }, root, () => now).flush();
     assert.ok(removed.includes(100) && removed.includes(101)); assert.ok(!removed.includes(120));
-    assert.ok(!removed.includes(90) && !removed.includes(140), 'start screens and music cards remain');
+    assert.ok(!removed.includes(90) && !removed.includes(140) && !removed.includes(startId), 'start screens and music cards remain');
   } finally {
     globalThis.fetch = realFetch; Date.now = realNow; process.env = env;
     await rm(root, { recursive: true, force: true });
