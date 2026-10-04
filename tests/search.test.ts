@@ -60,3 +60,11 @@ test('a source with a matching song ranks above a successful empty source', asyn
   const merged = await combineSearches('same name', [{ provider: 'netease', search: async () => result('netease', []) }, { provider: 'spotify', search: async () => result('spotify', ['a']) }]);
   assert.deepEqual(merged.providers, ['spotify', 'netease']);
 });
+
+test('an artist-name query prefers actual credited artists over titles mentioning them', async () => {
+  const credited = result('netease', ['1']), mention = result('spotify', ['a']);
+  credited.tracks[0] = { ...credited.tracks[0]!, title:'晴天', artists:['周杰倫'] };
+  mention.tracks[0] = { ...mention.tracks[0]!, title:'周杰倫的故事', artists:['其他人'] };
+  const merged = await combineSearches('周杰伦', [mention,credited].map(c=>({provider:c.provider,search:async()=>c})));
+  assert.equal(merged.tracks[0]?.id,'1');
+});

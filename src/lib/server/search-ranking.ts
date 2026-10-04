@@ -21,7 +21,7 @@ export function searchRelevance(query: string, item: Track | MusicEntity): numbe
   let withoutArtists = q;
   for (const artist of artistNames) {
     if (artist.length >= 2 && q.includes(artist)) {
-      score += 160;
+      score += artist === q ? 800 : 160;
       withoutArtists = withoutArtists.replaceAll(artist, '');
     } else if (q.length >= 2 && artist.includes(q)) score += 300;
   }
