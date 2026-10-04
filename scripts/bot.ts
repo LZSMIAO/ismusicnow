@@ -212,10 +212,10 @@ async function handleUpdate(update: Update): Promise<void> {
       return;
     }
     if (cmd === '/start' && /^\d{1,16}$/.test(args)) {
-      await preferences.start(chatId, userId);
+      await preferences.start(chatId, userId, botUsername);
       await sendCollection(chatId, userId, await resolveNeteaseCommand(args), message.message_id);
     } else if (cmd === '/start') {
-      await preferences.start(chatId, userId);
+      await preferences.start(chatId, userId, botUsername);
     } else if (['/help', '/about'].includes(cmd || '')) {
       await send(chatId, botHelp(ui, !isPrivate, botUsername), { reply_parameters: replyParameters(message.message_id) });
     } else if (cmd === '/lyric') {
