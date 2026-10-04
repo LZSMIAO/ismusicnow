@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, resolve } from 'node:path';
 import { DownloadStore } from '../src/lib/server/downloads.js';
@@ -7,7 +8,9 @@ import { neteaseLyrics } from '../src/lib/server/providers/netease.js';
 import { safeFilename } from '../src/lib/server/links.js';
 import { resolveNeteaseCommand } from '../src/lib/server/bot-input.js';
 import { BotLanguageSettings, BotSettingsStore, displayTrack, type AlbumLanguage } from '../src/lib/server/bot-settings.js';
-import { audioPresentation, sendMusic, TelegramRequestError } from '../src/lib/server/bot-media.js';
+import { audioPresentation, musicReferencePayload, sendMusic, TelegramRequestError } from '../src/lib/server/bot-media.js';
+import { BotMusicCache, type CachedMusic } from '../src/lib/server/bot-cache.js';
+import { config } from '../src/lib/server/config.js';
 import { metadataForDisplay } from '../src/lib/server/bot-metadata.js';
 import { botCommands, botHelp, botText, botError } from '../src/lib/server/bot-i18n.js';
 import type { Track, Provider, Collection } from '../src/lib/types.js';
@@ -17,12 +20,14 @@ if (!token) { console.error('請在 .env 配置 BOT_TOKEN。'); process.exit(1);
 const endpoint = `https://api.telegram.org/bot${token}/`;
 const allowed = new Set((process.env.BOT_ALLOWED_USERS || '').split(',').map((v) => v.trim()).filter(Boolean));
 const store = new DownloadStore('bot');
+const mediaCache = new BotMusicCache(token.split(':')[0]!);
 const lastRequest = new Map<number, number>();
 let stopping = false, offset = 0, handlers = 0;
 const statePath = resolve(process.env.DATA_DIR || '.data', 'bot-offset.json');
 
-interface Message { message_id: number; chat: { id: number }; from?: { id: number }; text?: string }
-interface Update { update_id: number; message?: Message; callback_query?: { id: string; from: { id: number }; data?: string; message?: Message }; inline_query?: { id: string; from: { id: number }; query: string } }
+interface User { id: number; language_code?: string }
+interface Message { message_id: number; chat: { id: number }; from?: User; text?: string }
+interface Update { update_id: number; message?: Message; callback_query?: { id: string; from: User; data?: string; message?: Message }; inline_query?: { id: string; from: User; query: string } }
 
 export async function telegram<T>(method: string, body: Record<string, unknown> | FormData = {}): Promise<T> {
   const response = await fetch(`${endpoint}${method}`, { method: 'POST',
@@ -41,27 +46,48 @@ const preferences = new BotLanguageSettings(new BotSettingsStore(), send, sendTr
 async function sendTrack(chatId: number, userId: number, track: Track, language: AlbumLanguage, messageId: number): Promise<void> {
   const owner = `tg:${chatId}:${userId}`;
   const ui = await preferences.locale(userId);
-  let visible = displayTrack(track, language);
-  await send(chatId, botText(ui, 'fetching', { title: visible.title, source: track.provider === 'ytm' ? 'YTM' : track.provider }));
-  const [created] = await store.create(owner, [track], 'original');
-  if (language !== 'original') visible = displayTrack(await metadataForDisplay(track), language);
-  const until = Date.now() + 360_000;
-  while (Date.now() < until && !stopping) {
-    const job = (await store.list(owner)).find((j) => j.id === created!.id)!;
-    if (job.status === 'failed') { await send(chatId, botError(ui, job.errorCode)); return; }
-    if (job.status === 'completed') {
-      const { path } = await store.file(owner, job.id);
-      if ((await stat(path)).size > 49 * 1024 * 1024) { await send(chatId, botText(ui, 'tooLarge')); return; }
-      const presentation = await audioPresentation(path, track);
-      const delivery = await sendMusic(telegram, { chatId, replyTo: messageId, job, track: visible, uiLanguage: ui,
-        bytes: new Uint8Array(await readFile(path)),
-        filename: `${safeFilename(`${visible.artists.join(' - ')} - ${visible.title}`)}${extname(path)}`, ...presentation });
-      if (delivery === 'document') await send(chatId, botText(ui, 'documentFallback'));
-      return;
-    }
-    await new Promise((done) => setTimeout(done, 1500));
+  const visible = displayTrack(language !== 'original' ? await metadataForDisplay(track) : track, language);
+  let quality = track.provider === 'netease' ? 'original-lossless' : track.provider === 'ytm' ? 'original-bestaudio' : config.spotifyAudioQuality;
+  if (track.provider === 'spotify' && config.votifyConfigPath) {
+    const digest = await readFile(config.votifyConfigPath).then((bytes) => createHash('sha256').update(bytes).digest('hex')).catch(() => 'unreadable');
+    quality += `:${digest}`;
   }
-  if (!stopping) await send(chatId, botText(ui, 'pending'));
+  await mediaCache.deliver({ provider: track.provider, id: track.id, quality }, async (record) => {
+    const job = { ...record, id: 'telegram-cache', track, format: 'original' as const, status: 'completed' as const,
+      stage: '', createdAt: '', updatedAt: '' };
+    await telegram(record.kind === 'audio' ? 'sendAudio' : 'sendDocument', musicReferencePayload({
+      chatId, replyTo: messageId, track: visible, job, fileId: record.fileId, kind: record.kind, duration: record.duration, uiLanguage: ui,
+    }));
+  }, async () => {
+    await send(chatId, botText(ui, 'fetching', { title: visible.title, source: track.provider === 'ytm' ? 'YTM' : track.provider }));
+    const [created] = await store.create(owner, [track], 'original');
+    const until = Date.now() + 360_000;
+    while (Date.now() < until && !stopping) {
+      const job = (await store.list(owner)).find((j) => j.id === created!.id)!;
+      if (job.status === 'failed') throw new ServiceError(job.errorCode || 'ADAPTER_FAILED', '下載失敗。', 502);
+      if (job.status === 'completed') {
+        const { path } = await store.file(owner, job.id);
+        if ((await stat(path)).size > 49 * 1024 * 1024) throw new ServiceError('FILE_TOO_LARGE', '音訊超過 Telegram 上限。', 413);
+        const presentation = await audioPresentation(path, track);
+        let record: CachedMusic | undefined;
+        const delivery = await sendMusic(telegram, { chatId, replyTo: messageId, job, track: visible, uiLanguage: ui,
+          bytes: new Uint8Array(await readFile(path)),
+          filename: `${safeFilename(`${track.artists.join(' - ')} - ${track.title}`)}${extname(path)}`, ...presentation,
+          onDelivered: (kind, result) => {
+            const message = result as { audio?: { file_id?: string }; document?: { file_id?: string } } | undefined;
+            const fileId = message?.[kind]?.file_id;
+            if (fileId) record = { fileId, kind, duration: presentation.duration, bytes: job.bytes!, audioSource: job.audioSource, audio: job.audio };
+          },
+        });
+        // Telegram now holds the file. Do not keep a duplicate on this VPS.
+        await store.remove(owner, job.id).catch(() => console.error('Bot 暫存音訊清理失敗。'));
+        if (delivery === 'document') await send(chatId, botText(ui, 'documentFallback')).catch(() => {});
+        return record;
+      }
+      await new Promise((done) => setTimeout(done, 1500));
+    }
+    throw new ServiceError('DOWNLOAD_TIMEOUT', '下載等待超時。', 504);
+  });
 }
 
 async function listTracks(chatId: number, userId: number, input: string, provider: Provider, messageId: number): Promise<void> {
@@ -78,8 +104,10 @@ async function sendCollection(chatId: number, userId: number, collection: Collec
 }
 
 async function handle(update: Update): Promise<void> {
-  const userId = update.message?.from?.id || update.callback_query?.from.id || update.inline_query?.from.id;
+  const user = update.message?.from || update.callback_query?.from || update.inline_query?.from;
+  const userId = user?.id;
   if (!userId || !permitted(userId)) return;
+  await preferences.observeLanguage(userId, user.language_code);
   if (update.inline_query) {
     const q = update.inline_query;
     if (q.query.trim().length < 2) { await telegram('answerInlineQuery', { inline_query_id: q.id, results: [], cache_time: 1, is_personal: true }); return; }
@@ -110,8 +138,11 @@ async function handle(update: Update): Promise<void> {
       return;
     }
     if (cmd === '/start' && /^\d{1,16}$/.test(args)) {
+      await preferences.start(chatId, userId);
       await sendCollection(chatId, userId, await resolveNeteaseCommand(args), message.message_id);
-    } else if (['/start', '/help', '/about'].includes(cmd || '')) {
+    } else if (cmd === '/start') {
+      await preferences.start(chatId, userId);
+    } else if (['/help', '/about'].includes(cmd || '')) {
       await send(chatId, botHelp(ui));
     } else if (cmd === '/lyric') {
       if (!args) { await send(chatId, botText(ui, 'lyricInput')); return; }
