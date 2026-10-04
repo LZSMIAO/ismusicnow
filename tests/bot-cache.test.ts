@@ -72,7 +72,7 @@ test('cached sends contain file_id only, regenerate per-user names and captions,
   const tc = musicReferencePayload({ chatId: 7, replyTo: 90, job, track: displayTrack(track, 'zh-Hant'), fileId: record.fileId, kind: 'audio', duration: record.duration, uiLanguage: 'en' });
   assert.equal(tc.get('audio'), record.fileId); assert.equal(tc.get('title'), '人是貓'); assert.equal(tc.get('performer'), '張卡斯');
   assert.match(String(tc.get('caption')), /Album：音樂/); assert.equal(tc.has('thumbnail'), false);
-  assert.equal(JSON.parse(String(tc.get('reply_markup'))).inline_keyboard.flat().length, 1);
+  assert.equal(JSON.parse(String(tc.get('reply_markup'))).inline_keyboard.flat().length, 2);
   const sc = musicReferencePayload({ chatId: 8, replyTo: 91, job, track, fileId: record.fileId, kind: 'audio', duration: record.duration, uiLanguage: 'zh-Hans' });
   assert.equal(sc.get('audio'), record.fileId); assert.match(String(sc.get('caption')), /专辑：音乐/);
   assert.equal(sc.get('title'), '人是猫'); assert.equal(sc.get('chat_id'), '8');

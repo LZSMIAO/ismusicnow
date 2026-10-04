@@ -75,7 +75,7 @@ test('typed search → owned artist view → albums → tracks, stale callbacks 
     const pick = button('pick:'), albumBack = button('back:'); await callback(pick, menu);
     const audio = calls.findLast(c => c.method === 'sendAudio')!.body;
     assert.equal(audio.reply_parameters, undefined, 'no deleted-message quote on permanent audio');
-    assert.match(audio.caption, /<tg-spoiler>.*瓦合/s); assert.match(audio.caption, /&lt;live&gt;/); assert.match(audio.caption, /&amp;/);
+    assert.match(audio.caption, /<blockquote expandable>.*瓦合/s); assert.match(audio.caption, /&lt;live&gt;/); assert.match(audio.caption, /&amp;/);
     assert.equal(audio.parse_mode, 'HTML'); assert.ok(!deleted().includes(menu), 'album selector remains usable');
     await callback(pick, menu); assert.equal(calls.filter(c => c.method === 'sendAudio').length, 2, 'a second album track request remains usable');
     const musicCard = nextMessage;

@@ -24,7 +24,7 @@ export function musicCaption(track: Track, job: DownloadJob, language: BotLangua
   const technical = [audio?.codec || botText(language, 'originalAudio'), job.bytes ? `${(job.bytes / 1024 / 1024).toFixed(2)} MB` : '', audio?.bitrate ? `${Math.round(audio.bitrate / 1000)} kbps` : ''].filter(Boolean).join(' · ');
   return [recipient?.id ? `<a href="tg://user?id=${recipient.id}">${escapeHtml(shortText(recipient.name || String(recipient.id), 40))}</a>` : '',
     `<b>「${title}」</b> — ${artists}`,
-    `<tg-spoiler>${escapeHtml(botText(language, 'album'))}：${album}\n${escapeHtml(source)} · ${escapeHtml(technical)}\nvia @${escapeHtml(botUsername)} · 音樂主義</tg-spoiler>`].filter(Boolean).join('\n');
+    `<blockquote expandable>${escapeHtml(botText(language, 'album'))}：${album}\n${escapeHtml(source)} · ${escapeHtml(technical)}\nvia @${escapeHtml(botUsername)} · 音樂主義</blockquote>`].filter(Boolean).join('\n');
 }
 function musicButtons(track: Track, language: BotLanguage) {
   const row: { text: string; url?: string; callback_data?: string }[] = [];
@@ -35,7 +35,7 @@ function musicButtons(track: Track, language: BotLanguage) {
   const id = track.artistIds?.[0];
   if (id && (track.provider === 'netease' ? /^\d{1,16}$/ : /^[a-zA-Z0-9]{22}$/).test(id) && track.provider !== 'ytm') row.push({ text: shortText(track.artists[0] || botText(language, 'artist'), 20), callback_data: `browse:${track.provider}:artist:${id}` });
   row.push({ text: `${botText(language, 'source')} ↗`, url: track.sourceUrl });
-  return { inline_keyboard: [row] };
+  return { inline_keyboard: [row, [{ text: botText(language, 'share'), switch_inline_query: track.sourceUrl }]] };
 }
 
 // Cover URLs originate upstream. Limit them to platform CDNs, including redirects.

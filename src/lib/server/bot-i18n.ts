@@ -21,6 +21,16 @@ export const botLanguageNames: Record<BotLanguage, string> = {
 // Translate the static template before inserting music metadata. UI language
 // must never translate or normalize a song, artist, album, URL or filename.
 const catalog = {
+  inlineHelp: ["在任何聊天輸入 @{botUsername} ＋歌名，即可搜尋與分享。", "Type @{botUsername} and a song name in any chat to search and share.", "どのチャットでも @{botUsername} と曲名を入力して検索・共有できます。", "어느 채팅에서나 @{botUsername}과 곡명을 입력해 검색·공유하세요.", "Escribe @{botUsername} y una canción en cualquier chat para buscar y compartir.", "Tapez @{botUsername} et un titre dans n’importe quel chat pour chercher et partager.", "Введите @{botUsername} и название песни в любом чате для поиска и отправки."],
+  quickHelp: ["發送名稱或連結 → 選擇單曲、專輯、藝術家或歌單 → 獲取。", "Send a name or link → choose songs, albums, artists or playlists → download.", "名前・リンクを送信 → 曲・アルバム・アーティスト・プレイリストを選択 → 取得。", "이름·링크 전송 → 곡·앨범·아티스트·재생목록 선택 → 다운로드.", "Envía un nombre o enlace → elige canciones, álbumes, artistas o listas → descarga.", "Envoyez un nom ou lien → choisissez titres, albums, artistes ou playlists → téléchargez.", "Отправьте название или ссылку → выберите песни, альбомы, исполнителей или плейлисты → загрузите."],
+  inlineSearch: ["搜尋或貼上音樂連結", "Search or paste a music link", "検索または音楽リンクを貼り付け", "검색 또는 음악 링크 붙여넣기", "Busca o pega un enlace musical", "Rechercher ou coller un lien musical", "Поиск или ссылка на музыку"],
+  inlineHint: ["輸入歌曲、專輯、藝術家或歌單名稱", "Enter a song, album, artist or playlist name", "曲・アルバム・アーティスト・プレイリスト名を入力", "곡·앨범·아티스트·재생목록 이름 입력", "Escribe una canción, álbum, artista o lista", "Saisissez un titre, album, artiste ou playlist", "Введите песню, альбом, исполнителя или плейлист"],
+  inlineReady: ["可直接分享", "Ready to share", "すぐに共有できます", "바로 공유 가능", "Listo para compartir", "Prêt à partager", "Можно отправить сразу"],
+  inlineAcquire: ["先獲取，再分享", "Download, then share", "取得してから共有", "다운로드 후 공유", "Descarga y comparte", "Télécharger puis partager", "Загрузить и поделиться"],
+  acquire: ["獲取歌曲", "Get song", "曲を取得", "곡 다운로드", "Obtener canción", "Obtenir le titre", "Получить песню"],
+  share: ["分享至聊天", "Share to chat", "チャットに共有", "채팅에 공유", "Compartir en un chat", "Partager dans un chat", "Поделиться в чате"],
+  browseInline: ["查看曲目", "Browse songs", "曲を表示", "곡 보기", "Ver canciones", "Voir les titres", "Список песен"],
+  inlinePrivate: ["請先在私聊獲取，完成後點「分享至聊天」。", "Get this song in the private chat, then tap Share to chat.", "プライベートチャットで曲を取得し、共有ボタンを押してください。", "개인 채팅에서 다운로드 후 공유 버튼을 누르세요.", "Obtén la canción en privado y pulsa Compartir en un chat.", "Obtenez ce titre en privé, puis appuyez sur Partager dans un chat.", "Получите песню в личном чате и нажмите Поделиться в чате."],
   single: ["單曲", "Songs", "曲", "곡", "Canciones", "Titres", "Песни"],
   artist: ["藝術家", "Artists", "アーティスト", "아티스트", "Artistas", "Artistes", "Исполнители"],
   hotTracks: ["熱門單曲", "Top songs", "人気の曲", "인기곡", "Canciones populares", "Titres populaires", "Популярные песни"],
@@ -130,6 +140,7 @@ export function botCommands(language: BotLanguage) {
     .concat({ command: 'app', description: 'ismusicnow · Web App' });
 }
 export function botHelp(language: BotLanguage, group = false, botUsername = 'muismbot'): string {
-  return ['ismusicnow · 音樂主義', '', botText(language, group ? 'helpGroup' : 'browseIntro', { botUsername }),
-    ...botCommands(language).filter(c => ['search', 'netease', 'spotify', 'ytm', 'settings'].includes(c.command)).map((c) => `/${c.command} — ${c.description}`)].join('\n');
+  return ['<b>音樂主義</b>', '', botText(language, group ? 'helpGroup' : 'quickHelp', { botUsername }),
+    botText(language, 'inlineHelp', { botUsername }), '',
+    '<blockquote expandable>' + botCommands(language).map(c => `/${c.command} — ${c.description}`).join('\n') + '</blockquote>'].join('\n');
 }

@@ -1,5 +1,4 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { createHash } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,9 +11,10 @@ import { resolveNeteaseCommand } from '../src/lib/server/bot-input.js';
 import { BotLanguageSettings, BotSettingsStore, displayTrack, type AlbumLanguage } from '../src/lib/server/bot-settings.js';
 import { audioPresentation, musicReferencePayload, sendMusic, TelegramRequestError } from '../src/lib/server/bot-media.js';
 import { BotMusicCache, type CachedMusic } from '../src/lib/server/bot-cache.js';
+import { BotInline, parseInlineStart, type InlineQuery } from '../src/lib/server/bot-inline.js';
+import { musicCacheKey } from '../src/lib/server/bot-cache-key.js';
 import { BotMessageCleanup } from '../src/lib/server/bot-cleanup.js';
 import { BotSelections, selectionLifetime, selectionPageSize, selectionMessage, type MusicSelection } from '../src/lib/server/bot-selection.js';
-import { config } from '../src/lib/server/config.js';
 import { metadataForDisplay } from '../src/lib/server/bot-metadata.js';
 import { botCommands, botHelp, botText, botError } from '../src/lib/server/bot-i18n.js';
 import type { Track, Provider, Collection, MusicSearchKind } from '../src/lib/types.js';
@@ -35,7 +35,7 @@ const statePath = resolve(process.env.DATA_DIR || '.data', 'bot-offset', `${toke
 
 interface User { id: number; language_code?: string; is_bot?: boolean; first_name?: string }
 interface Message { message_id: number; message_thread_id?: number; sender_chat?: { id: number }; chat: { id: number; type?: string }; from?: User; text?: string; reply_to_message?: { message_id: number; from?: { username?: string } } }
-interface Update { update_id: number; message?: Message; callback_query?: { id: string; from: User; data?: string; message?: Message }; inline_query?: { id: string; from: User; query: string } }
+interface Update { update_id: number; message?: Message; callback_query?: { id: string; from: User; data?: string; message?: Message; inline_message_id?: string }; inline_query?: InlineQuery }
 
 export async function telegram<T>(method: string, body: Record<string, unknown> | FormData = {}): Promise<T> {
   const response = await fetch(`${endpoint}${method}`, { method: 'POST',
@@ -80,18 +80,19 @@ async function sendSettings(chatId: number, text: string, extra: Record<string, 
   }
   return send(chatId, text, { ...extra, reply_parameters: undefined });
 }
-const preferences = new BotLanguageSettings(new BotSettingsStore(), sendSettings, sendTrack, updateCommands);
+const settingsStore = new BotSettingsStore();
+const preferences = new BotLanguageSettings(settingsStore, sendSettings, sendTrack, updateCommands);
+const inline = new BotInline({
+  telegram, username: () => botUsername, resolve: resolveMusic, albums: artistAlbums, getTrack,
+  preferences: async userId => ({ ui: await preferences.locale(userId), names: (await settingsStore.get(userId)).language }),
+  cache: async track => mediaCache.get(await musicCacheKey(track)), metadata: metadataForDisplay,
+});
 
 async function sendTrack(chatId: number, userId: number, track: Track, language: AlbumLanguage, messageId: number, messageThreadId?: number, keepRequest = false): Promise<void> {
   const owner = `tg:${chatId}:${userId}`;
   const ui = await preferences.locale(userId);
   const visible = displayTrack(language !== 'original' ? await metadataForDisplay(track) : track, language);
-  let quality = track.provider === 'netease' ? 'original-lossless' : track.provider === 'ytm' ? 'original-bestaudio' : config.spotifyAudioQuality;
-  if (track.provider === 'spotify' && config.votifyConfigPath) {
-    const digest = await readFile(config.votifyConfigPath).then((bytes) => createHash('sha256').update(bytes).digest('hex')).catch(() => 'unreadable');
-    quality += `:${digest}`;
-  }
-  await mediaCache.deliver({ provider: track.provider, id: track.id, quality }, async (record) => {
+  await mediaCache.deliver(await musicCacheKey(track), async (record) => {
     const job = { ...record, id: 'telegram-cache', track, format: 'original' as const, status: 'completed' as const,
       stage: '', createdAt: '', updatedAt: '' };
     await telegram(record.kind === 'audio' ? 'sendAudio' : 'sendDocument', musicReferencePayload({
@@ -191,17 +192,18 @@ export async function handle(update: Update): Promise<void> {
 async function handleUpdate(update: Update): Promise<void> {
   const user = update.message?.from || update.callback_query?.from || update.inline_query?.from;
   const userId = user?.id;
+  // Inline queries have no chat ID and must always receive an answer, even
+  // when the sender is outside an allowlist. They never enter chat cleanup.
+  if (update.inline_query) {
+    const permittedSender = !!userId && !user?.is_bot && permitted(userId);
+    if (permittedSender) await preferences.observeLanguage(userId, user?.language_code).catch(() => {});
+    await inline.answer(update.inline_query, permittedSender); return;
+  }
   // Anonymous group senders cannot own personal settings or selection lists.
   if (!userId || user.is_bot || update.message?.sender_chat || !permitted(userId)) return;
   await preferences.observeLanguage(userId, user.language_code);
-  if (update.inline_query) {
-    const q = update.inline_query;
-    if (q.query.trim().length < 2) { await telegram('answerInlineQuery', { inline_query_id: q.id, results: [], cache_time: 1, is_personal: true }); return; }
-    const result = await resolveMusic(q.query, 'netease');
-    await telegram('answerInlineQuery', { inline_query_id: q.id, cache_time: 60, is_personal: true,
-      results: result.tracks.slice(0, 8).map((t) => ({ type: 'article', id: `${t.provider}:${t.id}`, title: t.title,
-        description: t.artists.join(' / '), input_message_content: { message_text: `${t.title} — ${t.artists.join(' / ')}\n${t.sourceUrl}` } })) });
-    return;
+  if (update.callback_query?.inline_message_id) {
+    await inline.callback({ ...update.callback_query, inline_message_id: update.callback_query.inline_message_id }); return;
   }
   const message = update.message || update.callback_query?.message;
   if (!message) return;
@@ -219,7 +221,7 @@ async function handleUpdate(update: Update): Promise<void> {
     const cmd = command?.split('@')[0];
     if (!update.callback_query && command?.startsWith('/') && command.includes('@') && command.split('@')[1]?.toLowerCase() !== botUsername.toLowerCase()) return;
     if (!update.callback_query) {
-      if (cmd?.startsWith('/') && !['/start', '/help', '/about', '/settings', '/setting', '/lyric', '/netease', '/music', '/musicid', '/search', '/spotify', '/ytm', '/download', '/album', '/artist', '/playlist'].includes(cmd)) return;
+      if (cmd?.startsWith('/') && !['/start', '/app', '/help', '/about', '/settings', '/setting', '/lyric', '/netease', '/music', '/musicid', '/search', '/spotify', '/ytm', '/download', '/album', '/artist', '/playlist'].includes(cmd)) return;
       if (!cmd?.startsWith('/') && !/https?:\/\/|^spotify:/.test(text) && !isPrivate && !replyToBot && !mentionsBot) return;
       if (!text || (isPrivate && /^@[a-zA-Z0-9_]+$/.test(text))) { await preferences.start(chatId, userId, botUsername); return; }
     }
@@ -289,15 +291,24 @@ async function handleUpdate(update: Update): Promise<void> {
       }
       return;
     }
-    if (cmd === '/start' && /^\d{1,16}$/.test(args)) {
+    if (cmd === '/start' && isPrivate && args.startsWith('in_')) {
+      const selected = parseInlineStart(args);
+      if (!selected) throw new ServiceError('INVALID_TRACK', 'Invalid inline track');
+      const track = await getTrack(selected.provider, selected.id);
+      await preferences.request(chatId, userId, track, message.message_id);
+    } else if (cmd === '/start' && isPrivate && args === 'inline_settings') {
+      await preferences.show(chatId, userId);
+    } else if (cmd === '/start' && /^\d{1,16}$/.test(args)) {
       await preferences.start(chatId, userId, botUsername);
       await sendCollection(chatId, userId, await resolveNeteaseCommand(args), message.message_id);
-    } else if (cmd === '/start' && args !== 'app') {
+    } else if (cmd === '/start' && args === 'app') {
+      await send(chatId, 'ismusicnow · 音樂主義', { reply_markup: { inline_keyboard: [[isPrivate ? { text: 'ismusicnow ↗', web_app: { url: webAppUrl.href } } : { text: 'ismusicnow ↗', url: `https://t.me/${botUsername}?start=app` }]] } });
+    } else if (cmd === '/start') {
       await preferences.start(chatId, userId, botUsername);
-    } else if (cmd === '/app' || (cmd === '/start' && args === 'app')) {
+    } else if (cmd === '/app') {
       await send(chatId, 'ismusicnow · 音樂主義', { reply_markup: { inline_keyboard: [[isPrivate ? { text: 'ismusicnow ↗', web_app: { url: webAppUrl.href } } : { text: 'ismusicnow ↗', url: `https://t.me/${botUsername}?start=app` }]] } });
     } else if (['/help', '/about'].includes(cmd || '')) {
-      await send(chatId, botHelp(ui, !isPrivate, botUsername), { reply_parameters: replyParameters(message.message_id) });
+      await send(chatId, botHelp(ui, !isPrivate, botUsername), { parse_mode: 'HTML', reply_parameters: replyParameters(message.message_id) });
     } else if (cmd === '/lyric') {
       if (!args) { await notice(chatId, botText(ui, 'lyricInput'), message.message_id); return; }
       const collection = await resolveNeteaseCommand(args);
@@ -334,8 +345,9 @@ async function handleUpdate(update: Update): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const me = await telegram<{ username: string }>('getMe');
+  const me = await telegram<{ username: string; supports_inline_queries?: boolean }>('getMe');
   botUsername = me.username;
+  if (!me.supports_inline_queries) console.log('Inline Mode 尚未在 BotFather 啟用。');
   const webhook = await telegram<{ url: string }>('getWebhookInfo');
   if (webhook.url) throw new Error('此 bot 已設定 webhook，請先確認其用途；輪詢模式沒有更改現有 webhook。');
   for (const type of ['default', 'all_private_chats', 'all_group_chats']) await telegram('setMyCommands', { commands: botCommands('en'), scope: { type } });
@@ -359,6 +371,12 @@ async function main(): Promise<void> {
     try {
       const updates = await telegram<Update[]>('getUpdates', { offset, timeout: 25, limit: 10, allowed_updates: ['message', 'callback_query', 'inline_query'] });
       for (const update of updates) {
+        // Inline searches have a short response window; do not queue them
+        // behind downloads that may run for several minutes.
+        if (update.inline_query) {
+          void handle(update).catch(() => console.error('Inline 搜尋失敗。'));
+          offset = update.update_id + 1; continue;
+        }
         while (handlers >= 4 && !stopping) await new Promise((done) => setTimeout(done, 500));
         if (stopping) break;
         handlers++;

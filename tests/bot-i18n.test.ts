@@ -38,7 +38,7 @@ test('localized music captions and buttons never change source names, file names
     assert.equal((form.get('audio') as File).name, upload.filename);
     assert.deepEqual(new Uint8Array(await (form.get('audio') as File).arrayBuffer()), upload.bytes);
     assert.ok(String(form.get('reply_markup')).includes(botText(language, 'source')));
-    assert.equal(JSON.parse(String(form.get('reply_markup'))).inline_keyboard.flat().length, 1);
+    assert.equal(JSON.parse(String(form.get('reply_markup'))).inline_keyboard.flat().length, 2);
     assert.doesNotMatch(String(form.get('reply_markup')), /open-settings/);
     assert.doesNotMatch(String(form.get('reply_markup')), /中文顯示字形/);
   }

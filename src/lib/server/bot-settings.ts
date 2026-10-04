@@ -15,7 +15,7 @@ const pendingSchema = z.object({
   chatId: z.number().int(), messageId: z.number().int().positive(), messageThreadId: z.number().int().positive().optional(), keepRequest: z.boolean().optional(), createdAt: z.number(),
   track: z.object({ id: z.string(), provider: z.enum(['netease', 'spotify', 'ytm']), title: z.string(),
     artists: z.array(z.string()), album: z.string(), cover: z.string(), durationMs: z.number(), sourceUrl: z.string(),
-    artistIds: z.array(z.string()).optional(),
+    artistIds: z.array(z.string()).optional(), albumUrl: z.string().optional(),
     metadataLanguages: z.object({ title: z.string().optional(), album: z.string().optional(), artists: z.array(z.string()).optional() }).optional() }),
 });
 const uiLanguageSchema = z.enum(botLanguages);
@@ -117,7 +117,7 @@ export class BotLanguageSettings {
   async start(chatId: number, userId: number, botUsername = 'muismbot'): Promise<void> {
     const ui = await this.locale(userId);
     await this.onUiChange?.(chatId, ui, userId).catch(() => {});
-    await this.send(chatId, botHelp(ui, chatId < 0, botUsername), { reply_markup: { inline_keyboard: [
+    await this.send(chatId, botHelp(ui, chatId < 0, botUsername), { parse_mode: 'HTML', reply_markup: { inline_keyboard: [
       [{ text: `${botLanguageNames[ui]} ｜ ${botText(ui, 'changeLanguage')}`, callback_data: `setting:${userId}:ui` }],
     ] } });
   }

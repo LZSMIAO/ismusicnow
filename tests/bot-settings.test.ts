@@ -138,7 +138,7 @@ test('Telegram language is automatic until a manual choice; start shows one butt
     const flow = new BotLanguageSettings(store, async (_chat, text, extra) => { messages.push({ text, extra }); }, async () => {});
     await flow.observeLanguage(42, 'en-US');
     await flow.start(7, 42);
-    assert.match(messages.at(-1)!.text, /Send.*artist.*link/);
+    assert.match(messages.at(-1)!.text, /Send a name or link/);
     const startButtons = (messages.at(-1)!.extra?.reply_markup as { inline_keyboard: { text: string; callback_data: string }[][] }).inline_keyboard.flat();
     assert.deepEqual(startButtons, [{ text: 'English ｜ Switch language', callback_data: 'setting:42:ui' }]);
     await flow.callback(7, 42, startButtons[0]!.callback_data);

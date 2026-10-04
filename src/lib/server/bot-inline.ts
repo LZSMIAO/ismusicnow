@@ -1,0 +1,212 @@
+import { createHash } from 'node:crypto';
+import type { Collection, DownloadJob, MusicEntity, MusicSearchKind, Provider, Track } from '../types.js';
+import type { CachedMusic } from './bot-cache.js';
+import { rejectedFileId } from './bot-cache.js';
+import { botError, botText, type BotLanguage } from './bot-i18n.js';
+import { coverUrl, musicCaption, TelegramRequestError } from './bot-media.js';
+import { displayTrack, type AlbumLanguage } from './bot-settings.js';
+import { escapeHtml, shortText } from './bot-selection.js';
+import { parseMusicLink, validateTrackId } from './links.js';
+import { publicError, ServiceError } from './errors.js';
+
+export interface InlineQuery { id: string; from: { id: number; language_code?: string; is_bot?: boolean }; query: string; offset?: string; chat_type?: string }
+type Telegram = (method: string, body: Record<string, unknown>) => Promise<unknown>;
+interface InlinePreferences { ui: BotLanguage; names?: AlbumLanguage }
+interface Dependencies {
+  telegram: Telegram; username: () => string;
+  preferences: (userId: number) => Promise<InlinePreferences>;
+  resolve: (input: string, provider: Provider, kind: MusicSearchKind) => Promise<Collection>;
+  albums: (url: string) => Promise<Collection>;
+  getTrack: (provider: Provider, id: string) => Promise<Track>;
+  cache: (track: Track) => Promise<CachedMusic | undefined>;
+  metadata: (track: Track) => Promise<Track>;
+}
+const providers: Provider[] = ['netease', 'spotify', 'ytm'];
+const kinds: MusicSearchKind[] = ['track', 'album', 'artist', 'playlist'];
+const codes = { netease: 'n', spotify: 's', ytm: 'y' } as const;
+const codeProviders: Record<string, Provider> = { n: 'netease', s: 'spotify', y: 'ytm' };
+export function inlineStart(track: Pick<Track, 'provider' | 'id'>): string {
+  validateTrackId(track.provider, track.id);
+  return `in_${codes[track.provider]}_${track.id}`;
+}
+export function parseInlineStart(value: string): Pick<Track, 'provider' | 'id'> | undefined {
+  const match = /^in_([nsy])_([a-zA-Z0-9_-]{1,22})$/.exec(value);
+  if (!match) return;
+  const provider = codeProviders[match[1]!]!;
+  validateTrackId(provider, match[2]!);
+  return { provider, id: match[2]! };
+}
+export function parseInlineQuery(value: string) {
+  let input = value.trim(), provider: Provider = 'netease', kind: MusicSearchKind = 'track', albums = false;
+  let hasProvider = false, hasKind = false;
+  for (let i = 0; i < 2; i++) {
+    const match = /^(netease|spotify|ytm|track|song|album|albums|artist|playlist)(?:\s+|$)/i.exec(input);
+    if (!match) break;
+    const word = match[1]!.toLowerCase();
+    if (providers.includes(word as Provider) && !hasProvider) { provider = word as Provider; hasProvider = true; }
+    else if (!hasKind && !providers.includes(word as Provider)) { kind = word === 'song' ? 'track' : word === 'albums' ? 'album' : word as MusicSearchKind; albums = word === 'albums'; hasKind = true; }
+    else break;
+    input = input.slice(match[0].length).trim();
+  }
+  const link = parseMusicLink(input);
+  if (link) provider = link.provider;
+  return { input, provider, kind, albums: albums && link?.kind === 'artist' };
+}
+function thumbnail(raw: string): Record<string, string> {
+  try { return raw ? { thumbnail_url: coverUrl(raw).href } : {}; } catch { return {}; }
+}
+const content = (text: string) => ({ message_text: text, parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
+function job(record: CachedMusic, track: Track): DownloadJob {
+  return { ...record, track, id: 'inline-cache', format: 'original', status: 'completed', stage: '', createdAt: '', updatedAt: '' };
+}
+const label = (kind: MusicSearchKind) => kind === 'track' ? 'single' : kind;
+const source = (provider: Provider) => provider === 'netease' ? 'NetEase' : provider === 'ytm' ? 'YTM' : 'Spotify';
+
+// Telegram does not support switch_inline_query_current_chat in channels.
+// Keep browsing usable there by offering the native destination chooser.
+function forInlineChat<T>(results: T[], type?: string): T[] {
+  if (type !== 'channel') return results;
+  return results.map(result => {
+    const value = result as T & { reply_markup?: { inline_keyboard: Record<string, unknown>[][] } };
+    if (!value.reply_markup) return result;
+    return { ...value, reply_markup: { inline_keyboard: value.reply_markup.inline_keyboard.map(row => row.map(button => {
+      if (typeof button.switch_inline_query_current_chat === 'string') {
+        const { switch_inline_query_current_chat: query, ...rest } = button;
+        return { ...rest, switch_inline_query_chosen_chat: { query, allow_user_chats: true, allow_bot_chats: true, allow_group_chats: true, allow_channel_chats: true } };
+      }
+      if (typeof button.callback_data === 'string' && button.callback_data.startsWith('ix:')) return { ...button, callback_data: button.callback_data.replace('ix:', 'ic:') };
+      return button;
+    })) } };
+  });
+}
+
+// No audio is downloaded while someone types. Telegram holds previously
+// uploaded files; first downloads explicitly switch to the bot's private chat.
+export class BotInline {
+  private queries = new Map<string, { until: number; value: Promise<Collection> }>();
+  private latest = new Map<number, string>();
+  constructor(private deps: Dependencies, private timeoutMs = 7000) {}
+  private privateUrl(track?: Track) { return `https://t.me/${this.deps.username()}?start=${track ? inlineStart(track) : 'inline'}`; }
+  private async visible(track: Track, names?: AlbumLanguage): Promise<Track> {
+    return displayTrack(track.provider === 'netease' && names && names !== 'original' ? await this.deps.metadata(track) : track, names || 'original');
+  }
+  private keyboard(track: Track, ui: BotLanguage, acquire?: Record<string, string>) {
+    const rows: Record<string, string>[][] = [];
+    if (acquire) rows.push([{ text: botText(ui, 'acquire'), ...acquire }]);
+    const row: Record<string, string>[] = [];
+    try {
+      const album = track.albumUrl ? parseMusicLink(track.albumUrl) : undefined;
+      if (album?.kind === 'album' && album.provider === track.provider) row.push({ text: botText(ui, 'album'), switch_inline_query_current_chat: album.url });
+    } catch { /* Untrusted upstream reference. */ }
+    const artist = track.artistIds?.[0];
+    if (artist && (track.provider === 'netease' ? /^\d{1,16}$/ : /^[a-zA-Z0-9]{22}$/).test(artist) && track.provider !== 'ytm') row.push({ text: shortText(track.artists[0] || botText(ui, 'artist'), 20), switch_inline_query_current_chat: track.provider === 'netease' ? `https://music.163.com/artist?id=${artist}` : `https://open.spotify.com/artist/${artist}` });
+    row.push({ text: `${botText(ui, 'source')} ↗`, url: track.sourceUrl });
+    rows.push(row);
+    rows.push([{ text: botText(ui, 'share'), switch_inline_query: track.sourceUrl }]);
+    return { inline_keyboard: rows };
+  }
+  private article(track: Track, visible: Track, ui: BotLanguage, userId: number, record?: CachedMusic) {
+    const description = [visible.artists.join(' / '), visible.album, botText(ui, record ? 'inlineReady' : 'inlineAcquire')].filter(Boolean).join(' · ');
+    const text = record ? musicCaption(visible, job(record, track), ui, this.deps.username()) :
+      `<b>「${escapeHtml(shortText(visible.title, 100))}」</b> — ${escapeHtml(shortText(visible.artists.join(' / '), 120))}\n<blockquote expandable>${escapeHtml(botText(ui, 'album'))}：${escapeHtml(shortText(visible.album, 120))}\n${source(track.provider)}</blockquote>`;
+    return { type: 'article', id: `${track.provider}:${track.id}`, title: shortText(visible.title, 100), description: shortText(description, 250), ...thumbnail(track.cover), input_message_content: content(text),
+      reply_markup: this.keyboard(visible, ui, record ? { callback_data: `ix:${userId}:${codes[track.provider]}:${track.id}` } : { url: this.privateUrl(track) }) };
+  }
+  private async trackResult(track: Track, ui: BotLanguage, names: AlbumLanguage | undefined, userId: number) {
+    const [visible, record] = await Promise.all([this.visible(track, names), this.deps.cache(track)]);
+    const firstNames = track.provider === 'netease' && !names;
+    const fallback = this.article(track, visible, ui, userId, firstNames ? undefined : record);
+    if (!record || firstNames) return { result: fallback, fallback };
+    const shared = { id: fallback.id, caption: musicCaption(visible, job(record, track), ui, this.deps.username()), parse_mode: 'HTML', reply_markup: this.keyboard(visible, ui) };
+    return { result: record.kind === 'audio' ? { type: 'audio', audio_file_id: record.fileId, ...shared } :
+      { type: 'document', document_file_id: record.fileId, title: fallback.title, description: fallback.description, ...shared }, fallback };
+  }
+  private entity(entity: MusicEntity, ui: BotLanguage) {
+    const description = [botText(ui, label(entity.kind)), entity.artists.join(' / '), entity.year, entity.count !== undefined ? botText(ui, 'tracksCount', { count: entity.count }) : ''].filter(Boolean).join(' · ');
+    const rows = [[{ text: botText(ui, 'browseInline'), switch_inline_query_current_chat: entity.sourceUrl }]];
+    if (entity.kind === 'artist') rows.push([{ text: botText(ui, 'album'), switch_inline_query_current_chat: `albums ${entity.sourceUrl}` }]);
+    return { type: 'article', id: `${entity.provider}:${entity.kind}:${entity.id}`, title: shortText(entity.title, 100), description: shortText(description, 250), ...thumbnail(entity.cover),
+      input_message_content: content(`<b>${escapeHtml(shortText(entity.title, 100))}</b>\n${escapeHtml(description)}\n<blockquote expandable>${source(entity.provider)}</blockquote>`), reply_markup: { inline_keyboard: [...rows, [{ text: `${botText(ui, 'source')} ↗`, url: entity.sourceUrl }]] } };
+  }
+  private choices(input: string, provider: Provider, ui: BotLanguage, text?: string) {
+    const keyboard = { inline_keyboard: [kinds.map(kind => ({ text: botText(ui, label(kind)), switch_inline_query_current_chat: `${provider} ${kind} ${input}`.trim() })),
+      providers.map(value => ({ text: source(value), switch_inline_query_current_chat: value === 'ytm' ? 'ytm ' : `${value} ${input}`.trim() }))] };
+    return [{ type: 'article', id: 'inline-search', title: text || botText(ui, 'inlineSearch'), description: botText(ui, 'inlineHint'),
+      input_message_content: content(escapeHtml(text || botText(ui, 'inlineHint'))), reply_markup: keyboard }];
+  }
+  private collection(input: ReturnType<typeof parseInlineQuery>): Promise<Collection> {
+    const key = JSON.stringify(input), now = Date.now();
+    for (const [id, entry] of this.queries) if (entry.until < now) this.queries.delete(id);
+    const cached = this.queries.get(key);
+    if (cached) return cached.value;
+    if (this.queries.size >= 32) throw new ServiceError('RATE_LIMIT', 'Inline search busy');
+    const value = input.albums ? this.deps.albums(input.input) : this.deps.resolve(input.input, input.provider, input.kind);
+    const entry = { until: now + 30_000, value };
+    this.queries.set(key, entry);
+    void value.catch(() => { if (this.queries.get(key) === entry) this.queries.delete(key); });
+    return value;
+  }
+  async answer(query: InlineQuery, permitted = true): Promise<void> {
+    const base = { inline_query_id: query.id, cache_time: 0, is_personal: true };
+    if (!permitted) { await this.deps.telegram('answerInlineQuery', { ...base, results: [], next_offset: '' }); return; }
+    this.latest.delete(query.from.id); this.latest.set(query.from.id, query.id);
+    if (this.latest.size > 1000) this.latest.delete(this.latest.keys().next().value!);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let ui: BotLanguage = 'en';
+    try {
+      const work = async () => {
+        const prefs = await this.deps.preferences(query.from.id); ui = prefs.ui;
+        const parsed = parseInlineQuery(query.query);
+        const hash = createHash('sha256').update(JSON.stringify(parsed)).digest('hex').slice(0, 12);
+        const offset = query.offset || '';
+        if (offset && !new RegExp(`^${hash}:[0-9]{1,3}$`).test(offset)) return { results: [], next_offset: '' };
+        if (!parsed.input) return { results: this.choices('', parsed.provider, ui), next_offset: '' };
+        const collection = await this.collection(parsed);
+        const items = collection.entities || collection.tracks;
+        const start = offset ? Number(offset.split(':')[1]) : 0;
+        if (!items.length) return { results: this.choices(parsed.input, parsed.provider, ui, botText(ui, 'noResults')), next_offset: '' };
+        const page = items.slice(start, start + 10);
+        const results = collection.entities ? page.map(item => ({ result: this.entity(item as MusicEntity, ui), fallback: this.entity(item as MusicEntity, ui) })) :
+          await Promise.all(page.map(item => this.trackResult(item as Track, ui, prefs.names, query.from.id)));
+        const navigation = start === 0 && collection.kind === 'search' ? this.choices(parsed.input, parsed.provider, ui) : [];
+        return { results: [...results.map(item => item.result), ...navigation], fallback: [...results.map(item => item.fallback), ...navigation], next_offset: start + 10 < items.length ? `${hash}:${start + 10}` : '' };
+      };
+      const response = await Promise.race([work(), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new ServiceError('UPSTREAM_TIMEOUT', 'Inline search timeout')), this.timeoutMs); })]);
+      if (this.latest.get(query.from.id) !== query.id) return;
+      const { fallback, ...body } = response;
+      try { await this.deps.telegram('answerInlineQuery', { ...base, ...body, results: forInlineChat(body.results, query.chat_type), button: { text: botText(ui, 'settings'), start_parameter: 'inline_settings' } }); }
+      catch (error) {
+        // Some Telegram audio formats are accepted in chats but not in cached
+        // inline results. A text result can still insert the original file_id.
+        if (!fallback || !(rejectedFileId(error) || error instanceof TelegramRequestError && error.errorCode === 400 && /file type|audio|document/i.test(error.description))) throw error;
+        await this.deps.telegram('answerInlineQuery', { ...base, results: forInlineChat(fallback, query.chat_type), next_offset: response.next_offset });
+      }
+    } catch (error) {
+      if (this.latest.get(query.from.id) !== query.id) return;
+      if (error instanceof TelegramRequestError) return; // Expired query: never retry it or notify an unrelated chat.
+      await this.deps.telegram('answerInlineQuery', { ...base, results: this.choices('', 'netease', ui, botError(ui, publicError(error).code)), next_offset: '', button: { text: botText(ui, 'settings'), start_parameter: 'inline_settings' } }).catch(() => {});
+    } finally { if (timer) clearTimeout(timer); if (this.latest.get(query.from.id) === query.id) this.latest.delete(query.from.id); }
+  }
+  async callback(callback: { id: string; from: { id: number }; inline_message_id: string; data?: string }): Promise<void> {
+    const { ui, names } = await this.deps.preferences(callback.from.id);
+    const type = callback.data?.startsWith('ic:') ? 'channel' : undefined;
+    const markup = (track: Track, acquire?: Record<string, string>) => forInlineChat([{ reply_markup: this.keyboard(track, ui, acquire) }], type)[0]!.reply_markup;
+    const match = /^ix:(\d+):([nsy]):([a-zA-Z0-9_-]{1,22})$/.exec((callback.data || '').replace(/^ic:/, 'ix:'));
+    if (!match || Number(match[1]) !== callback.from.id) {
+      await this.deps.telegram('answerCallbackQuery', { callback_query_id: callback.id, text: botText(ui, 'wrongOwner'), show_alert: true }); return;
+    }
+    await this.deps.telegram('answerCallbackQuery', { callback_query_id: callback.id });
+    try {
+      const track = await this.deps.getTrack(codeProviders[match[2]!]!, match[3]!);
+      const [record, visible] = await Promise.all([this.deps.cache(track), this.visible(track, names)]);
+      if (!record) {
+        await this.deps.telegram('editMessageText', { inline_message_id: callback.inline_message_id, text: `${escapeHtml(visible.title)}\n${escapeHtml(botText(ui, 'inlinePrivate'))}`, parse_mode: 'HTML', reply_markup: markup(visible, { url: this.privateUrl(track) }) }); return;
+      }
+      await this.deps.telegram('editMessageMedia', { inline_message_id: callback.inline_message_id,
+        media: { type: record.kind, media: record.fileId, caption: musicCaption(visible, job(record, track), ui, this.deps.username()), parse_mode: 'HTML', ...(record.kind === 'audio' ? { title: visible.title, performer: visible.artists.join(' / '), duration: record.duration } : {}) }, reply_markup: markup(visible) });
+    } catch (error) {
+      if (error instanceof TelegramRequestError && /message is not modified/i.test(error.description)) return;
+      await this.deps.telegram('editMessageText', { inline_message_id: callback.inline_message_id, text: botError(ui, publicError(error).code), reply_markup: { inline_keyboard: [[{ text: botText(ui, 'acquire'), url: `https://t.me/${this.deps.username()}?start=in_${match[2]}_${match[3]}` }]] } }).catch(() => {});
+    }
+  }
+}
