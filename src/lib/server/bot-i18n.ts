@@ -8,10 +8,11 @@ export function telegramLanguage(code?: string): BotLanguage {
     if (/(?:^|-)hant(?:-|$)/.test(tag)) return 'zh-Hant';
     if (/(?:^|-)hans(?:-|$)/.test(tag)) return 'zh-Hans';
     if (/(?:^|-)(cn|sg)(?:-|$)/.test(tag)) return 'zh-Hans';
-    return 'zh-Hant';
+    if (/(?:^|-)(tw|hk|mo)(?:-|$)/.test(tag)) return 'zh-Hant';
+    return 'zh-Hans';
   }
   const primary = tag.split('-')[0];
-  return (['en', 'ja', 'ko', 'es', 'fr', 'ru'] as const).find((language) => language === primary) || 'zh-Hant';
+  return (['en', 'ja', 'ko', 'es', 'fr', 'ru'] as const).find((language) => language === primary) || 'en';
 }
 export const botLanguageNames: Record<BotLanguage, string> = {
   'zh-Hant': '繁體中文', 'zh-Hans': '简体中文', en: 'English', ja: '日本語', ko: '한국어',
@@ -20,7 +21,7 @@ export const botLanguageNames: Record<BotLanguage, string> = {
 // Translate the static template before inserting music metadata. UI language
 // must never translate or normalize a song, artist, album, URL or filename.
 const catalog = {
-  changeLanguage: ["更改語言", "Change language", "言語を変更", "언어 변경", "Cambiar idioma", "Changer de langue", "Изменить язык"],
+  changeLanguage: ["切換語言", "Switch language", "言語を変更", "언어 변경", "Cambiar idioma", "Changer de langue", "Изменить язык"],
   settings: ["Bot 設定", "Bot settings", "Bot の設定", "봇 설정", "Ajustes del bot", "Paramètres du bot", "Настройки бота"],
   uiLanguage: ["Bot 介面語言", "Bot interface language", "Bot の表示言語", "봇 인터페이스 언어", "Idioma del bot", "Langue du bot", "Язык бота"],
   namesSetting: ["網易雲中文名稱字形", "NetEase Chinese names", "NetEase の中国語表記", "NetEase 중국어 표기", "Nombres chinos de NetEase", "Noms chinois de NetEase", "Китайские названия NetEase"],
@@ -42,9 +43,17 @@ const catalog = {
   documentFallback: ["Telegram 未接受此格式為音樂卡片，已保留原始音訊以檔案發送。", "Telegram could not display this format as music. The original audio was sent as a file.", "Telegram がこの形式を音楽として表示できないため、元の音声をファイルで送信しました。", "Telegram이 이 형식을 음악으로 표시하지 못해 원본 음원을 파일로 보냈습니다.", "Telegram no pudo mostrar este formato como música. Se envió el audio original como archivo.", "Telegram ne peut pas afficher ce format comme musique. L’audio original a été envoyé comme fichier.", "Telegram не смог показать этот формат как музыку. Исходное аудио отправлено файлом."],
   pending: ["任務仍在佇列中，請稍後重試或使用網頁端。", "The task is still queued. Try again later or use the website.", "処理は待機中です。後でもう一度試すか、ウェブサイトをご利用ください。", "작업이 아직 대기 중입니다. 나중에 다시 시도하거나 웹사이트를 이용하세요.", "La tarea sigue en cola. Inténtalo más tarde o usa la web.", "La tâche est toujours en attente. Réessayez plus tard ou utilisez le site.", "Задача ещё в очереди. Повторите позже или используйте сайт."],
   notFound: ["沒有找到歌曲，請試試其他關鍵字。", "No songs found. Try other keywords.", "曲が見つかりません。別のキーワードを試してください。", "곡을 찾지 못했습니다. 다른 검색어를 사용하세요.", "No se encontraron canciones. Prueba otras palabras.", "Aucune chanson trouvée. Essayez d’autres mots-clés.", "Песни не найдены. Попробуйте другие слова."],
-  selectTracks: ["來源：{source}\n選擇下方曲目獲取（顯示前 {count} 首）。", "Source: {source}\nChoose a song below (first {count} shown).", "配信元：{source}\n曲を選んでください（最初の {count} 曲）。", "출처: {source}\n아래에서 곡을 선택하세요 (처음 {count}곡 표시).", "Fuente: {source}\nElige una canción (primeras {count}).", "Source : {source}\nChoisissez un titre (les {count} premiers).", "Источник: {source}\nВыберите песню (первые {count})."],
+  selectTracks: ["{kind} · {source}\n{start}–{end} / {loaded}\n點選曲目，或發送序號。", "{kind} · {source}\n{start}–{end} / {loaded}\nChoose a song or send its number.", "{kind} · {source}\n{start}–{end} / {loaded}\n曲を選ぶか、番号を送信してください。", "{kind} · {source}\n{start}–{end} / {loaded}\n곡을 선택하거나 번호를 보내세요.", "{kind} · {source}\n{start}–{end} / {loaded}\nElige una canción o envía su número.", "{kind} · {source}\n{start}–{end} / {loaded}\nChoisissez un titre ou envoyez son numéro.", "{kind} · {source}\n{start}–{end} / {loaded}\nВыберите песню или отправьте её номер."],
+  songs: ["歌曲", "Songs", "曲", "곡", "Canciones", "Titres", "Песни"],
+  playlist: ["歌單", "Playlist", "プレイリスト", "재생목록", "Lista", "Playlist", "Плейлист"],
+  collectionLimit: ["共 {total} 首，本次載入 {loaded} 首。", "{total} songs in total; {loaded} loaded.", "全 {total} 曲のうち {loaded} 曲を読み込みました。", "총 {total}곡 중 {loaded}곡을 불러왔습니다.", "{total} canciones en total; {loaded} cargadas.", "{total} titres au total ; {loaded} chargés.", "Всего {total} песен; загружено {loaded}."],
+  previousPage: ["上一頁", "Previous", "前へ", "이전", "Anterior", "Précédent", "Назад"],
+  nextPage: ["下一頁", "Next", "次へ", "다음", "Siguiente", "Suivant", "Далее"],
+  selectionExpired: ["選曲列表已過期，請重新發送關鍵字或連結。", "This selection expired. Send the keywords or link again.", "選曲リストの期限が切れました。キーワードかリンクを再送信してください。", "선택 목록이 만료되었습니다. 검색어나 링크를 다시 보내세요.", "La selección caducó. Envía de nuevo las palabras o el enlace.", "Cette sélection a expiré. Renvoyez les mots-clés ou le lien.", "Список устарел. Отправьте запрос или ссылку снова."],
+  selectionOwner: ["這是其他用戶的選曲列表，請自己發送關鍵字或連結。", "This selection belongs to another user. Send your own keywords or link.", "他のユーザーのリストです。自分のキーワードかリンクを送信してください。", "다른 사용자의 목록입니다. 검색어나 링크를 직접 보내세요.", "Esta selección pertenece a otra persona. Envía tu propia búsqueda o enlace.", "Cette sélection appartient à un autre utilisateur. Envoyez votre recherche ou lien.", "Этот список другого пользователя. Отправьте свой запрос или ссылку."],
+  selectionNumber: ["請使用目前列表中的曲目序號。歌曲 ID 請用 /netease ID。", "Use a song number from the current list. For a song ID, use /netease ID.", "現在のリストの曲番号を使ってください。曲 ID は /netease ID で指定します。", "현재 목록의 곡 번호를 사용하세요. 곡 ID는 /netease ID로 지정하세요.", "Usa un número de la lista actual. Para un ID usa /netease ID.", "Utilisez un numéro de la liste actuelle. Pour un ID : /netease ID.", "Укажите номер из списка. Для ID песни используйте /netease ID."],
   rateLimited: ["請稍候幾秒再發送下一個請求。", "Wait a few seconds before your next request.", "次のリクエストまで数秒お待ちください。", "다음 요청까지 잠시 기다려 주세요.", "Espera unos segundos antes de otra solicitud.", "Attendez quelques secondes avant la prochaine demande.", "Подождите несколько секунд перед следующим запросом."],
-  helpIntro: ["直接貼上網易雲、Spotify 或 YouTube Music 連結。", "Paste a NetEase, Spotify or YouTube Music link.", "NetEase、Spotify、YouTube Music のリンクを貼り付けてください。", "NetEase, Spotify 또는 YouTube Music 링크를 보내세요.", "Pega un enlace de NetEase, Spotify o YouTube Music.", "Collez un lien NetEase, Spotify ou YouTube Music.", "Отправьте ссылку NetEase, Spotify или YouTube Music."],
+  helpIntro: ["直接發送歌名、歌手名或音樂連結。搜尋結果可點選或發送序號。", "Send a song name, artist name or music link. Choose a result or send its number.", "曲名・アーティスト名・音楽リンクを送信してください。結果を選ぶか、番号を送信できます。", "곡명·아티스트명·음악 링크를 보내세요. 검색 결과를 선택하거나 번호를 보낼 수 있습니다.", "Envía un título, artista o enlace musical. Elige un resultado o envía su número.", "Envoyez un titre, un artiste ou un lien musical. Choisissez un résultat ou envoyez son numéro.", "Отправьте название песни, исполнителя или ссылку. Выберите результат или отправьте его номер."],
   cmdNetease: ["網易雲歌名、ID 或連結；關鍵字取第一首", "NetEase name, ID or link; first keyword result", "NetEase の曲名・ID・リンク（検索は最初の曲）", "NetEase 곡명·ID·링크 (검색 첫 번째 곡)", "NetEase: nombre, ID o enlace; primer resultado", "NetEase : titre, ID ou lien ; premier résultat", "NetEase: название, ID или ссылка; первый результат"],
   cmdSearch: ["搜尋網易雲並選曲", "Search NetEase and choose a song", "NetEase を検索して曲を選択", "NetEase 검색 후 곡 선택", "Buscar en NetEase y elegir canción", "Chercher sur NetEase et choisir un titre", "Поиск NetEase с выбором песни"],
   cmdSpotify: ["搜尋 Spotify", "Search Spotify", "Spotify を検索", "Spotify 검색", "Buscar en Spotify", "Chercher sur Spotify", "Поиск Spotify"],
@@ -86,6 +95,7 @@ export function botText(language: BotLanguage, key: BotTextKey, values: Record<s
   return translated.replace(/\{(\w+)\}/g, (match, name: string) => Object.hasOwn(values, name) ? String(values[name]) : match);
 }
 const errors: Record<string, BotTextKey> = {
+  SELECTION_EXPIRED: 'selectionExpired', SELECTION_OWNER: 'selectionOwner', SELECTION_NUMBER: 'selectionNumber',
   SPOTIFY_COOKIES: 'spotifyCookies', SPOTIFY_SETUP: 'spotifySetup', NOT_FOUND: 'notFound', WRONG_PROVIDER: 'wrongProvider',
   NO_AUDIO: 'unavailableAudio', PREVIEW_ONLY: 'unavailableAudio', INCOMPLETE_AUDIO: 'unavailableAudio', LOSSLESS_UNAVAILABLE: 'unavailableAudio',
   ADAPTER_FAILED: 'adapterFailed', NO_OUTPUT: 'adapterFailed', TOOL_MISSING: 'adapterFailed', INVALID_QUALITY: 'adapterFailed',

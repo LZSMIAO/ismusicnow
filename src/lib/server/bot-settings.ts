@@ -112,48 +112,48 @@ export class BotLanguageSettings {
   async observeLanguage(userId: number, code?: string): Promise<void> { await this.store.observeLanguage(userId, code); }
   async locale(userId: number): Promise<BotLanguage> {
     const settings = await this.store.get(userId);
-    return settings.uiLanguage || settings.telegramLanguage || 'zh-Hant';
+    return settings.uiLanguage || settings.telegramLanguage || 'en';
   }
   async start(chatId: number, userId: number): Promise<void> {
     const ui = await this.locale(userId);
     await this.onUiChange?.(chatId, ui).catch(() => {});
     await this.send(chatId, botHelp(ui), { reply_markup: { inline_keyboard: [
-      [{ text: botText(ui, 'changeLanguage'), callback_data: `setting:${userId}:ui` }],
+      [{ text: `${botLanguageNames[ui]} ｜ ${botText(ui, 'changeLanguage')}`, callback_data: `setting:${userId}:ui` }],
     ] } });
   }
   private name(language: AlbumLanguage, ui: BotLanguage): string {
     return botText(ui, language === 'original' ? 'original' : language === 'zh-Hant' ? 'traditional' : 'simplified');
   }
   async show(chatId: number, userId: number): Promise<void> {
-    const settings = await this.store.get(userId), ui = settings.uiLanguage || settings.telegramLanguage || 'zh-Hant';
+    const settings = await this.store.get(userId), ui = settings.uiLanguage || settings.telegramLanguage || 'en';
     await this.send(chatId, `${botText(ui, 'settings')}\n\n${botText(ui, 'uiLanguage')}：${botLanguageNames[ui]}\n${botText(ui, 'namesSetting')}：${settings.language ? this.name(settings.language, ui) : botText(ui, 'unset')}\n\n${botText(ui, 'scope')}`, {
-      reply_markup: { inline_keyboard: [
+      deleteAfterMs: 30 * 60_000, reply_markup: { inline_keyboard: [
         [{ text: botText(ui, 'uiLanguage'), callback_data: `setting:${userId}:ui` }],
         [{ text: botText(ui, 'namesSetting'), callback_data: `setting:${userId}:names` }],
       ] },
     });
   }
-  async showNames(chatId: number, userId: number, first = false): Promise<void> {
-    const settings = await this.store.get(userId), current = settings.language, ui = settings.uiLanguage || settings.telegramLanguage || 'zh-Hant';
+  async showNames(chatId: number, userId: number, first = false, replyTo?: number): Promise<void> {
+    const settings = await this.store.get(userId), current = settings.language, ui = settings.uiLanguage || settings.telegramLanguage || 'en';
     const callback = (action: string) => `lang:${userId}:${action}`;
     const rows = [
       ...(['original', 'zh-Hant', 'zh-Hans'] as const).map((language) => [{ text: `${current === language ? '✓ ' : ''}${this.name(language, ui)}`, callback_data: callback(language) }]),
       [{ text: botText(ui, 'back'), callback_data: `setting:${userId}:home` }],
     ];
     const text = `${first ? botText(ui, 'firstNames') : botText(ui, 'namesSetting')}\n\n${botText(ui, 'current', { value: current ? this.name(current, ui) : botText(ui, 'unset') })}\n${botText(ui, 'namesScope')}`;
-    await this.send(chatId, text, { reply_markup: { inline_keyboard: rows } });
+    await this.send(chatId, text, { deleteAfterMs: 30 * 60_000, ...(replyTo ? { reply_parameters: { message_id: replyTo, allow_sending_without_reply: true } } : {}), reply_markup: { inline_keyboard: rows } });
   }
   async showUi(chatId: number, userId: number): Promise<void> {
     const ui = await this.locale(userId);
     const buttons = botLanguages.map((language) => ({ text: `${ui === language ? '✓ ' : ''}${botLanguageNames[language]}`, callback_data: `ui:${userId}:${language}` }));
     const rows = Array.from({ length: Math.ceil(buttons.length / 2) }, (_v, i) => buttons.slice(i * 2, i * 2 + 2));
     rows.push([{ text: botText(ui, 'back'), callback_data: `setting:${userId}:home` }]);
-    await this.send(chatId, `${botText(ui, 'uiLanguage')}\n\n${botText(ui, 'current', { value: botLanguageNames[ui] })}\n${botText(ui, 'uiScope')}`, { reply_markup: { inline_keyboard: rows } });
+    await this.send(chatId, `${botText(ui, 'uiLanguage')}\n\n${botText(ui, 'current', { value: botLanguageNames[ui] })}\n${botText(ui, 'uiScope')}`, { deleteAfterMs: 30 * 60_000, reply_markup: { inline_keyboard: rows } });
   }
   async request(chatId: number, userId: number, track: Track, messageId: number): Promise<void> {
     if (track.provider !== 'netease') return this.acquire(chatId, userId, track, 'original', messageId);
     const language = await this.store.stage(userId, { chatId, messageId, track });
-    if (!language) return this.showNames(chatId, userId, true);
+    if (!language) return this.showNames(chatId, userId, true, messageId);
     await this.acquire(chatId, userId, track, language, messageId);
   }
   async callback(chatId: number, userId: number, data: string): Promise<boolean> {
@@ -161,7 +161,7 @@ export class BotLanguageSettings {
     const match = /^(lang|ui|setting):(\d+):([a-zA-Z-]+)$/.exec(data);
     const ui = await this.locale(userId);
     if (!match || Number(match[2]) !== userId) {
-      await this.send(chatId, botText(ui, 'wrongOwner'));
+      await this.send(chatId, botText(ui, 'wrongOwner'), { deleteAfterMs: 30_000 });
       return true;
     }
     const action = match[3]!;
@@ -178,14 +178,14 @@ export class BotLanguageSettings {
       // Private-chat command menus can follow this user's explicit preference.
       // A menu API failure must not discard a successfully saved preference.
       await this.onUiChange?.(chatId, parsed.data).catch(() => {});
-      await this.send(chatId, botText(parsed.data, 'uiSaved', { value: botLanguageNames[parsed.data] }));
+      await this.send(chatId, botText(parsed.data, 'uiSaved', { value: botLanguageNames[parsed.data] }), { deleteAfterMs: 15_000 });
       await this.show(chatId, userId);
       return true;
     }
     if (!languageSchema.safeParse(action).success) return true;
     const language = languageSchema.parse(action);
     const pending = await this.store.choose(userId, language);
-    await this.send(chatId, botText(ui, 'namesSaved', { value: this.name(language, ui) }));
+    await this.send(chatId, botText(ui, 'namesSaved', { value: this.name(language, ui) }), { deleteAfterMs: 15_000 });
     if (pending) await this.acquire(pending.chatId, userId, pending.track, pending.track.provider === 'netease' ? language : 'original', pending.messageId);
     return true;
   }
