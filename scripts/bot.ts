@@ -159,7 +159,7 @@ export async function handle(update: Update): Promise<void> {
     if (update.callback_query && /^(lang|ui|setting):/.test(update.callback_query.data || '')) {
       const own = Number(update.callback_query.data?.split(':')[1]) === userId;
       try { await preferences.callback(chatId, userId, update.callback_query.data || ''); }
-      finally { if (own) await deleteLater(chatId, message.message_id, 2000); }
+      finally { if (own && !text.startsWith('ismusicnow · 音樂主義\n')) await deleteLater(chatId, message.message_id, 2000); }
       return;
     }
     if (!update.callback_query && (cmd === '/settings' || cmd === '/setting')) { await preferences.show(chatId, userId); return; }
