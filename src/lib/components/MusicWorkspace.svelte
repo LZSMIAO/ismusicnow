@@ -3,6 +3,7 @@
   import { fade } from 'svelte/transition';
   import { cubicOut } from 'svelte/easing';
   import { Library, House, Search, Download, ArrowRight, ChevronLeft, PanelRight, X, Play, Pause, SkipBack, SkipForward, Volume2, Music2, LoaderCircle, ExternalLink, RotateCcw, CodeXml, Send, UserRound } from '@lucide/svelte';
+  import GuideContent from './GuideContent.svelte';
   import TrackList from './MusicTrackList.svelte';
   import SelectMenu from './SelectMenu.svelte';
   import SearchBar from './SearchBar.svelte';
@@ -19,10 +20,13 @@
   let artists = $state<MusicEntity[]>([]), artistsLoading = $state(false);
   let selected = $state<string[]>([]), format = $state<string>('original'), loading = $state(false), adding = $state(false), error = $state(''), notice = $state('');
   let previewVisible = $state(true), reduced = $state(false), queueOpen = $state(false), continuous = $state(false), lyricsPage = $state(false);
+  type Section = 'music' | 'guide' | 'downloads';
+  let section = $state<Section>('music'), musicScroll = 0;
+  let sectionTrigger: HTMLElement | undefined;
   type View = { artists: MusicEntity[]; collection: Collection; selected: string[]; format: string; input: string; source: string };
   let previous = $state<View[]>([]), viewInput = '', viewSource = 'all';
   let queueTrigger: HTMLElement | undefined;
-  let queueAnimation: Animation | undefined, queueClosing = false;
+  let queueAnimations: Animation[] = [], queueClosing = false, queueRevision = 0;
   let searchInput = $state<HTMLInputElement>();
   let panel: HTMLElement, drawer: HTMLDialogElement, playerElement: HTMLElement;
   let searchRequest: AbortController | undefined, noticeTimer: ReturnType<typeof setTimeout> | undefined;
@@ -51,15 +55,15 @@
     const media = matchMedia('(prefers-reduced-motion: reduce)'); reduced = media.matches;
     const motion = () => reduced = media.matches; media.addEventListener('change', motion);
     try { const saved: unknown = JSON.parse(localStorage.getItem('ismusicnow-recent') || '[]'); if (Array.isArray(saved)) recent = saved.filter((item) => item && typeof item.input === 'string' && typeof item.title === 'string' && typeof item.artist === 'string' && typeof item.cover === 'string' && ['track', 'album', 'playlist', 'search', 'artist'].includes(item.kind) && ['all', 'netease', 'spotify', 'ytm'].includes(item.provider)).slice(0, 8); } catch { /* Browsing works without local storage. */ }
-    return () => { document.documentElement.classList.remove('queue-open'); queueAnimation?.cancel(); resizePlayer.disconnect(); document.documentElement.style.removeProperty('--player-height'); searchRequest?.abort(); clearTimeout(noticeTimer); stopQueue(); stopPlayer(); media.removeEventListener('change', motion); };
+    return () => { document.documentElement.classList.remove('queue-open', 'queue-moving'); queueRevision++; queueAnimations.forEach(animation => animation.cancel()); resizePlayer.disconnect(); document.documentElement.style.removeProperty('--player-height'); searchRequest?.abort(); clearTimeout(noticeTimer); stopQueue(); stopPlayer(); media.removeEventListener('change', motion); };
   });
   $effect(() => {
-    return setTelegramBack(queueOpen ? closeQueue : lyricsPage ? () => lyricsPage = false : collection ? (previous.length ? back : home) : null);
+    return setTelegramBack(queueOpen ? closeQueue : lyricsPage ? () => lyricsPage = false : section !== 'music' ? () => void showSection('music') : collection ? (previous.length ? back : home) : null);
   });
   function feedback(text: string) { notice = text; clearTimeout(noticeTimer); noticeTimer = setTimeout(() => notice = '', 5000); }
   async function resolve(value = input, provider = source as SearchSource) {
     if (!value.trim()) { searchInput?.focus(); return; }
-    lyricsPage = false; searchRequest?.abort(); const request = new AbortController(); searchRequest = request;
+    section = 'music'; musicScroll = 0; lyricsPage = false; searchRequest?.abort(); const request = new AbortController(); searchRequest = request;
     const oldArtists = artists; input = value; source = provider; artists = []; artistsLoading = false; loading = true; error = ''; notice = ''; continuous = false;
     try {
       const result = await api<Collection>('/api/resolve', { method: 'POST', body: JSON.stringify({ input: value, provider }), signal: request.signal });
@@ -110,42 +114,94 @@
     } catch (e) { error = e instanceof Error ? e.message : '無法取得完整音訊。'; }
     finally { adding = false; }
   }
-  function home() { searchRequest?.abort(); searchRequest = undefined; loading = false; artists = []; artistsLoading = false; player.clearFailure(); collection = null; selected = []; input = ''; previous = []; continuous = false; }
+  async function showSection(next: Section) {
+    if (section === next) return;
+    if (section === 'music') {
+      musicScroll = panel.scrollTop;
+      sectionTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
+    }
+    section = next; lyricsPage = false;
+    await tick();
+    panel.scrollTop = next === 'music' ? musicScroll : 0;
+    if (next === 'music') sectionTrigger?.isConnected && sectionTrigger.focus({ preventScroll: true });
+    else panel.querySelector<HTMLElement>('.integrated-page h1')?.focus({ preventScroll: true });
+  }
+  async function viewAllDownloads() {
+    await closeQueue();
+    if (!drawer.open) await showSection('downloads');
+  }
+  function home() { section = 'music'; musicScroll = 0; searchRequest?.abort(); searchRequest = undefined; loading = false; artists = []; artistsLoading = false; player.clearFailure(); collection = null; selected = []; input = ''; previous = []; continuous = false; }
   function back() {
+    if (section !== 'music') { void showSection('music'); return; }
     const last = previous.at(-1);
     if (!last) return;
     searchRequest?.abort(); searchRequest = undefined; loading = false; artistsLoading = false; artists = last.artists;
     previous = previous.slice(0, -1); collection = last.collection; selected = last.selected; format = last.format;
     input = viewInput = last.input; source = viewSource = last.source; continuous = false; panel.scrollTop = 0;
   }
+  function cancelQueueMotion() { queueAnimations.forEach(animation => animation.cancel()); queueAnimations = []; }
   function openQueue() {
-    if (drawer.open) return;
-    queueTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
+    if (drawer.open && !queueClosing) return;
+    const revision = ++queueRevision;
+    const sheet = drawer.querySelector<HTMLElement>('.queue-sheet')!;
+    const shade = drawer.querySelector<HTMLElement>('.queue-shade')!;
+    const focus = drawer.querySelector<HTMLElement>('.queue-focus-layer')!;
+    const wasOpen = drawer.open;
+    const from = wasOpen ? getComputedStyle(sheet).transform : 'translate3d(calc(100% + 48px),0,0)';
+    const shadeFrom = wasOpen ? getComputedStyle(shade).opacity : '0';
+    const focusFrom = wasOpen ? getComputedStyle(focus).opacity : '0';
+    cancelQueueMotion(); queueClosing = false;
+    if (!wasOpen) queueTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
     drawer.classList.remove('queue-closing');
-    document.documentElement.classList.add('queue-open'); drawer.showModal(); queueOpen = true;
-    const sheet = drawer.querySelector<HTMLElement>('.queue-sheet');
-    queueAnimation?.cancel();
-    if (sheet && !reduced) queueAnimation = sheet.animate([
-      { transform: 'translate3d(100%,0,0)' }, { transform: 'translate3d(0,0,0)' },
-    ], { duration: 240, easing: 'cubic-bezier(.2,.8,.2,1)' });
-    drawer.querySelector<HTMLButtonElement>('[aria-label="關閉下載佇列"]')?.focus({ preventScroll: true });
+    document.documentElement.classList.add('queue-open');
+    if (!wasOpen) drawer.showModal();
+    queueOpen = true;
+    if (!reduced) {
+      document.documentElement.classList.add('queue-moving');
+      const options = {duration:220,easing:'cubic-bezier(.22,1,.36,1)',fill:'forwards' as FillMode};
+      queueAnimations = [
+        sheet.animate([{transform:from},{transform:'translate3d(0,0,0)'}], {...options,duration:260}),
+        shade.animate([{opacity:shadeFrom},{opacity:1}], options),
+        focus.animate([{opacity:focusFrom},{opacity:1}], options),
+      ];
+      void Promise.all(queueAnimations.map(animation => animation.finished)).then(() => {
+        if (queueRevision === revision) document.documentElement.classList.remove('queue-moving');
+      }).catch(() => {});
+    } else { shade.style.opacity = '1'; focus.style.opacity = '1'; }
+    drawer.querySelector<HTMLButtonElement>('[aria-label="關閉下載佇列"]')?.focus({preventScroll:true});
   }
   async function closeQueue() {
     if (!drawer.open || queueClosing) return;
-    queueClosing = true;
-    const sheet = drawer.querySelector<HTMLElement>('.queue-sheet');
-    const from = sheet ? getComputedStyle(sheet).transform : 'none';
-    queueAnimation?.cancel(); drawer.classList.add('queue-closing');
-    if (sheet && !reduced) {
-      queueAnimation = sheet.animate([{ transform: from }, { transform: 'translate3d(100%,0,0)' }], { duration: 180, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' });
-      try { await queueAnimation.finished; } catch { /* Unmount or interrupted animation. */ }
+    const revision = ++queueRevision; queueClosing = true;
+    const sheet = drawer.querySelector<HTMLElement>('.queue-sheet')!;
+    const shade = drawer.querySelector<HTMLElement>('.queue-shade')!;
+    const focus = drawer.querySelector<HTMLElement>('.queue-focus-layer')!;
+    // Read all current frames before cancellation so reversing mid-entry never jumps.
+    const from = getComputedStyle(sheet).transform, shadeFrom = getComputedStyle(shade).opacity;
+    const focusFrom = getComputedStyle(focus).opacity;
+    const travel = sheet.getBoundingClientRect().width + 48;
+    const x = from === 'none' ? 0 : new DOMMatrixReadOnly(from).m41;
+    const duration = Math.max(70, Math.round(180 * Math.max(0, Math.min(1, (travel - x) / travel))));
+    cancelQueueMotion(); drawer.classList.add('queue-closing');
+    if (!reduced) {
+      document.documentElement.classList.add('queue-moving');
+      const options = {duration,easing:'cubic-bezier(.4,0,1,1)',fill:'forwards' as FillMode};
+      queueAnimations = [
+        sheet.animate([{transform:from},{transform:'translate3d(calc(100% + 48px),0,0)'}], options),
+        shade.animate([{opacity:shadeFrom},{opacity:0}], options),
+        focus.animate([{opacity:focusFrom},{opacity:0}], options),
+      ];
+      try { await Promise.all(queueAnimations.map(animation => animation.finished)); }
+      catch { return; } // A newer opening or unmount owns the dialog now.
     }
-    drawer.close(); queueAnimation?.cancel(); queueAnimation = undefined;
+    if (revision !== queueRevision) return;
+    drawer.close(); cancelQueueMotion(); shade.style.removeProperty('opacity'); focus.style.removeProperty('opacity');
     drawer.classList.remove('queue-closing'); queueClosing = false;
+    document.documentElement.classList.remove('queue-moving');
   }
   function queueClosed() {
-    queueOpen = false; document.documentElement.classList.remove('queue-open');
-    if (queueTrigger?.isConnected) queueTrigger.focus({ preventScroll: true });
+    queueOpen = false; document.documentElement.classList.remove('queue-open', 'queue-moving');
+    if (queueTrigger?.isConnected) queueTrigger.focus({preventScroll:true});
   }
   function playTrack(track: Track) {
     continuous = false;
@@ -164,6 +220,8 @@
     if (track) return player.play(track, queue.jobs);
   }
   function keyboard(event: KeyboardEvent) {
+    if (event.defaultPrevented) return;
+    if (event.key === 'Escape' && section !== 'music' && !queueOpen && !lyricsPage) { event.preventDefault(); void showSection('music'); return; }
     const target = event.target as HTMLElement;
     if (target.closest('input,textarea,select,[contenteditable],button,a')) return;
     if (event.key === '/') { event.preventDefault(); searchInput?.focus(); }
@@ -175,17 +233,18 @@
 <header class="app-header">
   <a class="brand" href="/" aria-label="MUISM 首頁" onclick={(e) => { e.preventDefault(); home(); }}><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span><strong>MUISM.</strong></a>
   <SearchBar bind:value={input} bind:source bind:inputElement={searchInput} {loading} {recent} onrecent={(item) => void resolve(item.input, item.provider)} onsearch={() => void resolve()} />
-  <nav class="mobile-nav" aria-label="行動版導覽"><a class="icon-button" href="/guide" aria-label="使用指南"><Library size={18} /></a><button class="icon-button" aria-label="下載佇列" aria-expanded={queueOpen} onclick={openQueue}><Download size={18} /></button></nav>
+  <nav class="mobile-nav" aria-label="行動版導覽"><button class="icon-button" aria-label="使用指南" aria-pressed={section === 'guide'} onclick={() => void showSection('guide')}><Library size={18} /></button><button class="icon-button" aria-label="下載佇列" aria-expanded={queueOpen} onclick={openQueue}><Download size={18} /></button></nav>
   <nav class="header-links" aria-label="項目連結"><a href="https://github.com/LZSMIAO/ismusicnow" target="_blank" rel="noreferrer" aria-label="GitHub，於新分頁開啟"><CodeXml size={18} /><span>GitHub</span></a><a href="https://t.me/muismbot" target="_blank" rel="noreferrer" aria-label="Telegram，於新分頁開啟"><Send size={18} /><span>Telegram</span></a></nav>
 </header>
-<div inert={lyricsPage} class="workspace" class:preview-hidden={!previewVisible} class:empty={!collection && !loading} class:search-results={collection?.kind === 'search'}>
+<div inert={lyricsPage} class="workspace" class:preview-hidden={!previewVisible} class:empty={!collection && !loading && section === 'music'} class:search-results={collection?.kind === 'search'}>
   <aside class="library" aria-label="音樂導覽">
-    <div class="library-head"><Library size={22} /><span>你的音樂</span></div><nav class="side-nav"><button class:active={collection?.kind !== 'search'} onclick={home} aria-label="最近開啟"><House size={20} /><span>最近開啟</span></button><button class:active={collection?.kind === 'search'} onclick={() => searchInput?.focus()} aria-label="搜尋音樂"><Search size={20} /><span>搜尋</span></button><button onclick={openQueue} aria-label="下載佇列"><Download size={20} /><span>下載佇列</span>{#if queue.jobs.length}<span class="badge">{queue.jobs.length}</span>{/if}</button></nav>
+    <div class="library-head"><Library size={22} /><span>你的音樂</span></div><nav class="side-nav"><button class:active={section === 'music' && collection?.kind !== 'search'} onclick={home} aria-label="最近開啟"><House size={20} /><span>最近開啟</span></button><button class:active={section === 'music' && collection?.kind === 'search'} onclick={() => searchInput?.focus()} aria-label="搜尋音樂"><Search size={20} /><span>搜尋</span></button><button onclick={openQueue} aria-label="下載佇列"><Download size={20} /><span>下載佇列</span>{#if queue.jobs.length}<span class="badge">{queue.jobs.length}</span>{/if}</button></nav>
     {#if recent.length}<div class="recent-heading">最近開啟</div>{#each recent as item (`${item.provider}:${item.input}`)}<button class="recent-album" aria-label={`重新開啟 ${item.title}`} onclick={() => void resolve(item.input, item.provider)}><span class="recent-cover">{#if item.cover}<img src={item.cover} alt="" width="48" height="48" referrerpolicy="no-referrer" onerror={(e) => (e.currentTarget as HTMLImageElement).hidden = true} />{:else}<Music2 size={22} />{/if}</span><span><strong>{item.title}</strong><small>{item.artist}</small></span></button>{/each}{/if}
-    <div class="side-footer"><a href="/guide">使用指南 ↗</a><a href="/downloads">全部下載 ↗</a></div>
+    <nav class="side-footer" aria-label="工具"><button aria-current={section === 'guide' ? 'page' : undefined} onclick={() => void showSection('guide')}><Library size={18} /><span>使用指南</span></button><button aria-current={section === 'downloads' ? 'page' : undefined} onclick={() => void showSection('downloads')}><Download size={18} /><span>全部下載</span></button></nav>
   </aside>
-  <main class="main-panel" id="main" bind:this={panel} aria-busy={loading}>
-    <div class="panel-navigation"><button class="back-button" aria-label="回到上一頁" disabled={!previous.length} onclick={back}><ChevronLeft size={20} /></button><span>{loading ? '正在搜尋' : collection?.kind === 'search' ? `歌曲 · ${collection.tracks.length} 首` : collection?.title || '音樂'}</span><button class="icon-button" aria-label={previewVisible ? '收起預覽面板' : '展開預覽面板'} aria-pressed={previewVisible} onclick={() => previewVisible = !previewVisible}><PanelRight size={20} /></button></div>
+  <main class="main-panel" id="main" bind:this={panel} aria-busy={loading && section === 'music'}>
+    <div class="panel-navigation"><button class="back-button" aria-label="回到上一頁" disabled={section === 'music' && !previous.length} onclick={back}><ChevronLeft size={20} /></button><span>{section === 'guide' ? '使用指南' : section === 'downloads' ? '全部下載' : loading ? '正在搜尋' : collection?.kind === 'search' ? `歌曲 · ${collection.tracks.length} 首` : collection?.title || '音樂'}</span><button class="icon-button" aria-label={previewVisible ? '收起預覽面板' : '展開預覽面板'} aria-pressed={previewVisible} onclick={() => previewVisible = !previewVisible}><PanelRight size={20} /></button></div>
+    <div hidden={section !== 'music'}>
     {#if error}<div class="error-banner" role="alert"><span>{error}</span><button class="icon-button" aria-label="關閉錯誤訊息" onclick={() => error = ''}><X size={18} /></button></div>{/if}
     {#if loading}<div class="loading-results" aria-label="正在讀取音樂資料"><div class="skeleton-album"><div class="skeleton skeleton-cover"></div><div><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-text"></div></div></div>{#each [1,2,3,4,5] as n (n)}<div class="skeleton skeleton-row"></div>{/each}</div>
     {:else if collection}
@@ -210,6 +269,15 @@
     {:else}
       <div class="home-view">{#if recent.length}<h1>最近開啟</h1><div class="history-grid">{#each recent as item (`${item.provider}:${item.input}`)}<button class="history-card" onclick={() => void resolve(item.input, item.provider)}><span class="history-cover">{#if item.cover}<img src={item.cover} alt="" referrerpolicy="no-referrer" onerror={(e) => (e.currentTarget as HTMLImageElement).hidden = true} />{:else}<Music2 size={48} />{/if}</span><strong>{item.title}</strong><small>{item.artist}</small></button>{/each}</div>{:else}<div class="initial-search"><Music2 size={48} strokeWidth={1.2} /><p>尚未開啟音樂</p><button class="download-button" onclick={() => searchInput?.focus()}><Search size={18} />搜尋</button></div>{/if}</div>
     {/if}
+    </div>
+    {#if section === 'guide'}
+      <div class="integrated-page integrated-guide"><GuideContent /></div>
+    {:else if section === 'downloads'}
+      <section class="integrated-page integrated-downloads" aria-label="全部下載">
+        <header class="page-intro"><h1 tabindex="-1">全部下載</h1><p>檔案保留 24 小時。保存、重試與下載佇列即時同步。</p></header>
+        <DownloadQueue jobs={queue.jobs} busy={queue.busy} error={queue.error} compact={false} onclear={() => queue.clear()} onretry={(job) => queue.retry(job)} />
+      </section>
+    {/if}
   </main>
   {#if previewVisible}
     <aside class="preview" aria-label="歌曲預覽" in:fade={{ duration: reduced ? 0 : 180 }}>
@@ -230,7 +298,9 @@
   {#if player.track?.provider === 'spotify' && player.remaining !== undefined}<p class="playback-budget">今日剩餘 {player.remaining} / 5 首 · 00:00 重置</p>{/if}
   {#if player.error || player.preparing}<div class="playback-status" class:preview-collapsed={!previewVisible} role="status"><p>{player.error || player.preparing}</p><div class="playback-status-actions">{#if player.error && player.track && player.canDownload}<button class="text-button" disabled={adding} onclick={() => player.track && void downloadForPlayback(player.track)}><Download size={16} />{adding ? '正在加入' : '下載後播放'}</button>{/if}{#if player.error && player.track}<a class="text-button" href={player.track.sourceUrl} target="_blank" rel="noreferrer">在 {providerNames[player.track.provider]} 播放 <ExternalLink size={14} /></a>{/if}</div></div>{/if}
 </section>
-<dialog class="queue-modal" bind:this={drawer} aria-label="下載佇列" aria-modal="true" oncancel={(event) => { event.preventDefault(); closeQueue(); }} onclose={queueClosed} onpointerdown={(event) => { if (event.target === event.currentTarget) closeQueue(); }}>
-  <div class="queue-sheet"><DownloadQueue jobs={queue.jobs} busy={queue.busy} error={queue.error} onclear={() => queue.clear()} onretry={(job) => queue.retry(job)} onclose={closeQueue} /></div>
+<dialog class="queue-modal" bind:this={drawer} aria-label="下載佇列" aria-modal="true" oncancel={(event) => { event.preventDefault(); closeQueue(); }} onclose={queueClosed} onpointerdown={(event) => { if (event.target === event.currentTarget || (event.target as HTMLElement).classList.contains('queue-shade')) closeQueue(); }}>
+  <div class="queue-focus-layer" aria-hidden="true"></div>
+  <div class="queue-shade" aria-hidden="true"></div>
+  <div class="queue-sheet"><DownloadQueue jobs={queue.jobs} busy={queue.busy} error={queue.error} onclear={() => queue.clear()} onretry={(job) => queue.retry(job)} onclose={closeQueue} onviewall={() => void viewAllDownloads()} /></div>
 </dialog>
 {#if notice}<div class="toast" role="status" in:fade={{ duration: reduced ? 0 : 160 }} out:fade={{ duration: reduced ? 0 : 120 }}><span>{notice}</span><button class="icon-button" aria-label="關閉提示" onclick={() => notice = ''}><X size={16} /></button></div>{/if}

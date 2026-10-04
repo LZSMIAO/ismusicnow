@@ -45,3 +45,10 @@ Lyrics sit in a centred, compact floating surface directly above playback contro
 The dedicated lyrics view uses the lazy-loaded AMLL DOM renderer. It shares the existing audio, reads media time every animation frame while playing, and stops work on hidden tabs or unmount. LRC sentences remain single timing units; word timestamps are never fabricated. The view stays above the existing transport, uses black/ice-silver surfaces, and has its own bounded lyric viewport. Mobile shows a compact cover/title row. Reduced motion disables lyric blur and transitions. Search sources retain the existing compact pills within the focus panel. The search capsule has one 2px focus contour, with no overlapping border/shadow rings. Search and submit SVGs render at their native 24px viewBox size with geometric precision. Never use crispEdges or rasterize the search container to address aliasing.
 
 Keyboard resize must never activate the compact landscape toolbar. Device orientation (Screen Orientation API with iOS legacy fallback) drives the landscape class. The mobile search capsule stays 48px high and its input stays 16px/44px. Telegram keyboard mode hides the compact lyric overlay, leaving the focused search field and bounded suggestions unobstructed.
+
+## Integrated utility views and queue motion
+
+- 使用指南／全部下載切換中央內容區，保留播放器、曲目 DOM、勾選與原捲動位置；手機可由佇列底部進入全部下載。共用單一下載 state，不另開輪詢。
+- 抽屜以 transform 滑入 260ms／滑出最多 180ms；途中收起從當前畫面反向，較短路徑縮短時間。原生 dialog 保持焦點、Escape 與背景不可操作。
+- 獨立、固定半徑的模糊層以 opacity 淡入，僅覆蓋可見內容區；遮罩同步淡入。禁止逐幀動畫化頁面 filter 或陰影模糊半徑。
+- 陰影使用隨抽屜移動的 32px 柔和漸層；移除全高硬邊線與大範圍 box-shadow。縮減動態效果模式直接顯示／關閉。

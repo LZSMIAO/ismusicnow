@@ -16,8 +16,8 @@
     } catch (error) { saveError = error instanceof Error ? error.message : '無法保存音樂，請重試。'; }
     finally { saving = ''; }
   }
-  let { jobs, busy = false, error = '', compact = true, onclear, onretry, onclose }: {
-    jobs: DownloadJob[]; busy?: boolean; error?: string; compact?: boolean; onclear: () => void; onretry: (job: DownloadJob) => void; onclose?: () => void;
+  let { jobs, busy = false, error = '', compact = true, onclear, onretry, onclose, onviewall }: {
+    jobs: DownloadJob[]; busy?: boolean; error?: string; compact?: boolean; onclear: () => void; onretry: (job: DownloadJob) => void; onclose?: () => void; onviewall?: () => void;
   } = $props();
 </script>
 <section class="queue-panel" class:expanded={!compact} aria-label="下載佇列">
@@ -34,4 +34,5 @@
     {/each}</ul><p class="queue-footnote">檔案保留 24 小時</p>
   {/if}
   </div>
+  {#if onviewall}<button class="queue-view-all" onclick={onviewall}>全部下載</button>{/if}
 </section>

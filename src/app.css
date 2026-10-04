@@ -138,11 +138,11 @@ html.telegram-app{height:var(--imn-height,100dvh);overflow:hidden}
 /* Download queue: native top-layer dialog, independent of the page grid. */
 :root{--layer-modal:60}
 .queue-modal{position:fixed;inset:0 auto auto 0;margin:0;padding:0;border:0;width:100%;height:100dvh;max-width:none;max-height:none;background:transparent;color:var(--ink);overflow:hidden;overscroll-behavior:none;touch-action:none;z-index:var(--layer-modal);transition:none}
-.queue-modal::backdrop{background:oklch(.115 0 0 / .45);opacity:1;transition:opacity 180ms var(--ease-out)}
-.queue-modal.queue-closing::backdrop{opacity:0}
-.queue-sheet{position:absolute;inset:0 0 0 auto;width:min(420px,calc(100% - 24px));height:100%;padding:calc(16px + env(safe-area-inset-top,0px)) 24px calc(24px + env(safe-area-inset-bottom,0px));border:0;border-left:1px solid var(--line);border-radius:16px 0 0 16px;background:var(--panel);box-shadow:-12px 0 40px #0003;overflow:hidden;transform:translate3d(0,0,0);contain:layout paint;backface-visibility:hidden}
-.queue-modal[open] .queue-sheet{will-change:transform}
-.queue-sheet .queue-panel{height:100%;min-height:0;display:flex;flex-direction:column}
+.queue-modal::backdrop{background:transparent}
+.queue-shade{position:absolute;inset:0;background:oklch(.115 0 0 / .38);opacity:0}
+.queue-sheet{position:absolute;inset:0 0 0 auto;width:min(420px,calc(100% - 24px));height:100%;padding:calc(16px + env(safe-area-inset-top,0px)) 24px calc(24px + env(safe-area-inset-bottom,0px));border:0;border-radius:12px 0 0 12px;background:var(--panel);box-shadow:none;overflow:visible;transform:translate3d(0,0,0);contain:layout;backface-visibility:hidden}
+.queue-moving .queue-sheet{will-change:transform}.queue-moving .queue-shade,.queue-moving .queue-focus-layer{will-change:opacity}
+.queue-sheet .queue-panel{height:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden}
 .queue-sheet .queue-heading{flex-shrink:0;padding:0 0 12px;gap:8px;border-bottom:1px solid var(--line)}
 .queue-heading h2{min-width:0}
 .queue-actions{display:flex;align-items:center;gap:4px;flex-shrink:0}
@@ -169,10 +169,10 @@ html.telegram-app{height:var(--imn-height,100dvh);overflow:hidden}
 @media(hover:none){.track-download{opacity:1}}
 @media(max-width:700px){.track-head,.track{grid-template-columns:24px minmax(0,1fr) 36px 36px;gap:8px}.track>.duration,.track-head>svg{display:none}.track-download{width:36px;height:44px;opacity:1}}
 
-.queue-open .workspace,.queue-open .app-header,.queue-open .player{filter:blur(3px)}
+
 
 /* Lyrics belong to the player: a quiet strip above transport, expandable in place. */
-.player-lyrics{flex-shrink:0;background:var(--panel);border-top:1px solid var(--line);padding:0 24px}.lyrics-strip{min-height:44px;display:flex;align-items:center;gap:24px;max-width:1100px;margin:auto}.lyrics-toggle{display:flex;align-items:center;gap:8px;min-height:44px;font-size:.8125rem;color:var(--muted);flex-shrink:0}.lyrics-toggle:hover{color:var(--ink)}.lyrics-strip>p{flex:1;font-size:.875rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--silver);text-align:center}.lyrics-lines{position:relative;max-width:900px;margin:auto;height:min(180px,max(64px,calc(100dvh - var(--player-height,96px) - 172px)));overflow:auto;overscroll-behavior:contain;padding:16px 0 24px;scrollbar-width:thin}.lyrics-lines>button{display:block;width:100%;min-height:40px;padding:8px 16px;text-align:center;font-size:1rem;line-height:1.6;color:var(--muted);font-weight:500}.lyrics-lines>button:disabled{opacity:1;cursor:default}.lyrics-lines>button.lyric-current{color:var(--ink);font-weight:700}.lyrics-lines>button:hover:not(:disabled){background:var(--raised)}.lyrics-plain{white-space:pre-line;text-align:center;font-size:.9375rem;line-height:2;padding:0 16px}.lyrics-empty{padding:32px;text-align:center;color:var(--muted)}.lyrics-credit{display:block;font-size:.6875rem;color:var(--muted);text-align:right;padding:12px 16px}.queue-open .player-lyrics{filter:blur(3px)}
+.player-lyrics{flex-shrink:0;background:var(--panel);border-top:1px solid var(--line);padding:0 24px}.lyrics-strip{min-height:44px;display:flex;align-items:center;gap:24px;max-width:1100px;margin:auto}.lyrics-toggle{display:flex;align-items:center;gap:8px;min-height:44px;font-size:.8125rem;color:var(--muted);flex-shrink:0}.lyrics-toggle:hover{color:var(--ink)}.lyrics-strip>p{flex:1;font-size:.875rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--silver);text-align:center}.lyrics-lines{position:relative;max-width:900px;margin:auto;height:min(180px,max(64px,calc(100dvh - var(--player-height,96px) - 172px)));overflow:auto;overscroll-behavior:contain;padding:16px 0 24px;scrollbar-width:thin}.lyrics-lines>button{display:block;width:100%;min-height:40px;padding:8px 16px;text-align:center;font-size:1rem;line-height:1.6;color:var(--muted);font-weight:500}.lyrics-lines>button:disabled{opacity:1;cursor:default}.lyrics-lines>button.lyric-current{color:var(--ink);font-weight:700}.lyrics-lines>button:hover:not(:disabled){background:var(--raised)}.lyrics-plain{white-space:pre-line;text-align:center;font-size:.9375rem;line-height:2;padding:0 16px}.lyrics-empty{padding:32px;text-align:center;color:var(--muted)}.lyrics-credit{display:block;font-size:.6875rem;color:var(--muted);text-align:right;padding:12px 16px}
 @media(min-width:701px){.workspace,.workspace.preview-hidden{height:calc(100svh - 72px - var(--player-height,96px) - var(--lyrics-height,0px))}}
 @media(max-width:700px){.player-lyrics{padding:0 12px}.lyrics-strip{gap:12px}.lyrics-toggle{font-size:.75rem;gap:6px}.lyrics-strip>p{font-size:.8125rem;text-align:right}.lyrics-lines{height:min(144px,24dvh)}.lyrics-lines>button{font-size:.9375rem}}
 
@@ -206,7 +206,7 @@ html.telegram-app{height:var(--imn-height,100dvh);overflow:hidden}
 .lyrics-stage{position:relative;min-width:0;min-height:0;overflow:hidden}.lyrics-renderer{width:100%;height:100%;min-height:0;outline-offset:-2px;--amll-lp-font-size:2.5rem;--amll-lp-color:var(--ink)}
 .lyrics-renderer .amll-lyric-player{mix-blend-mode:normal;--amll-lp-line-width-aspect:1;--amll-lp-line-padding-x:.2em;font-weight:700;letter-spacing:-.025em;mask-image:linear-gradient(transparent,black 9%,black 88%,transparent)}
 .lyrics-page-fallback{height:100%;overflow:auto;scrollbar-width:none;display:flex;flex-direction:column;justify-content:safe center;align-items:flex-start;gap:12px;color:var(--muted);padding:24px;font-size:1.25rem;line-height:1.8}.lyrics-page-fallback::-webkit-scrollbar{display:none}.lyrics-page-plain{white-space:pre-line}
-.queue-open .lyrics-page{filter:blur(3px)}
+
 @media(max-width:960px) and (min-width:701px){.lyrics-page-body{gap:24px;padding:0 24px 24px}.lyrics-renderer{--amll-lp-font-size:2rem}}
 @media(max-width:700px){.lyrics-page,.telegram-app .lyrics-page{top:calc(108px + var(--imn-safe-top,0px));bottom:calc(var(--player-height,104px) + max(env(safe-area-inset-bottom,0px),var(--imn-safe-bottom,0px)));left:0;right:0;border-radius:0}.lyrics-page-header{height:40px;padding:0 12px}.lyrics-page-body{display:flex;flex-direction:column;gap:8px;padding:0 20px 8px}.lyrics-record{display:grid;grid-template-columns:48px minmax(0,1fr);grid-template-rows:auto auto;gap:0 12px;flex-shrink:0;padding:8px 0;justify-content:start;align-items:center}.lyrics-record-cover{width:48px;height:48px;grid-row:1/3;margin:0;border-radius:4px}.lyrics-record h1{font-size:1rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0}.lyrics-record p{font-size:.8125rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.lyrics-record small{display:none}.lyrics-stage{flex:1}.lyrics-renderer{--amll-lp-font-size:1.75rem}.lyrics-page-fallback{font-size:1.125rem;padding:12px}}
 @media(max-width:700px) and (max-height:500px){.device-landscape .lyrics-page,.device-landscape.telegram-app .lyrics-page{top:calc(60px + var(--imn-safe-top,0px))}.device-landscape .lyrics-page-header{height:36px}.device-landscape .lyrics-page-body{display:grid;grid-template-columns:160px minmax(0,1fr);gap:16px}.device-landscape .lyrics-record{display:flex;justify-content:center}.device-landscape .lyrics-record-cover{display:none}.device-landscape .lyrics-renderer{--amll-lp-font-size:1.375rem}}
@@ -217,3 +217,19 @@ html.telegram-app{height:var(--imn-height,100dvh);overflow:hidden}
 @media(max-width:700px){.searchbar{height:48px;min-height:48px;max-height:48px;flex-shrink:0}.searchbar input{height:44px;min-height:44px;font-size:16px;line-height:24px}.telegram-app .app-header{flex-shrink:0}.telegram-app body{-webkit-text-size-adjust:100%;text-size-adjust:100%}.telegram-keyboard .player-lyrics{display:none}}
 
 .search-options{scrollbar-width:none}.search-options::-webkit-scrollbar{display:none}
+
+/* Workspace utilities share the main scroller and the existing audio/queue state. */
+.side-footer button{display:flex;align-items:center;gap:12px;min-height:44px;width:100%;padding:8px 0;text-align:left;font-size:.8125rem;color:var(--muted);border-radius:4px}
+.side-footer button svg{width:18px;height:18px;flex-shrink:0}.side-footer button:hover,.side-footer button[aria-current=page]{color:var(--ink)}
+.integrated-page{padding:32px;max-width:960px;margin:0 auto}.integrated-page h1:focus{outline:none}.integrated-page h1{font-size:1.75rem}.integrated-page .page-intro p{margin-bottom:24px}
+.integrated-downloads .queue-panel.expanded{max-width:none}.integrated-downloads .queue-heading{padding-bottom:16px;border-bottom:1px solid var(--line)}.integrated-downloads .queue-heading h2{font-size:1rem;color:var(--muted)}
+.queue-view-all{flex-shrink:0;min-height:44px;margin-top:12px;border-top:1px solid var(--line);padding:12px 0 0;text-align:center;font-size:.8125rem;color:var(--silver)}.queue-view-all:hover{color:var(--ink)}
+@media(min-width:701px) and (max-width:960px){.side-footer{display:flex;padding:20px 0 0}.side-footer button{justify-content:center;padding:0}.side-footer button span{display:none}}
+@media(max-width:700px){.integrated-page{padding:24px 16px}.integrated-page h1{font-size:1.5rem}.integrated-page .guide-steps{padding-left:20px}.integrated-page .guide-steps li{padding-left:4px}.integrated-page .guide-page section{margin-top:28px}.side-footer{display:none}}
+
+
+
+/* The fixed blur texture fades; its blur radius never animates with the sheet. */
+.queue-focus-layer{position:absolute;left:0;right:min(420px,calc(100% - 24px));top:72px;bottom:var(--player-height,96px);pointer-events:none;opacity:0;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+.queue-sheet::before{content:'';position:absolute;top:0;bottom:0;right:100%;width:32px;pointer-events:none;background:linear-gradient(to left,#0003,transparent);mask-image:linear-gradient(to bottom,transparent,#000 16px,#000 calc(100% - 16px),transparent)}
+@media(max-width:700px){.queue-focus-layer{top:calc(108px + var(--imn-safe-top,0px));bottom:calc(var(--player-height,104px) + var(--imn-safe-bottom,0px));backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}.queue-sheet::before{width:24px}}
