@@ -92,7 +92,9 @@ export function selectionMessage(session: MusicSelection, ui: BotLanguage) {
   const { collection, page } = session, start = page * selectionPageSize;
   const items = collection.entities || collection.tracks;
   const visible = items.slice(start, start + selectionPageSize);
-  const source = collection.provider === 'netease' ? 'NetEase' : collection.provider === 'ytm' ? 'YTM' : 'Spotify';
+  const sourceName = (provider: Track['provider']) => provider === 'netease' ? 'NetEase' : provider === 'ytm' ? 'YTM' : 'Spotify';
+  const mixed = collection.searchScope === 'all' || (collection.providers?.length || 0) > 1;
+  const source = mixed ? botText(ui, 'allSources') : sourceName(collection.provider);
   const key = collection.kind === 'search' ? collection.searchType || 'track' : collection.kind;
   const kind = botText(ui, key === 'album' ? 'album' : key === 'playlist' ? 'playlist' : key === 'artist' ? 'artist' : 'single');
   const details = visible.map((item, i) => {
@@ -100,7 +102,7 @@ export function selectionMessage(session: MusicSelection, ui: BotLanguage) {
     const extra = 'durationMs' in item
       ? [shortText(item.artists.join(' / '), 18), shortText(item.album, 16), duration(item.durationMs)]
       : [shortText(item.artists.join(' / '), 45), item.year, item.count === undefined ? '' : botText(ui, 'tracksCount', { count: item.count })];
-    return `${start + i + 1}. ${title}\n${escapeHtml(extra.filter(Boolean).join(' · '))}`;
+    return `${start + i + 1}. ${title}\n${escapeHtml([...extra, mixed ? sourceName(item.provider) : ''].filter(Boolean).join(' · '))}`;
   });
   const rows: { text: string; callback_data: string }[][] = [];
   if (collection.kind === 'search' && collection.provider !== 'ytm') rows.push((['track', 'album', 'artist', 'playlist'] as const).map(type => ({

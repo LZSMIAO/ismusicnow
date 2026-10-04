@@ -26,6 +26,7 @@ const query = (value = '床', offset = '', id = 'query-1') => ({ id, from: { id:
 
 test('inline prefixes preserve words, auto-detect platform URLs and validate private deep links', () => {
   assert.equal(parseInlineQuery('床').input, '床');
+  assert.equal(parseInlineQuery('床').provider, 'all');
   assert.deepEqual(parseInlineQuery('spotify album OK Computer'), { input: 'OK Computer', provider: 'spotify', kind: 'album', albums: false });
   assert.equal(parseInlineQuery('artist spotify Radiohead').provider, 'spotify');
   assert.equal(parseInlineQuery('Spotifyish').input, 'Spotifyish');
@@ -139,7 +140,7 @@ test('channel browsing uses a destination chooser rather than an unsupported cur
 test('FLAC and unknown cached audio never invalidate an inline page or trigger a download', async () => {
   for (const metadata of [{ codec: 'FLAC', lossless: true }, undefined]) {
     const h = harness({ names: 'zh-Hant', record: { ...audio, audio: metadata } });
-    await h.inline.answer(query('塵'));
+    await h.inline.answer(query('netease 塵'));
     assert.equal(h.searches[0]!.input, '尘');
     assert.equal(h.calls.length, 1);
     const result = h.calls[0]!.body.results[0];

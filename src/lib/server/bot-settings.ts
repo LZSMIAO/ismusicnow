@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { Converter } from 'opencc-js';
 import { z } from 'zod';
@@ -12,7 +12,7 @@ export const languageNames: Record<AlbumLanguage, string> = {
   original: 'Original（中文保留原樣）', 'zh-Hant': '中文統一繁體（TC）', 'zh-Hans': '中文统一简体（SC）',
 };
 const pendingSchema = z.object({
-  chatId: z.number().int(), messageId: z.number().int().positive(), messageThreadId: z.number().int().positive().optional(), keepRequest: z.boolean().optional(), createdAt: z.number(),
+  chatId: z.number().int(), messageId: z.number().int().positive(), messageThreadId: z.number().int().positive().optional(), keepRequest: z.boolean().optional(), inlineMode: z.boolean().optional(), createdAt: z.number(),
   track: z.object({ id: z.string(), provider: z.enum(['netease', 'spotify', 'ytm']), title: z.string(),
     artists: z.array(z.string()), album: z.string(), cover: z.string(), durationMs: z.number(), sourceUrl: z.string(),
     artistIds: z.array(z.string()).optional(), albumUrl: z.string().optional(),
@@ -60,6 +60,19 @@ export class BotSettingsStore {
     if (settings.pending && this.now() - settings.pending.createdAt > pendingLifetime) delete settings.pending;
     return settings;
   }
+  async knownLocales(): Promise<{ userId: number; language: BotLanguage }[]> {
+    const files = await readdir(this.root).catch(error => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      throw error;
+    });
+    const result: { userId: number; language: BotLanguage }[] = [];
+    for (const file of files.filter(name => /^\d+\.json$/.test(name)).slice(0, 1000)) {
+      const userId = Number(file.slice(0, -5));
+      const settings = await this.get(userId).catch(() => undefined);
+      if (settings) result.push({ userId, language: settings.uiLanguage || settings.telegramLanguage || 'en' });
+    }
+    return result;
+  }
   private change<T>(userId: number, mutate: (settings: UserSettings) => T): Promise<T> {
     const previous = this.writes.get(userId) || Promise.resolve();
     const next = previous.catch(() => {}).then(async () => {
@@ -104,7 +117,7 @@ export class BotSettingsStore {
 }
 
 type Send = (chatId: number, text: string, extra?: Record<string, unknown>) => Promise<unknown>;
-type Acquire = (chatId: number, userId: number, track: Track, language: AlbumLanguage, messageId: number, messageThreadId?: number, keepRequest?: boolean) => Promise<void>;
+type Acquire = (chatId: number, userId: number, track: Track, language: AlbumLanguage, messageId: number, messageThreadId?: number, keepRequest?: boolean, inlineMode?: boolean) => Promise<void>;
 
 export class BotLanguageSettings {
   constructor(private store: BotSettingsStore, private send: Send, private acquire: Acquire,
@@ -151,10 +164,10 @@ export class BotLanguageSettings {
     rows.push([{ text: botText(ui, 'back'), callback_data: `setting:${userId}:home` }]);
     await this.send(chatId, `${botText(ui, 'uiLanguage')}\n\n${botText(ui, 'current', { value: botLanguageNames[ui] })}\n${botText(ui, 'uiScope')}`, { deleteAfterMs: 30 * 60_000, reply_markup: { inline_keyboard: rows } });
   }
-  async request(chatId: number, userId: number, track: Track, messageId: number, messageThreadId?: number, keepRequest = false): Promise<void> {
-    const thread: [number?, boolean?] = keepRequest ? [messageThreadId, true] : messageThreadId === undefined ? [] : [messageThreadId];
+  async request(chatId: number, userId: number, track: Track, messageId: number, messageThreadId?: number, keepRequest = false, inlineMode = false): Promise<void> {
+    const thread: [number?, boolean?, boolean?] = inlineMode ? [messageThreadId, keepRequest, true] : keepRequest ? [messageThreadId, true] : messageThreadId === undefined ? [] : [messageThreadId];
     if (track.provider !== 'netease') return this.acquire(chatId, userId, track, 'original', messageId, ...thread);
-    const language = await this.store.stage(userId, { chatId, messageId, messageThreadId, keepRequest: keepRequest || undefined, track });
+    const language = await this.store.stage(userId, { chatId, messageId, messageThreadId, keepRequest: keepRequest || undefined, inlineMode: inlineMode || undefined, track });
     if (!language) return this.showNames(chatId, userId, true, messageId);
     await this.acquire(chatId, userId, track, language, messageId, ...thread);
   }
@@ -189,7 +202,7 @@ export class BotLanguageSettings {
     const pending = await this.store.choose(userId, language);
     if (pending) {
       await dismiss?.();
-      const context: [number?, boolean?] = pending.keepRequest ? [pending.messageThreadId, true] : pending.messageThreadId === undefined ? [] : [pending.messageThreadId];
+      const context: [number?, boolean?, boolean?] = pending.inlineMode ? [pending.messageThreadId, !!pending.keepRequest, true] : pending.keepRequest ? [pending.messageThreadId, true] : pending.messageThreadId === undefined ? [] : [pending.messageThreadId];
       await this.acquire(pending.chatId, userId, pending.track, pending.track.provider === 'netease' ? language : 'original', pending.messageId, ...context);
     } else await this.showNames(chatId, userId);
     return true;

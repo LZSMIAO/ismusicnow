@@ -21,7 +21,7 @@ export function artistDisplayName(original: string, artist: Artist): string {
   if (artistLanguage(artist) !== 'ja') return original;
   return [artist.name || '', ...(artist.alias || [])].find((name) => name && name !== original && toSimplified(name) === toSimplified(original)) || original;
 }
-async function artistDetails(id: string): Promise<Artist | undefined> {
+async function artistDetails(id: string, timeoutMs: number): Promise<Artist | undefined> {
   if (!/^\d{1,16}$/.test(id)) return undefined;
   let cached = artists.get(id);
   if (!cached || cached.expires < Date.now()) {
@@ -30,12 +30,12 @@ async function artistDetails(id: string): Promise<Artist | undefined> {
     cached = { expires: Date.now() + 6 * 60 * 60_000, value }; artists.set(id, cached);
   }
   let timer: ReturnType<typeof setTimeout> | undefined;
-  try { return await Promise.race([cached.value, new Promise<undefined>((done) => { timer = setTimeout(() => done(undefined), 2500); })]); }
+  try { return await Promise.race([cached.value, new Promise<undefined>((done) => { timer = setTimeout(() => done(undefined), timeoutMs); })]); }
   finally { if (timer) clearTimeout(timer); }
 }
-export async function metadataForDisplay(track: Track): Promise<Track> {
+export async function metadataForDisplay(track: Track, timeoutMs = 2500): Promise<Track> {
   if (track.provider !== 'netease' || !track.artistIds?.length) return track;
-  const details = await Promise.all(track.artistIds.slice(0, 8).map(artistDetails));
+  const details = await Promise.all(track.artistIds.slice(0, 8).map(id => artistDetails(id, timeoutMs)));
   return { ...track, artists: track.artists.map((name, i) => details[i] ? artistDisplayName(name, details[i]!) : name),
     metadataLanguages: { ...track.metadataLanguages, artists: track.artists.map((_name, i) => track.metadataLanguages?.artists?.[i] || (details[i] ? artistLanguage(details[i]!) : undefined) || 'und') } };
 }

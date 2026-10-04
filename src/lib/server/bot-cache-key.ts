@@ -4,6 +4,10 @@ import { config } from './config.js';
 import type { Track } from '../types.js';
 import type { MusicCacheKey } from './bot-cache.js';
 
+// Telegram file IDs cannot change media types. Keep an additional Inline
+// presentation of the same original/quality when FLAC needs a document ID.
+export const inlinePresentationKey = (key: MusicCacheKey): MusicCacheKey => ({ ...key, quality: `${key.quality}:inline` });
+
 // Both private downloads and inline sharing must use the same quality identity.
 export async function musicCacheKey(track: Pick<Track, 'provider' | 'id'>): Promise<MusicCacheKey> {
   let quality = track.provider === 'netease' ? 'original-lossless' : track.provider === 'ytm' ? 'original-bestaudio' : config.spotifyAudioQuality;

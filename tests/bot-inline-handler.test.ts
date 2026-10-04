@@ -55,5 +55,26 @@ test('real handler routes inline queries without chat IDs, deep-link onboarding 
     }
     assert.equal(calls.length, beforeShare, 'inline cards must never be searched, deleted or replaced');
     const help = calls.at(-1)!; assert.equal(help.body.parse_mode, 'HTML'); assert.match(help.body.text, /<blockquote expandable>/); assert.match(help.body.text, /@muismbot/);
+    const { botLanguages, botText } = await import('../src/lib/server/bot-i18n.js');
+    for (const language of botLanguages) {
+      await handle({ update_id: 9, callback_query: { id: 'language', from: { id: 42 }, data: `ui:42:${language}`, message: { message_id: nextMessage, chat: { id: 42, type: 'private' } } } });
+      const menu = calls.findLast(c => c.method === 'setChatMenuButton')!;
+      assert.equal(menu.body.chat_id, 42); assert.equal(menu.body.menu_button.text, botText(language, 'openPlayer'));
+      now += 4000;
+      await handle({ update_id: 10, message: { message_id: 10, chat: { id: 42, type: 'private' }, from: { id: 42, language_code: 'de' }, text: '/app' } });
+      assert.equal(calls.findLast(c => c.method === 'sendMessage')!.body.reply_markup.inline_keyboard[0][0].text, botText(language, 'openPlayer'));
+    }
+    const cache = new BotMusicCache('999222');
+    await cache.put({ provider: 'netease', id: '123', quality: 'original-lossless' }, { fileId: 'old-flac-audio', kind: 'audio', duration: 150, bytes: 1000, audioSource: 'netease', audio: { codec: 'FLAC', lossless: true } });
+    await cache.put({ provider: 'netease', id: '123', quality: 'original-lossless:inline' }, { fileId: 'prepared-flac-document', kind: 'document', duration: 150, bytes: 1000, audioSource: 'netease', audio: { codec: 'FLAC', lossless: true } });
+    await handle({ update_id: 11, inline_query: { id: 'flac-ready', from: { id: 42 }, query: 'netease 床', offset: '' } });
+    assert.equal(calls.at(-1)!.body.results[0].type, 'document');
+    assert.equal(calls.at(-1)!.body.results[0].document_file_id, 'prepared-flac-document');
+    now += 4000;
+    await handle({ update_id: 12, message: { message_id: 12, chat: { id: 42, type: 'private' }, from: { id: 42 }, text: '/start in_n_123' } });
+    assert.equal(calls.findLast(c => c.method === 'sendDocument')!.body.document, 'prepared-flac-document');
+    now += 4000;
+    await handle({ update_id: 13, message: { message_id: 13, chat: { id: 42, type: 'private' }, from: { id: 42 }, text: '/netease 123' } });
+    assert.equal(calls.findLast(c => c.method === 'sendAudio')!.body.audio, 'old-flac-audio', 'ordinary playback retains its original audio cache');
   } finally { globalThis.fetch = fetchBefore; Date.now = nowBefore; process.env = env; await rm(root, { recursive: true, force: true }); }
 });

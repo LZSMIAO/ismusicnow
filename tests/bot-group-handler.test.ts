@@ -67,7 +67,8 @@ test('group commands, mentions, member languages, owned reply selection and conc
     assert.equal((await settings.get(91)).uiLanguage, 'fr'); assert.equal(await new BotSettingsStore().get(90).then((s) => s.uiLanguage), undefined);
     let commands = calls.findLast((call) => call.method === 'setMyCommands')!;
     assert.deepEqual(commands.body.scope, { type: 'chat_member', chat_id: -100, user_id: 91 });
-    assert.match(commands.body.commands.find((c: { command: string }) => c.command === 'search').description, /Chercher/);
+    assert.match(commands.body.commands.find((c: { command: string }) => c.command === 'search').description, /Rechercher/);
+    assert.ok(!calls.some(call => call.method === 'setChatMenuButton'), 'a group preference never changes the global/private menu');
 
     await Promise.all([message(30, '/search@muismbot 草東', 90, 10), message(31, '/search@muismbot 人是猫', 91, 20)]);
     const topicMenus = calls.filter((call) => call.method === 'sendMessage' && /<b>(草東|人是猫)<\/b>/.test(call.body.text));
@@ -96,7 +97,7 @@ test('group commands, mentions, member languages, owned reply selection and conc
     for (const id of [41, 42, 43]) assert.ok(!deleted.includes(id), 'ignored or failed requests must survive');
 
     await message(50, '草東沒有派對', 90, 20, 1000);
-    assert.equal(queries.at(-1), '草東沒有派對'); const replyChoices = selector();
+    assert.equal(queries.at(-1), '草东没有派对'); const replyChoices = selector();
     await callback(replyChoices.pick, replyChoices.id, 90, 20);
     assert.equal(calls.findLast((call) => call.method === 'sendAudio')!.body.message_thread_id, '20');
     assert.equal(calls.findLast((call) => call.method === 'sendAudio')!.body.reply_parameters, undefined);

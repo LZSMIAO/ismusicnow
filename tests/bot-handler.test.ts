@@ -55,7 +55,7 @@ test('plain text → reply/pagination → numeric or owned callback selection �
     await message(100, '草東沒有派對');
     sent = calls.filter((call) => call.method === 'sendMessage').at(-1)!;
     assert.equal(sent.body.reply_parameters, undefined);
-    assert.match(sent.body.text, /NetEase · Songs/); assert.equal(sent.body.deleteAfterMs, undefined);
+    assert.match(sent.body.text, /All sources · Songs/); assert.match(sent.body.text, /NetEase/); assert.equal(sent.body.deleteAfterMs, undefined);
     const menuId = nextMessage, pageData = sent.body.reply_markup.inline_keyboard.flat().find((b: any) => b.callback_data.startsWith('page:')).callback_data;
     await callback(pageData, menuId);
     assert.match(calls.findLast((call) => call.method === 'editMessageText')!.body.text, /6–10 \/ 10/);

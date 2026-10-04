@@ -21,6 +21,14 @@ export const botLanguageNames: Record<BotLanguage, string> = {
 // Translate the static template before inserting music metadata. UI language
 // must never translate or normalize a song, artist, album, URL or filename.
 const catalog = {
+  openPlayer: ["開啟播放器", "Open player", "プレーヤーを開く", "플레이어 열기", "Abrir reproductor", "Ouvrir le lecteur", "Открыть плеер"],
+  cmdApp: ["開啟音樂播放器", "Open the music player", "音楽プレーヤーを開く", "음악 플레이어 열기", "Abrir el reproductor de música", "Ouvrir le lecteur musical", "Открыть музыкальный плеер"],
+  allSources: ["所有來源", "All sources", "すべてのサービス", "모든 소스", "Todas las fuentes", "Toutes les sources", "Все источники"],
+  supportedSources: ["支援 NetEase · Spotify · YTM", "Sources: NetEase · Spotify · YTM", "対応サービス：NetEase · Spotify · YTM", "지원 소스: NetEase · Spotify · YTM", "Fuentes: NetEase · Spotify · YTM", "Sources : NetEase · Spotify · YTM", "Источники: NetEase · Spotify · YTM"],
+  helpSearch: ["搜尋與獲取", "Search and download", "検索・取得", "검색 및 다운로드", "Buscar y descargar", "Recherche et téléchargement", "Поиск и загрузка"],
+  helpSources: ["指定來源", "Choose a source", "サービスを指定", "소스 선택", "Elegir fuente", "Choisir une source", "Выбрать источник"],
+  helpSettings: ["設定與播放器", "Settings and player", "設定・プレーヤー", "설정 및 플레이어", "Ajustes y reproductor", "Réglages et lecteur", "Настройки и плеер"],
+
   inlineHelp: ["在任何聊天輸入 @{botUsername} ＋歌名，即可搜尋與分享。", "Type @{botUsername} and a song name in any chat to search and share.", "どのチャットでも @{botUsername} と曲名を入力して検索・共有できます。", "어느 채팅에서나 @{botUsername}과 곡명을 입력해 검색·공유하세요.", "Escribe @{botUsername} y una canción en cualquier chat para buscar y compartir.", "Tapez @{botUsername} et un titre dans n’importe quel chat pour chercher et partager.", "Введите @{botUsername} и название песни в любом чате для поиска и отправки."],
   quickHelp: ["發送名稱或連結 → 選擇單曲、專輯、藝術家或歌單 → 獲取。", "Send a name or link → choose songs, albums, artists or playlists → download.", "名前・リンクを送信 → 曲・アルバム・アーティスト・プレイリストを選択 → 取得。", "이름·링크 전송 → 곡·앨범·아티스트·재생목록 선택 → 다운로드.", "Envía un nombre o enlace → elige canciones, álbumes, artistas o listas → descarga.", "Envoyez un nom ou lien → choisissez titres, albums, artistes ou playlists → téléchargez.", "Отправьте название или ссылку → выберите песни, альбомы, исполнителей или плейлисты → загрузите."],
   inlineSearch: ["搜尋或貼上音樂連結", "Search or paste a music link", "検索または音楽リンクを貼り付け", "검색 또는 음악 링크 붙여넣기", "Busca o pega un enlace musical", "Rechercher ou coller un lien musical", "Поиск или ссылка на музыку"],
@@ -82,12 +90,12 @@ const catalog = {
   helpIntro: ["直接發送歌名、歌手名或音樂連結。搜尋結果可點選或發送序號。", "Send a song name, artist name or music link. Choose a result or send its number.", "曲名・アーティスト名・音楽リンクを送信してください。結果を選ぶか、番号を送信できます。", "곡명·아티스트명·음악 링크를 보내세요. 검색 결과를 선택하거나 번호를 보낼 수 있습니다.", "Envía un título, artista o enlace musical. Elige un resultado o envía su número.", "Envoyez un titre, un artiste ou un lien musical. Choisissez un résultat ou envoyez son numéro.", "Отправьте название песни, исполнителя или ссылку. Выберите результат или отправьте его номер."],
   helpGroup: ["群組請使用 /search@{botUsername} 關鍵字，或回覆 Bot 搜尋。點選結果，或回覆列表並輸入序號。", "In groups, use /search@{botUsername} keywords or reply to the bot to search. Choose a result, or reply to its list with a number.", "グループでは /search@{botUsername} キーワード、または Bot への返信で検索できます。結果を選ぶか、リストに番号で返信してください。", "그룹에서는 /search@{botUsername} 검색어 또는 봇에 답장하여 검색하세요. 결과를 선택하거나 목록에 번호로 답장하세요.", "En grupos, usa /search@{botUsername} palabras o responde al bot para buscar. Elige un resultado o responde a la lista con un número.", "En groupe, utilisez /search@{botUsername} mots-clés ou répondez au bot. Choisissez un résultat ou répondez à la liste avec un numéro.", "В группе используйте /search@{botUsername} запрос или ответьте боту. Выберите результат или ответьте на список номером."],
   cmdNetease: ["網易雲歌名、ID 或連結；關鍵字取第一首", "NetEase name, ID or link; first keyword result", "NetEase の曲名・ID・リンク（検索は最初の曲）", "NetEase 곡명·ID·링크 (검색 첫 번째 곡)", "NetEase: nombre, ID o enlace; primer resultado", "NetEase : titre, ID ou lien ; premier résultat", "NetEase: название, ID или ссылка; первый результат"],
-  cmdSearch: ["搜尋網易雲：單曲、專輯、藝術家、歌單", "Search NetEase: songs, albums, artists, playlists", "NetEase の曲・アルバム・アーティスト・プレイリストを検索", "NetEase 곡·앨범·아티스트·재생목록 검색", "Buscar en NetEase: canciones, álbumes, artistas y listas", "Chercher sur NetEase : titres, albums, artistes, playlists", "Поиск NetEase: песни, альбомы, исполнители, плейлисты"],
+  cmdSearch: ["搜尋音樂：單曲、專輯、藝術家、歌單", "Search music: songs, albums, artists and playlists", "音楽を検索：曲・アルバム・アーティスト・プレイリスト", "음악 검색: 곡, 앨범, 아티스트, 재생목록", "Buscar música: canciones, álbumes, artistas y listas", "Rechercher titres, albums, artistes et playlists", "Поиск музыки: песни, альбомы, исполнители и плейлисты"],
   cmdSpotify: ["搜尋 Spotify", "Search Spotify", "Spotify を検索", "Spotify 검색", "Buscar en Spotify", "Chercher sur Spotify", "Поиск Spotify"],
   cmdYtm: ["獲取 YouTube Music 連結", "Download a YouTube Music link", "YouTube Music のリンクから取得", "YouTube Music 링크 다운로드", "Descargar enlace de YouTube Music", "Télécharger un lien YouTube Music", "Загрузить по ссылке YouTube Music"],
   cmdDownload: ["解析音樂連結並獲取", "Resolve and download a music link", "音楽リンクを解析して取得", "음악 링크 분석 및 다운로드", "Analizar y descargar enlace musical", "Analyser et télécharger un lien musical", "Разобрать и загрузить музыкальную ссылку"],
-  cmdLyric: ["網易雲歌名、ID 或連結；獲取 LRC 歌詞", "NetEase name, ID or link; get LRC lyrics", "NetEase の曲名・ID・リンクから LRC 歌詞を取得", "NetEase 곡명·ID·링크로 LRC 가사 받기", "NetEase: nombre, ID o enlace; letra LRC", "NetEase : titre, ID ou lien ; paroles LRC", "NetEase: название, ID или ссылка; текст LRC"],
-  cmdSettings: ["Bot 介面語言與網易雲中文名稱字形", "Bot language and NetEase Chinese names", "Bot の言語と NetEase の中国語表記", "봇 언어 및 NetEase 중국어 표기", "Idioma del bot y nombres chinos de NetEase", "Langue du bot et noms chinois de NetEase", "Язык бота и китайские названия NetEase"],
+  cmdLyric: ["網易雲歌詞：名稱、ID 或連結", "NetEase lyrics: name, ID or link", "NetEase の歌詞：名前・ID・リンク", "NetEase 가사: 이름, ID 또는 링크", "Letras de NetEase: nombre, ID o enlace", "Paroles NetEase : nom, ID ou lien", "Тексты NetEase: название, ID или ссылка"],
+  cmdSettings: ["語言與顯示偏好", "Language and display preferences", "言語・表示設定", "언어 및 표시 설정", "Idioma y preferencias de visualización", "Langue et préférences d’affichage", "Язык и настройки отображения"],
   cmdAbout: ["關於音樂主義", "About ismusicnow", "ismusicnow について", "ismusicnow 소개", "Acerca de ismusicnow", "À propos d’ismusicnow", "Об ismusicnow"],
   firstNotice: ["首次獲取網易雲歌曲會先選中文名稱字形，之後沿用你的偏好。", "Your first NetEase download asks for Chinese spelling, then remembers your choice.", "初回の NetEase ダウンロードで中国語表記を選択し、次回から保存した設定を使います。", "첫 NetEase 다운로드에서 중국어 표기를 선택하면 다음부터 기억합니다.", "La primera descarga de NetEase pide la escritura china y recuerda tu elección.", "Le premier téléchargement NetEase demande l’écriture chinoise et mémorise votre choix.", "При первой загрузке NetEase выберите китайское написание. Выбор будет сохранён."],
   sourceNote: ["Spotify 使用 Spotify 原始音源；YTM 使用獨立適配器。", "Spotify uses its original audio; YTM has its own adapter.", "Spotify は元の Spotify 音源を使用し、YTM は専用の取得機能を使用します。", "Spotify는 원본 음원을 사용하며 YTM은 별도 어댑터를 사용합니다.", "Spotify usa su audio original; YTM tiene su propio adaptador.", "Spotify utilise son audio original ; YTM possède son propre adaptateur.", "Spotify использует своё исходное аудио; YTM — отдельный адаптер."],
@@ -127,6 +135,7 @@ const errors: Record<string, BotTextKey> = {
   NO_AUDIO: 'unavailableAudio', PREVIEW_ONLY: 'unavailableAudio', INCOMPLETE_AUDIO: 'unavailableAudio', LOSSLESS_UNAVAILABLE: 'unavailableAudio',
   ADAPTER_FAILED: 'adapterFailed', NO_OUTPUT: 'adapterFailed', TOOL_MISSING: 'adapterFailed', INVALID_QUALITY: 'adapterFailed',
   DOWNLOAD_TIMEOUT: 'timeout', FILE_TOO_LARGE: 'tooLarge', QUEUE_FULL: 'queueFull',
+  UPSTREAM_TIMEOUT: 'timeout', RATE_LIMIT: 'rateLimited',
   INVALID_INPUT: 'queryInput', INVALID_URL: 'invalidLink', UNSUPPORTED_LINK: 'invalidLink', UNSUPPORTED_HOST: 'invalidLink',
   SHORT_LINK: 'invalidLink', INVALID_TRACK: 'invalidLink', YTM_LINK_REQUIRED: 'invalidLink',
   EXPIRED: 'unavailableFile', NOT_READY: 'unavailableFile', SERVICE_RESTARTED: 'restarted',
@@ -134,13 +143,18 @@ const errors: Record<string, BotTextKey> = {
 };
 export const botError = (language: BotLanguage, code?: string) => botText(language, errors[code || ''] || 'serviceError');
 export function botCommands(language: BotLanguage) {
-  return ([['netease', 'cmdNetease'], ['music', 'cmdNetease'], ['search', 'cmdSearch'], ['spotify', 'cmdSpotify'],
-    ['ytm', 'cmdYtm'], ['album', 'cmdAlbum'], ['artist', 'cmdArtist'], ['playlist', 'cmdPlaylist'], ['download', 'cmdDownload'], ['lyric', 'cmdLyric'], ['settings', 'cmdSettings'], ['about', 'cmdAbout']] as const)
-    .map(([command, key]) => ({ command: command as string, description: botText(language, key).slice(0, 256) }))
-    .concat({ command: 'app', description: 'MUISM · Web App' });
+  return ([['search', 'cmdSearch'], ['album', 'cmdAlbum'], ['artist', 'cmdArtist'], ['playlist', 'cmdPlaylist'],
+    ['download', 'cmdDownload'], ['netease', 'cmdNetease'], ['spotify', 'cmdSpotify'], ['ytm', 'cmdYtm'],
+    ['lyric', 'cmdLyric'], ['settings', 'cmdSettings'], ['app', 'cmdApp'], ['about', 'cmdAbout']] as const)
+    .map(([command, key]) => ({ command: command as string, description: botText(language, key).slice(0, 256) }));
 }
 export function botHelp(language: BotLanguage, group = false, botUsername = 'muismbot'): string {
-  return ['<b>音樂主義</b>', '', botText(language, group ? 'helpGroup' : 'quickHelp', { botUsername }),
-    botText(language, 'inlineHelp', { botUsername }), '',
-    '<blockquote expandable>' + botCommands(language).map(c => `/${c.command} — ${c.description}`).join('\n') + '</blockquote>'].join('\n');
+  const commands = botCommands(language);
+  const section = (key: 'helpSearch' | 'helpSources' | 'helpSettings', names: string[]) =>
+    '<blockquote expandable><b>' + botText(language, key) + '</b>\n' + commands.filter(c => names.includes(c.command)).map(c => `/${c.command} — ${c.description}`).join('\n') + '</blockquote>';
+  return ['<b>MUISM · 音樂主義</b>', '', botText(language, group ? 'helpGroup' : 'quickHelp', { botUsername }),
+    botText(language, 'supportedSources'), botText(language, 'inlineHelp', { botUsername }), '',
+    section('helpSearch', ['search', 'album', 'artist', 'playlist', 'download']),
+    section('helpSources', ['netease', 'spotify', 'ytm', 'lyric']),
+    section('helpSettings', ['settings', 'app', 'about'])].join('\n');
 }

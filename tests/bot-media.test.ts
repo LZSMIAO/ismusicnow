@@ -34,6 +34,21 @@ test('definitive format rejection falls back to the same original file with its 
   }, upload);
   assert.equal(result, 'document'); assert.deepEqual(methods, ['sendAudio', 'sendDocument']);
 });
+test('explicit Inline preparation uploads FLAC once as a document with unchanged MIME and bytes', async () => {
+  const methods: string[] = [];
+  let stored = '';
+  const result = await sendMusic(async (method, form) => {
+    methods.push(method);
+    assert.equal(form.has('audio'), false);
+    assert.equal(form.get('disable_content_type_detection'), 'true');
+    const file = form.get('document') as File;
+    assert.equal(file.type, 'audio/flac'); assert.equal(file.name, upload.filename);
+    assert.deepEqual(new Uint8Array(await file.arrayBuffer()), upload.bytes);
+    return { document: { file_id: 'inline-original-file' } };
+  }, { ...upload, asDocument: true, onDelivered: (kind, message: any) => { assert.equal(kind, 'document'); stored = message.document.file_id; } });
+  assert.equal(result, 'document'); assert.equal(stored, 'inline-original-file');
+  assert.deepEqual(methods, ['sendDocument']);
+});
 test('thumbnail rejection retries audio without a cover; network failures never duplicate an upload', async () => {
   let count = 0;
   assert.equal(await sendMusic(async (_method, form) => {

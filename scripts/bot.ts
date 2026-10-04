@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { DownloadStore } from '../src/lib/server/downloads.js';
 import { publicError, ServiceError } from '../src/lib/server/errors.js';
 import { artistAlbums, resolveMusic, getTrack } from '../src/lib/server/music.js';
+import { resolveBotMusic, type BotSource } from '../src/lib/server/bot-search.js';
 import { neteaseLyrics } from '../src/lib/server/providers/netease.js';
 import { safeFilename } from '../src/lib/server/links.js';
 import { resolveNeteaseCommand } from '../src/lib/server/bot-input.js';
@@ -12,8 +13,8 @@ import { BotLanguageSettings, BotSettingsStore, displayTrack, type AlbumLanguage
 import { audioPresentation, musicReferencePayload, sendMusic, TelegramRequestError } from '../src/lib/server/bot-media.js';
 import { BotMusicCache, type CachedMusic } from '../src/lib/server/bot-cache.js';
 import { BotDispatch } from '../src/lib/server/bot-dispatch.js';
-import { BotInline, parseInlineStart, type InlineQuery } from '../src/lib/server/bot-inline.js';
-import { musicCacheKey } from '../src/lib/server/bot-cache-key.js';
+import { BotInline, cachedInlineAudio, parseInlineStart, type InlineQuery } from '../src/lib/server/bot-inline.js';
+import { inlinePresentationKey, musicCacheKey } from '../src/lib/server/bot-cache-key.js';
 import { BotMessageCleanup } from '../src/lib/server/bot-cleanup.js';
 import { BotSelections, selectionLifetime, selectionPageSize, selectionMessage, type MusicSelection } from '../src/lib/server/bot-selection.js';
 import { metadataForDisplay } from '../src/lib/server/bot-metadata.js';
@@ -68,6 +69,9 @@ async function updateCommands(chatId: number, language: Parameters<typeof botCom
   if (commandLanguages.get(key) === language) return;
   const scope = chatId < 0 ? { type: 'chat_member', chat_id: chatId, user_id: userId } : { type: 'chat', chat_id: chatId };
   await telegram('setMyCommands', { commands: botCommands(language), scope });
+  if (chatId > 0) await telegram('setChatMenuButton', { chat_id: chatId, menu_button: {
+    type: 'web_app', text: botText(language, 'openPlayer'), web_app: { url: webAppUrl.href },
+  } });
   if (commandLanguages.size >= 1000) commandLanguages.delete(commandLanguages.keys().next().value!);
   commandLanguages.set(key, language);
 }
@@ -85,16 +89,22 @@ async function sendSettings(chatId: number, text: string, extra: Record<string, 
 const settingsStore = new BotSettingsStore();
 const preferences = new BotLanguageSettings(settingsStore, sendSettings, sendTrack, updateCommands);
 const inline = new BotInline({
-  telegram, username: () => botUsername, resolve: resolveMusic, albums: artistAlbums, getTrack,
+  telegram, username: () => botUsername, resolve: resolveBotMusic, albums: artistAlbums, getTrack,
   preferences: async userId => ({ ui: await preferences.locale(userId), names: (await settingsStore.get(userId)).language }),
-  cache: async track => mediaCache.get(await musicCacheKey(track)), metadata: metadataForDisplay,
+  cache: async track => {
+    const key = await musicCacheKey(track);
+    return await mediaCache.get(inlinePresentationKey(key)) || await mediaCache.get(key);
+  }, metadata: track => metadataForDisplay(track, 250),
 });
 
-async function sendTrack(chatId: number, userId: number, track: Track, language: AlbumLanguage, messageId: number, messageThreadId?: number, keepRequest = false): Promise<void> {
+async function sendTrack(chatId: number, userId: number, track: Track, language: AlbumLanguage, messageId: number, messageThreadId?: number, keepRequest = false, inlineMode = false): Promise<void> {
   const owner = `tg:${chatId}:${userId}`;
   const ui = await preferences.locale(userId);
   const visible = displayTrack(language !== 'original' ? await metadataForDisplay(track) : track, language);
-  await mediaCache.deliver(await musicCacheKey(track), async (record) => {
+  const primaryKey = await musicCacheKey(track);
+  const primary = inlineMode ? await mediaCache.get(primaryKey) : undefined;
+  const key = inlineMode && (!primary || primary.kind === 'audio' && !cachedInlineAudio(primary)) ? inlinePresentationKey(primaryKey) : primaryKey;
+  await mediaCache.deliver(key, async (record) => {
     const job = { ...record, id: 'telegram-cache', track, format: 'original' as const, status: 'completed' as const,
       stage: '', createdAt: '', updatedAt: '' };
     await telegram(record.kind === 'audio' ? 'sendAudio' : 'sendDocument', musicReferencePayload({
@@ -113,7 +123,8 @@ async function sendTrack(chatId: number, userId: number, track: Track, language:
         if ((await stat(path)).size > 49 * 1024 * 1024) throw new ServiceError('FILE_TOO_LARGE', '音訊超過 Telegram 上限。', 413);
         const presentation = await audioPresentation(path, track);
         let record: CachedMusic | undefined;
-        const delivery = await sendMusic(telegram, { chatId, messageThreadId, job, track: visible, recipientId: chatId < 0 ? userId : undefined, recipientName: replyContext.getStore()?.userName, uiLanguage: ui, botUsername,
+        const asDocument = inlineMode && (!/mp3|mpeg.*layer[ -]?3/i.test(job.audio?.codec || '') || !!job.audio?.lossless);
+        const delivery = await sendMusic(telegram, { chatId, messageThreadId, job, track: visible, recipientId: chatId < 0 ? userId : undefined, recipientName: replyContext.getStore()?.userName, uiLanguage: ui, botUsername, asDocument,
           bytes: new Uint8Array(await readFile(path)),
           filename: `${safeFilename(`${track.artists.join(' - ')} - ${track.title}`)}${extname(path)}`, ...presentation,
           onDelivered: (kind, result) => {
@@ -124,7 +135,8 @@ async function sendTrack(chatId: number, userId: number, track: Track, language:
         });
         // Telegram now holds the file. Do not keep a duplicate on this VPS.
         await store.remove(owner, job.id).catch(() => console.error('Bot 暫存音訊清理失敗。'));
-        if (delivery === 'document') await send(chatId, botText(ui, 'documentFallback'), { message_thread_id: messageThreadId, reply_parameters: replyParameters(messageId), deleteAfterMs: 30_000 }).catch(() => {});
+        if (inlineMode && record && !primary) await mediaCache.put(primaryKey, record).catch(() => console.error('Telegram 快取索引保存失敗。'));
+        if (delivery === 'document' && !asDocument) await send(chatId, botText(ui, 'documentFallback'), { message_thread_id: messageThreadId, reply_parameters: replyParameters(messageId), deleteAfterMs: 30_000 }).catch(() => {});
         return record;
       }
       await new Promise((done) => setTimeout(done, 1500));
@@ -138,13 +150,14 @@ async function sendTrack(chatId: number, userId: number, track: Track, language:
   if (delivered.menuId) await removeNow(chatId, delivered.menuId);
 }
 
-async function listTracks(chatId: number, userId: number, input: string, provider: Provider, messageId: number, searchType: MusicSearchKind = 'track'): Promise<void> {
-  const collection = await resolveMusic(input, provider, searchType);
+async function listTracks(chatId: number, userId: number, input: string, provider: BotSource, messageId: number, searchType: MusicSearchKind = 'track'): Promise<void> {
+  const collection = await resolveBotMusic(input, provider, searchType);
   await sendCollection(chatId, userId, collection, messageId);
 }
 
 async function sendCollection(chatId: number, userId: number, collection: Collection, messageId: number, keepRequest = false): Promise<void> {
   const ui = await preferences.locale(userId);
+  await updateCommands(chatId, ui, userId).catch(() => {});
   if (!collection.tracks.length && !collection.entities?.length && collection.kind !== 'search' && collection.kind !== 'artist') { await notice(chatId, botText(ui, 'notFound'), messageId); return; }
   if (collection.kind === 'track') return preferences.request(chatId, userId, collection.tracks[0]!, messageId, replyContext.getStore()?.messageThreadId);
   const messageThreadId = replyContext.getStore()?.messageThreadId;
@@ -263,7 +276,7 @@ async function handleUpdate(update: Update): Promise<void> {
         const type = category[3] as MusicSearchKind;
         if (type === (session.collection.searchType || 'track')) return;
         const collection = category[1] === 'type' && session.collection.kind === 'search'
-          ? await resolveMusic(session.collection.query || session.collection.title, session.collection.provider, type)
+          ? await resolveBotMusic(session.collection.query || session.collection.title, session.collection.searchScope || session.collection.provider, type)
           : category[1] === 'view' && session.collection.kind === 'artist' && session.collection.sourceUrl
             ? type === 'album' ? await artistAlbums(session.collection.sourceUrl) : await resolveMusic(session.collection.sourceUrl, session.collection.provider)
             : undefined;
@@ -301,18 +314,18 @@ async function handleUpdate(update: Update): Promise<void> {
       const selected = parseInlineStart(args);
       if (!selected) throw new ServiceError('INVALID_TRACK', 'Invalid inline track');
       const track = await getTrack(selected.provider, selected.id);
-      await preferences.request(chatId, userId, track, message.message_id);
+      await preferences.request(chatId, userId, track, message.message_id, undefined, false, true);
     } else if (cmd === '/start' && isPrivate && args === 'inline_settings') {
       await preferences.show(chatId, userId);
     } else if (cmd === '/start' && /^\d{1,16}$/.test(args)) {
       await preferences.start(chatId, userId, botUsername);
       await sendCollection(chatId, userId, await resolveNeteaseCommand(args), message.message_id);
     } else if (cmd === '/start' && args === 'app') {
-      await send(chatId, 'MUISM · 音樂主義', { reply_markup: { inline_keyboard: [[isPrivate ? { text: '開啟播放器', web_app: { url: webAppUrl.href } } : { text: '開啟播放器', url: `https://t.me/${botUsername}?start=app` }]] } });
+      await send(chatId, 'MUISM · 音樂主義', { reply_markup: { inline_keyboard: [[isPrivate ? { text: botText(ui, 'openPlayer'), web_app: { url: webAppUrl.href } } : { text: botText(ui, 'openPlayer'), url: `https://t.me/${botUsername}?start=app` }]] } });
     } else if (cmd === '/start') {
       await preferences.start(chatId, userId, botUsername);
     } else if (cmd === '/app') {
-      await send(chatId, 'MUISM · 音樂主義', { reply_markup: { inline_keyboard: [[isPrivate ? { text: '開啟播放器', web_app: { url: webAppUrl.href } } : { text: '開啟播放器', url: `https://t.me/${botUsername}?start=app` }]] } });
+      await send(chatId, 'MUISM · 音樂主義', { reply_markup: { inline_keyboard: [[isPrivate ? { text: botText(ui, 'openPlayer'), web_app: { url: webAppUrl.href } } : { text: botText(ui, 'openPlayer'), url: `https://t.me/${botUsername}?start=app` }]] } });
     } else if (['/help', '/about'].includes(cmd || '')) {
       await send(chatId, botHelp(ui, !isPrivate, botUsername), { parse_mode: 'HTML', reply_parameters: replyParameters(message.message_id) });
     } else if (cmd === '/lyric') {
@@ -326,16 +339,16 @@ async function handleUpdate(update: Update): Promise<void> {
       if (chatId < 0) { form.set('caption', `<a href="tg://user?id=${userId}">${String(userId)}</a>`); form.set('parse_mode', 'HTML'); }
       await telegram('sendDocument', form);
       await removeNow(chatId, message.message_id);
-    } else if (cmd === '/netease' || cmd === '/music' || cmd === '/musicid') {
+    } else if (cmd === '/netease' || cmd === '/musicid') {
       await sendCollection(chatId, userId, await resolveNeteaseCommand(args), message.message_id);
     } else if (cmd === '/album' || cmd === '/artist' || cmd === '/playlist') {
       if (!args) { await notice(chatId, botText(ui, 'queryInput'), message.message_id); return; }
-      await listTracks(chatId, userId, args, 'netease', message.message_id, cmd.slice(1) as MusicSearchKind);
-    } else if (cmd === '/search' || cmd === '/spotify' || cmd === '/ytm' || cmd === '/download') {
+      await listTracks(chatId, userId, args, 'all', message.message_id, cmd.slice(1) as MusicSearchKind);
+    } else if (cmd === '/search' || cmd === '/music' || cmd === '/spotify' || cmd === '/ytm' || cmd === '/download') {
       if (!args) { await notice(chatId, botText(ui, 'queryInput'), message.message_id); return; }
-      await listTracks(chatId, userId, args, cmd === '/spotify' ? 'spotify' : cmd === '/ytm' ? 'ytm' : 'netease', message.message_id);
+      await listTracks(chatId, userId, args, cmd === '/spotify' ? 'spotify' : cmd === '/ytm' ? 'ytm' : 'all', message.message_id);
     } else if (/https?:\/\/|^spotify:/.test(text)) {
-      await listTracks(chatId, userId, text, 'netease', message.message_id);
+      await listTracks(chatId, userId, text, 'all', message.message_id);
     } else {
       const choice = numberChoice;
       if (choice) {
@@ -344,7 +357,7 @@ async function handleUpdate(update: Update): Promise<void> {
       } else if (/^\d{1,3}$/.test(text)) {
         await notice(chatId, botText(ui, 'selectionExpired'), message.message_id);
       } else {
-        await listTracks(chatId, userId, text, 'netease', message.message_id);
+        await listTracks(chatId, userId, text, 'all', message.message_id);
       }
     }
   } catch (error) { await notice(chatId, botError(ui, publicError(error).code), message.message_id); }
@@ -362,7 +375,7 @@ async function main(): Promise<void> {
   for (const [code, language] of [['en', 'en'], ['zh', 'zh-Hans'], ['ja', 'ja'], ['ko', 'ko'], ['es', 'es'], ['fr', 'fr'], ['ru', 'ru']] as const) {
     for (const type of ['default', 'all_private_chats', 'all_group_chats']) await telegram('setMyCommands', { commands: botCommands(language), language_code: code, scope: { type } });
   }
-  await telegram('setChatMenuButton', { menu_button: { type: 'web_app', text: '開啟播放器', web_app: { url: webAppUrl.href } } });
+  await telegram('setChatMenuButton', { menu_button: { type: 'web_app', text: botText('en', 'openPlayer'), web_app: { url: webAppUrl.href } } });
   await cleanup.flush().catch(() => console.error('Bot 訊息清理失敗，稍後重試。'));
   let cleaning = false;
   const cleanupTimer = setInterval(() => {
@@ -373,6 +386,14 @@ async function main(): Promise<void> {
   cleanupTimer.unref();
   try { offset = JSON.parse(await readFile(statePath, 'utf8')).offset || 0; } catch { /* First launch. */ }
   console.log(`ismusicnow bot @${me.username} 已啟動（long polling）`);
+  // Private menu buttons have no language_code parameter. Restore each
+  // known user's override without blocking the polling loop.
+  void settingsStore.knownLocales().then(async users => {
+    for (const { userId, language } of users) {
+      if (stopping) break;
+      await updateCommands(userId, language, userId).catch(() => {});
+    }
+  }).catch(() => console.error('Bot 語言選單同步稍後重試。'));
   while (!stopping) {
     try {
       const updates = await telegram<Update[]>('getUpdates', { offset, timeout: 25, limit: 10, allowed_updates: ['message', 'callback_query', 'inline_query'] });

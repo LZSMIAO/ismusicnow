@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-import { Converter } from 'opencc-js';
 import type { Collection, DownloadJob, MusicEntity, MusicSearchKind, Provider, Track } from '../types.js';
 import type { CachedMusic } from './bot-cache.js';
 import { rejectedFileId } from './bot-cache.js';
@@ -9,6 +8,7 @@ import { displayTrack, type AlbumLanguage } from './bot-settings.js';
 import { escapeHtml, shortText } from './bot-selection.js';
 import { parseMusicLink, validateTrackId } from './links.js';
 import { publicError, ServiceError } from './errors.js';
+import { searchText, type BotSource } from './bot-search.js';
 
 export interface InlineQuery { id: string; from: { id: number; language_code?: string; is_bot?: boolean }; query: string; offset?: string; chat_type?: string }
 type Telegram = (method: string, body: Record<string, unknown>) => Promise<unknown>;
@@ -16,14 +16,13 @@ interface InlinePreferences { ui: BotLanguage; names?: AlbumLanguage }
 interface Dependencies {
   telegram: Telegram; username: () => string;
   preferences: (userId: number) => Promise<InlinePreferences>;
-  resolve: (input: string, provider: Provider, kind: MusicSearchKind) => Promise<Collection>;
+  resolve: (input: string, provider: BotSource, kind: MusicSearchKind) => Promise<Collection>;
   albums: (url: string) => Promise<Collection>;
   getTrack: (provider: Provider, id: string) => Promise<Track>;
   cache: (track: Track) => Promise<CachedMusic | undefined>;
   metadata: (track: Track) => Promise<Track>;
 }
-const neteaseSearchText = Converter({ from: 'tw', to: 'cn' });
-function cachedInlineAudio(record: CachedMusic): boolean {
+export function cachedInlineAudio(record: CachedMusic): boolean {
   // CachedAudio is MP3-only. A FLAC accepted by sendAudio is still rejected
   // here, and one unsupported result rejects the entire inline response.
   return /mp3|mpeg.*layer[ -]?3/i.test(record.audio?.codec || '') && !record.audio?.lossless;
@@ -44,14 +43,15 @@ export function parseInlineStart(value: string): Pick<Track, 'provider' | 'id'> 
   return { provider, id: match[2]! };
 }
 export function parseInlineQuery(value: string) {
-  let input = value.trim(), provider: Provider = 'netease', kind: MusicSearchKind = 'track', albums = false;
+  let input = value.trim(), provider: BotSource = 'all', kind: MusicSearchKind = 'track', albums = false;
   let hasProvider = false, hasKind = false;
   for (let i = 0; i < 2; i++) {
-    const match = /^(netease|spotify|ytm|track|song|album|albums|artist|playlist)(?:\s+|$)/i.exec(input);
+    const match = /^(all|netease|spotify|ytm|track|song|album|albums|artist|playlist)(?:\s+|$)/i.exec(input);
     if (!match) break;
     const word = match[1]!.toLowerCase();
-    if (providers.includes(word as Provider) && !hasProvider) { provider = word as Provider; hasProvider = true; }
-    else if (!hasKind && !providers.includes(word as Provider)) { kind = word === 'song' ? 'track' : word === 'albums' ? 'album' : word as MusicSearchKind; albums = word === 'albums'; hasKind = true; }
+    const isProvider = word === 'all' || providers.includes(word as Provider);
+    if (isProvider && !hasProvider) { provider = word as BotSource; hasProvider = true; }
+    else if (!hasKind && !isProvider) { kind = word === 'song' ? 'track' : word === 'albums' ? 'album' : word as MusicSearchKind; albums = word === 'albums'; hasKind = true; }
     else break;
     input = input.slice(match[0].length).trim();
   }
@@ -60,7 +60,12 @@ export function parseInlineQuery(value: string) {
   return { input, provider, kind, albums: albums && link?.kind === 'artist' };
 }
 function thumbnail(raw: string): Record<string, string> {
-  try { return raw ? { thumbnail_url: coverUrl(raw).href } : {}; } catch { return {}; }
+  try {
+    if (!raw) return {};
+    const url = coverUrl(raw);
+    if (url.hostname.endsWith('.music.126.net')) url.searchParams.set('param', '160y160');
+    return { thumbnail_url: url.href };
+  } catch { return {}; }
 }
 const content = (text: string) => ({ message_text: text, parse_mode: 'HTML', link_preview_options: { is_disabled: true } });
 function job(record: CachedMusic, track: Track): DownloadJob {
@@ -113,7 +118,7 @@ export class BotInline {
     return { inline_keyboard: rows };
   }
   private article(track: Track, visible: Track, ui: BotLanguage, userId: number, record?: CachedMusic, privateOnly = false) {
-    const description = [visible.artists.join(' / '), visible.album, botText(ui, record && !privateOnly ? 'inlineReady' : 'inlineAcquire')].filter(Boolean).join(' · ');
+    const description = [visible.artists.join(' / '), visible.album, source(track.provider), botText(ui, record && !privateOnly ? 'inlineReady' : 'inlineAcquire')].filter(Boolean).join(' · ');
     const text = record ? musicCaption(visible, job(record, track), ui, this.deps.username()) :
       `<b>「${escapeHtml(shortText(visible.title, 100))}」</b> — ${escapeHtml(shortText(visible.artists.join(' / '), 120))}\n<blockquote expandable>${escapeHtml(botText(ui, 'album'))}：${escapeHtml(shortText(visible.album, 120))}\n${source(track.provider)}</blockquote>`;
     return { type: 'article', id: `${track.provider}:${track.id}`, title: shortText(visible.title, 100), description: shortText(description, 250), ...thumbnail(track.cover), input_message_content: content(text),
@@ -130,15 +135,15 @@ export class BotInline {
       { type: 'document', document_file_id: record.fileId, title: fallback.title, description: fallback.description, ...shared }, fallback };
   }
   private entity(entity: MusicEntity, ui: BotLanguage) {
-    const description = [botText(ui, label(entity.kind)), entity.artists.join(' / '), entity.year, entity.count !== undefined ? botText(ui, 'tracksCount', { count: entity.count }) : ''].filter(Boolean).join(' · ');
+    const description = [botText(ui, label(entity.kind)), entity.artists.join(' / '), entity.year, entity.count !== undefined ? botText(ui, 'tracksCount', { count: entity.count }) : '', source(entity.provider)].filter(Boolean).join(' · ');
     const rows = [[{ text: botText(ui, 'browseInline'), switch_inline_query_current_chat: entity.sourceUrl }]];
     if (entity.kind === 'artist') rows.push([{ text: botText(ui, 'album'), switch_inline_query_current_chat: `albums ${entity.sourceUrl}` }]);
     return { type: 'article', id: `${entity.provider}:${entity.kind}:${entity.id}`, title: shortText(entity.title, 100), description: shortText(description, 250), ...thumbnail(entity.cover),
       input_message_content: content(`<b>${escapeHtml(shortText(entity.title, 100))}</b>\n${escapeHtml(description)}\n<blockquote expandable>${source(entity.provider)}</blockquote>`), reply_markup: { inline_keyboard: [...rows, [{ text: `${botText(ui, 'source')} ↗`, url: entity.sourceUrl }]] } };
   }
-  private choices(input: string, provider: Provider, ui: BotLanguage, text?: string) {
+  private choices(input: string, provider: BotSource, ui: BotLanguage, text?: string) {
     const keyboard = { inline_keyboard: [kinds.map(kind => ({ text: botText(ui, label(kind)), switch_inline_query_current_chat: `${provider} ${kind} ${input}`.trim() })),
-      providers.map(value => ({ text: source(value), switch_inline_query_current_chat: value === 'ytm' ? 'ytm ' : `${value} ${input}`.trim() }))] };
+      (['all', ...providers] as BotSource[]).map(value => ({ text: value === 'all' ? botText(ui, 'allSources') : source(value), switch_inline_query_current_chat: value === 'ytm' ? 'ytm ' : `${value} ${input}`.trim() }))] };
     return [{ type: 'article', id: 'inline-search', title: text || botText(ui, 'inlineSearch'), description: botText(ui, 'inlineHint'),
       input_message_content: content(escapeHtml(text || botText(ui, 'inlineHint'))), reply_markup: keyboard }];
   }
@@ -150,10 +155,9 @@ export class BotInline {
     if (this.queries.size >= 32) throw new ServiceError('RATE_LIMIT', 'Inline search busy');
     // NetEase indexes Chinese names in SC. Normalize search terms only;
     // platform links and source/display metadata keep their original text.
-    const search = input.provider === 'netease' && !parseMusicLink(input.input) && !/[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(input.input)
-      ? neteaseSearchText(input.input) : input.input;
+    const search = input.provider === 'netease' && !parseMusicLink(input.input) ? searchText(input.input, 'netease') : input.input;
     const value = input.albums ? this.deps.albums(input.input) : this.deps.resolve(search, input.provider, input.kind);
-    const entry = { until: now + 30_000, value };
+    const entry = { until: now + 120_000, value };
     this.queries.set(key, entry);
     void value.catch(() => { if (this.queries.get(key) === entry) this.queries.delete(key); });
     return value;
@@ -204,7 +208,7 @@ export class BotInline {
         }
         return;
       }
-      await this.deps.telegram('answerInlineQuery', { ...base, results: this.choices('', 'netease', ui, botError(ui, publicError(error).code)), next_offset: '', button: { text: botText(ui, 'settings'), start_parameter: 'inline_settings' } }).catch(() => {});
+      await this.deps.telegram('answerInlineQuery', { ...base, results: this.choices('', 'all', ui, botError(ui, publicError(error).code)), next_offset: '', button: { text: botText(ui, 'settings'), start_parameter: 'inline_settings' } }).catch(() => {});
     } finally { if (timer) clearTimeout(timer); if (this.latest.get(query.from.id) === query.id) this.latest.delete(query.from.id); }
   }
   async callback(callback: { id: string; from: { id: number }; inline_message_id: string; data?: string }): Promise<void> {

@@ -32,6 +32,7 @@ export interface Collection {
   providers?: Provider[];
   entities?: MusicEntity[];
   searchType?: MusicSearchKind;
+  searchScope?: Provider | 'all';
   query?: string;
   sourceUrl?: string;
 }

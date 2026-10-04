@@ -96,6 +96,7 @@ export interface MusicUpload {
   chatId: number; messageThreadId?: number; replyTo?: number; job: DownloadJob; track: Track;
   bytes: Uint8Array; filename: string; duration: number; thumbnail?: Uint8Array;
   uiLanguage?: BotLanguage; botUsername?: string; recipientId?: number; recipientName?: string;
+  asDocument?: boolean;
   onDelivered?: (kind: 'audio' | 'document', result: unknown) => void;
 }
 export interface MusicReference {
@@ -125,6 +126,7 @@ export function musicPayload(upload: MusicUpload, document = false, withThumbnai
   form.set('chat_id', String(upload.chatId));
   if (upload.messageThreadId !== undefined) form.set('message_thread_id', String(upload.messageThreadId));
   form.set(document ? 'document' : 'audio', new Blob([new Uint8Array(upload.bytes)], { type: mime[extension] || 'application/octet-stream' }), upload.filename);
+  if (document) form.set('disable_content_type_detection', 'true');
   form.set('caption', musicCaption(upload.track, upload.job, language, upload.botUsername, { id: upload.recipientId, name: upload.recipientName }));
   form.set('parse_mode', 'HTML');
   if (upload.replyTo !== undefined) form.set('reply_parameters', JSON.stringify({ message_id: upload.replyTo, allow_sending_without_reply: true }));
@@ -144,6 +146,7 @@ export async function sendMusic(telegram: Telegram, upload: MusicUpload): Promis
     upload.onDelivered?.(kind, result);
     return kind;
   };
+  if (upload.asDocument) return delivered(await telegram('sendDocument', musicPayload(upload, true)), 'document');
   let rejected: unknown;
   try { return delivered(await telegram('sendAudio', musicPayload(upload))); }
   catch (error) { rejected = error; }

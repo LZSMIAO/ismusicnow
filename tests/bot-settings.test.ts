@@ -184,3 +184,20 @@ test('first-use dismissal precedes acquisition and retained music cards survive 
     assert.equal((await new BotSettingsStore(root).get(42)).pending, undefined);
   } finally { await rm(root, { recursive: true, force: true }); }
 });
+
+test('Inline acquisition context and resolved menu languages survive first-use choices and restart', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'ismusicnow-inline-settings-'));
+  try {
+    const store = new BotSettingsStore(root), acquisitions: unknown[][] = [];
+    const flow = new BotLanguageSettings(store, async () => {}, async (...args) => { acquisitions.push(args); });
+    await flow.observeLanguage(42, 'ja');
+    await flow.request(42, 42, track, 90, undefined, false, true);
+    const restored = new BotLanguageSettings(new BotSettingsStore(root), async () => {}, async (...args) => { acquisitions.push(args); });
+    await restored.callback(42, 42, 'lang:42:original');
+    assert.deepEqual(acquisitions, [[42, 42, track, 'original', 90, undefined, false, true]]);
+    await store.setUiLanguage(42, 'en');
+    await store.observeLanguage(43, 'ko');
+    await store.choose(44, 'original');
+    assert.deepEqual((await new BotSettingsStore(root).knownLocales()).sort((a, b) => a.userId - b.userId), [{ userId: 42, language: 'en' }, { userId: 43, language: 'ko' }, { userId: 44, language: 'en' }]);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

@@ -58,13 +58,16 @@ test('typed search → owned artist view → albums → tracks, stale callbacks 
     const panel = () => calls.findLast(c => ['sendMessage', 'editMessageText'].includes(c.method))!.body;
     const button = (prefix: string) => panel().reply_markup.inline_keyboard.flat().find((b: any) => b.callback_data.startsWith(prefix)).callback_data;
     const deleted = () => calls.filter(c => c.method === 'deleteMessage').map(c => c.body.message_id);
+    const neteaseSearch = () => upstream.findLast(c => c.url.endsWith('/cloudsearch'))!;
     await message(1, '@ismusicbot'); assert.equal(upstream.length, 0, 'a bare mention never searches for @ songs');
-    await message(2, '/album 草東'); assert.equal(upstream.at(-1)!.body.type, 10);
+    await message(2, '/album 草東'); assert.equal(neteaseSearch().body.type, 10);
+    assert.match(panel().text, /All sources/); assert.match(panel().text, /Spotify/);
     const menu = nextMessage, staleAlbum = button('pick:');
     assert.match(panel().text, /2023 · 12 songs/);
     const artistTab = panel().reply_markup.inline_keyboard.flat().find((b: any) => b.callback_data.endsWith(':artist')).callback_data;
-    await callback(artistTab, menu, 43); assert.equal(upstream.at(-1)!.body.type, 10, 'other users cannot switch this menu');
-    await callback(artistTab, menu); assert.equal(upstream.at(-1)!.body.type, 100);
+    await callback(artistTab, menu, 43); assert.equal(neteaseSearch().body.type, 10, 'other users cannot switch this menu');
+    await callback(artistTab, menu); assert.equal(neteaseSearch().body.type, 100);
+    assert.equal(new URL(upstream.findLast(c => c.url.includes('/v1/search'))!.url).searchParams.get('type'), 'artist', 'category switches preserve cross-source scope');
     const artistPick = button('pick:');
     const count = upstream.length; await callback(staleAlbum, menu); assert.equal(upstream.length, count, 'old buttons cannot select the new category by index');
     await callback(artistPick, menu); assert.ok(upstream.at(-1)!.url.endsWith('/artists'));
@@ -87,7 +90,7 @@ test('typed search → owned artist view → albums → tracks, stale callbacks 
     await callback(cardPick, albumMenu); await callback(cardPick, albumMenu);
     assert.ok(!deleted().includes(musicCard), 'opening an album never deletes the source music card');
     await callback(button('close:'), albumMenu); assert.ok(deleted().includes(albumMenu), 'close removes the panel now');
-    await message(3, '/playlist 收藏'); assert.equal(upstream.at(-1)!.body.type, 1000); assert.match(panel().text, /Miao · 50 songs/);
+    await message(3, '/playlist 收藏'); assert.equal(neteaseSearch().body.type, 1000); assert.match(panel().text, /Miao · 50 songs/);
     const { searchSpotify } = await import('../src/lib/server/providers/spotify.js');
     for (const type of ['track', 'album', 'artist', 'playlist'] as const) {
       const collection = await searchSpotify('native', type);
