@@ -28,6 +28,7 @@ test('concurrent playback requests upload once, preserve source bytes and keep o
     assert.equal(f.counts.create, 1); assert.equal(f.counts.prepared, 1); assert.equal(f.counts.removed, 1); assert.equal(f.counts.released, 1);
     assert.deepEqual(f.uploads.map(x => x.method), ['sendDocument', 'sendAudio']);
     assert.ok(f.uploads.every(x => x.form.get('chat_id') === '-10042' && x.form.get('disable_notification') === 'true'));
+    assert.ok(f.uploads.every(x => !x.form.has('reply_markup')), 'cache channel uploads cannot contain inline-query buttons');
     assert.equal(await readFile(f.original, 'utf8'), 'original-vorbis-bytes');
     assert.equal(await (f.uploads[0]!.form.get('document') as Blob).text(), 'original-vorbis-bytes');
     assert.equal(await (f.uploads[1]!.form.get('audio') as Blob).text(), 'mp3-playback-bytes');

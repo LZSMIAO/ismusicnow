@@ -9,6 +9,8 @@ import { escapeHtml, shortText } from './bot-selection.js';
 import { parseMusicLink, validateTrackId } from './links.js';
 import { publicError, ServiceError } from './errors.js';
 import { searchText, type BotSource } from './bot-search.js';
+import { botProviders, searchableProviders, botProviderName } from './bot-providers.js';
+import { recordingGroups, rankedSources, trackIdentity, type SourceEvidence } from './bot-recordings.js';
 
 export interface InlineQuery { id: string; from: { id: number; language_code?: string; is_bot?: boolean }; query: string; offset?: string; chat_type?: string }
 export interface ChosenInline { result_id: string; from: { id: number }; inline_message_id?: string; query: string }
@@ -31,7 +33,7 @@ export function cachedInlineAudio(record: CachedMusic): boolean {
   // here, and one unsupported result rejects the entire inline response.
   return /mp3|mpeg.*layer[ -]?3/i.test(record.audio?.codec || '') && !record.audio?.lossless;
 }
-const providers: Provider[] = ['netease', 'spotify', 'ytm'];
+const providers = botProviders.map(provider => provider.id);
 const kinds: MusicSearchKind[] = ['track', 'album', 'artist', 'playlist'];
 const codes = { netease: 'n', spotify: 's', ytm: 'y' } as const;
 const codeProviders: Record<string, Provider> = { n: 'netease', s: 'spotify', y: 'ytm' };
@@ -76,7 +78,7 @@ function job(record: CachedMusic, track: Track): DownloadJob {
   return { ...record, track, id: 'inline-cache', format: 'original', status: 'completed', stage: '', createdAt: '', updatedAt: '' };
 }
 const label = (kind: MusicSearchKind) => kind === 'track' ? 'single' : kind;
-const source = (provider: Provider) => provider === 'netease' ? 'NetEase' : provider === 'ytm' ? 'YTM' : 'Spotify';
+const source = botProviderName;
 
 // Telegram does not support switch_inline_query_current_chat in channels.
 // Keep browsing usable there by offering the native destination chooser.
@@ -146,7 +148,7 @@ export class BotInline {
   }
   private choices(input: string, provider: BotSource, ui: BotLanguage, text?: string) {
     const keyboard = { inline_keyboard: [kinds.map(kind => ({ text: botText(ui, label(kind)), switch_inline_query_current_chat: `${provider} ${kind} ${input}`.trim() })),
-      (['all', ...providers] as BotSource[]).map(value => ({ text: value === 'all' ? botText(ui, 'allSources') : source(value), switch_inline_query_current_chat: value === 'ytm' ? 'ytm ' : `${value} ${input}`.trim() }))] };
+      (['all', ...searchableProviders('track').map(provider => provider.id)] as BotSource[]).map(value => ({ text: value === 'all' ? botText(ui, 'allSources') : source(value), switch_inline_query_current_chat: `${value} ${input}`.trim() }))] };
     return [{ type: 'article', id: 'inline-search', title: text || botText(ui, 'inlineSearch'), description: botText(ui, 'inlineHint'),
       input_message_content: content(escapeHtml(text || botText(ui, 'inlineHint'))), reply_markup: keyboard }];
   }
@@ -181,7 +183,12 @@ export class BotInline {
         if (offset && !new RegExp(`^${hash}:[0-9]{1,3}$`).test(offset)) return { results: [], next_offset: '' };
         if (!parsed.input) return { results: this.choices('', parsed.provider, ui), next_offset: '' };
         const collection = await this.collection(parsed);
-        const items = collection.entities || collection.tracks;
+        const evidence = new Map<string, SourceEvidence>();
+        if (!collection.entities) await Promise.all(collection.tracks.map(async track => {
+          const record = await this.deps.cache(track);
+          if (record) evidence.set(trackIdentity(track), { availability: 'complete', ...record.audio, cached: record.kind === 'audio' && cachedInlineAudio(record) });
+        }));
+        const items = collection.entities || recordingGroups(collection).map(group => rankedSources(group, evidence)[0]!);
         const start = offset ? Number(offset.split(':')[1]) : 0;
         if (!items.length) return { results: this.choices(parsed.input, parsed.provider, ui, botText(ui, 'noResults')), next_offset: '' };
         const page = items.slice(start, start + 10);

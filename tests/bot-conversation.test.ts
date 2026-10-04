@@ -25,11 +25,12 @@ test('selection numbers are scoped to user/chat, absolute across pages, and expi
   assert.equal(choices.number(7, 42, '10000'), undefined);
   session.page = 1;
   const page = selectionMessage(session, 'en');
-  assert.match(page.text, /6–10 \/ 10/); assert.match(page.text, /Loaded 10 \/ 12 results/);
+  assert.match(page.text, /9–10 \/ 10/); assert.match(page.text, /Showing loaded results/);
   assert.match(page.text, /醜奴兒 · 2:30/);
-  assert.match(page.text, /<blockquote expandable>Loaded 10 \/ 12 results<\/blockquote>/);
+  assert.doesNotMatch(page.text, /<blockquote/);
+  assert.match(page.rich_message.html, /<details><summary>/);
   assert.doesNotMatch(page.text, /tg-spoiler/);
-  assert.equal(page.reply_markup.inline_keyboard[1]![0]!.callback_data, `pick:${session.id}:5`);
+  assert.equal(page.reply_markup.inline_keyboard.flat().find(button => button.callback_data.startsWith('pick:'))!.callback_data, `pick:${session.id}:8`);
   assert.equal(page.reply_markup.inline_keyboard.at(-1)![0]!.callback_data, `page:${session.id}:0`);
   now += 30 * 60_000;
   assert.equal(choices.number(7, 42, '1'), undefined);
@@ -95,7 +96,7 @@ test('forum selection numbers and callbacks cannot cross topics, even for the sa
   assert.throws(() => choices.number(-100, 42, '1', 91, 20), { code: 'SELECTION_OWNER' });
   assert.throws(() => choices.get(-100, 42, a.id, 91, 20), { code: 'SELECTION_OWNER' });
   assert.equal(choices.get(-100, 42, a.id, 91, 10), a);
-  assert.match(selectionMessage(a, 'en').text, /reply to this list with its number/);
+  assert.match(selectionMessage(a, 'en').text, /tg:\/\/user\?id=42/);
   choices.delivered(-100, 90);
   assert.equal(choices.number(-100, 42, '2', undefined, 20)?.session.id, b.id);
 });

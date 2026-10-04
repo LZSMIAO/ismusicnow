@@ -17,7 +17,10 @@ import { BotPlayback } from '../src/lib/server/bot-playback.js';
 import { BotInline, parseInlineStart, type InlineQuery } from '../src/lib/server/bot-inline.js';
 import { musicCacheKey, telegramPlaybackKey } from '../src/lib/server/bot-cache-key.js';
 import { BotMessageCleanup } from '../src/lib/server/bot-cleanup.js';
-import { BotSelections, selectionLifetime, selectionPageSize, selectionMessage, type MusicSelection } from '../src/lib/server/bot-selection.js';
+import { BotSelections, selectionLifetime, selectionPageSize, selectionCount, type MusicSelection } from '../src/lib/server/bot-selection.js';
+import { BotSelectionDelivery } from '../src/lib/server/bot-selection-delivery.js';
+import { searchableProviders } from '../src/lib/server/bot-providers.js';
+import { trackIdentity, sourceFallbackAllowed, type SourceEvidence } from '../src/lib/server/bot-recordings.js';
 import { metadataForDisplay } from '../src/lib/server/bot-metadata.js';
 import { botCommands, botHelp, botText, botError } from '../src/lib/server/bot-i18n.js';
 import type { Track, Provider, Collection, MusicSearchKind } from '../src/lib/types.js';
@@ -88,6 +91,7 @@ async function sendSettings(chatId: number, text: string, extra: Record<string, 
   return send(chatId, text, { ...extra, reply_parameters: undefined });
 }
 const settingsStore = new BotSettingsStore();
+const selectionDelivery = new BotSelectionDelivery(telegram);
 const preferences = new BotLanguageSettings(settingsStore, sendSettings, sendTrack, updateCommands);
 const playback = new BotPlayback(store, mediaCache, telegram, () => {
   const value = process.env.BOT_CACHE_CHAT_ID;
@@ -106,8 +110,8 @@ const inline = new BotInline({
 async function sendTrack(chatId: number, userId: number, track: Track, language: AlbumLanguage, messageId: number, messageThreadId?: number, keepRequest = false, inlineMode = false, originalFile = false): Promise<void> {
   const owner = `tg:${chatId}:${userId}`;
   const ui = await preferences.locale(userId);
-  const visible = displayTrack(language !== 'original' ? await metadataForDisplay(track) : track, language);
-  const primaryKey = await musicCacheKey(track);
+  let visible = displayTrack(language !== 'original' ? await metadataForDisplay(track) : track, language);
+  let primaryKey = await musicCacheKey(track);
   const sendRecord = async (record: CachedMusic) => {
     const job = { ...record, id: 'telegram-cache', track, format: 'original' as const, status: 'completed' as const,
       stage: '', createdAt: '', updatedAt: '' };
@@ -121,11 +125,26 @@ async function sendTrack(chatId: number, userId: number, track: Track, language:
     const cached = source?.kind === 'audio' ? source : await mediaCache.get(telegramPlaybackKey(primaryKey));
     const progress = cached?.kind === 'audio' ? undefined : await send(chatId, botText(ui, native ? 'fetching' : 'preparePlayback', { title: visible.title, source: track.provider }), { message_thread_id: messageThreadId, deleteAfterMs: 7 * 60_000, reply_parameters: replyParameters(messageId) });
     try {
-      const record = await playback.get(track, native);
+      let record: CachedMusic | undefined;
+      const candidates = selections.request(chatId, userId, messageId, messageThreadId)?.pendingSources || [track];
+      for (let index = 0; index < candidates.length; index++) {
+        const candidate = candidates[index]!;
+        try { record = await playback.get(candidate, candidate.provider === 'netease' && !inlineMode); }
+        catch (error) {
+          if (index === candidates.length - 1 || !sourceFallbackAllowed(error)) throw error;
+          continue;
+        }
+        track = candidate;
+        primaryKey = await musicCacheKey(track);
+        const names = (await settingsStore.get(userId)).language || language;
+        visible = displayTrack(names !== 'original' ? await metadataForDisplay(track) : track, names);
+        break;
+      }
+      if (!record) throw new ServiceError('NO_AUDIO', 'No complete source');
       try { await sendRecord(record); }
       catch (error) {
         if (!rejectedFileId(error)) throw error;
-        await playback.invalidate(track, record); await sendRecord(await playback.get(track, native));
+        await playback.invalidate(track, record); await sendRecord(await playback.get(track, track.provider === 'netease' && !inlineMode));
       }
     }
     finally { if (progress) await removeNow(chatId, progress.message_id); }
@@ -173,6 +192,33 @@ async function listTracks(chatId: number, userId: number, input: string, provide
   await sendCollection(chatId, userId, collection, messageId);
 }
 
+async function prepareSelection(session: MusicSelection) {
+  session.busy = true;
+  const evidence = new Map<string, SourceEvidence>();
+  try { await Promise.all(session.collection.tracks.map(async track => {
+    const key = await musicCacheKey(track);
+    const original = await mediaCache.get(key), playable = await mediaCache.get(telegramPlaybackKey(key));
+    const measured = original?.audio;
+    if (original || playable) evidence.set(trackIdentity(track), {
+      availability: 'complete', lossless: measured?.lossless, codec: measured?.codec, bitrate: measured?.bitrate,
+      sampleRate: measured?.sampleRate, bitsPerSample: measured?.bitsPerSample,
+      cached: track.provider === 'netease' ? original?.kind === 'audio' || playable?.kind === 'audio' : playable?.kind === 'audio' || original?.kind === 'audio' && /mp3|mpeg.*layer\s*3/i.test(original.audio?.codec || ''),
+    });
+  })); } catch (error) { selections.abort(session); throw error; }
+  selections.rank(session, evidence);
+}
+async function showSelection(session: MusicSelection, ui: Parameters<typeof botText>[0], edit = false) {
+  const names = (await settingsStore.get(session.userId)).language || 'original';
+  let menu: { message_id: number };
+  try { menu = await selectionDelivery.show(session, ui, names, edit); }
+  catch (error) { if (session.previousSession || !session.menuId) selections.abort(session); throw error; }
+  selections.commit(session);
+  session.busy = false;
+  if (!edit) {
+    session.menuId = menu.message_id;
+    await deleteLater(session.chatId, menu.message_id, selectionLifetime);
+  }
+}
 async function sendCollection(chatId: number, userId: number, collection: Collection, messageId: number, keepRequest = false): Promise<void> {
   const ui = await preferences.locale(userId);
   await updateCommands(chatId, ui, userId).catch(() => {});
@@ -181,13 +227,12 @@ async function sendCollection(chatId: number, userId: number, collection: Collec
   const messageThreadId = replyContext.getStore()?.messageThreadId;
   const session = selections.create(chatId, userId, messageId, collection, messageThreadId, keepRequest);
   session.userName = replyContext.getStore()?.userName;
-  const { text, ...presentation } = selectionMessage(session, ui);
-  const menu = await send(chatId, text, { reply_parameters: undefined, ...presentation, deleteAfterMs: selectionLifetime });
-  session.menuId = menu.message_id;
+  await prepareSelection(session);
+  await showSelection(session, ui);
   if (!keepRequest && (collection.entities?.length || collection.tracks.length)) await removeNow(chatId, messageId);
 }
 
-async function chooseSelection(session: MusicSelection, index: number, ui: Parameters<typeof botText>[0], inputId = session.requestId): Promise<void> {
+async function chooseSelection(session: MusicSelection, index: number, ui: Parameters<typeof botText>[0], inputId = session.requestId, sourceIndex?: number): Promise<void> {
   if (session.busy) return;
   session.busy = true;
   const { chatId, userId, messageThreadId } = session;
@@ -196,24 +241,28 @@ async function chooseSelection(session: MusicSelection, index: number, ui: Param
       const entity = selections.entity(session, index);
       const collection = await resolveMusic(entity.sourceUrl, entity.provider);
       const replacement = selections.replace(session, collection);
-      await telegram('editMessageText', { chat_id: chatId, message_id: session.menuId, ...selectionMessage(replacement, ui) });
+      await prepareSelection(replacement);
+      await showSelection(replacement, ui, true);
       if (inputId !== session.requestId) await removeNow(chatId, inputId);
       return;
     }
-    const track = selections.track(session, index);
+    const sources = selections.sources(session, index);
+    const track = sourceIndex === undefined ? sources[0]! : sources[sourceIndex];
+    if (!track || !Number.isInteger(sourceIndex ?? index)) throw new ServiceError('SELECTION_NUMBER', 'Invalid source');
+    session.pendingSources = sourceIndex === undefined ? sources : [track];
+    session.panel = undefined;
     if (session.collection.kind === 'search' && session.menuId) await removeNow(chatId, session.menuId);
     await preferences.request(chatId, userId, track, inputId, messageThreadId, !!session.keepRequest && inputId === session.requestId);
   } catch (error) {
     session.busy = false;
-    // A failed download remains retryable; a consumed search panel is rebuilt.
     if (session.collection.kind === 'search' && !session.collection.entities) {
       const replacement = selections.replace(session, session.collection, false);
-      const { text, ...presentation } = selectionMessage(replacement, ui);
-      const menu = await send(chatId, text, { ...presentation, message_thread_id: messageThreadId, reply_parameters: undefined, deleteAfterMs: selectionLifetime });
-      replacement.menuId = menu.message_id;
+      replacement.page = session.page;
+      await prepareSelection(replacement);
+      await showSelection(replacement, ui);
     }
     throw error;
-  }
+  } finally { session.busy = false; }
 }
 
 export async function handle(update: Update): Promise<void> {
@@ -283,12 +332,16 @@ async function handleUpdate(update: Update): Promise<void> {
       return;
     }
     const close = update.callback_query?.data?.match(/^close:([a-f0-9]{16})$/);
-    if (close) { const session = selections.get(chatId, userId, close[1]!, message.message_id, message.message_thread_id); selections.close(session); await removeNow(chatId, message.message_id); return; }
+    if (close) { const session = selections.get(chatId, userId, close[1]!, message.message_id, message.message_thread_id); if (session.busy) return; selections.close(session); await removeNow(chatId, message.message_id); return; }
     const back = update.callback_query?.data?.match(/^back:([a-f0-9]{16})$/);
     if (back) {
       const session = selections.get(chatId, userId, back[1]!, message.message_id, message.message_thread_id);
       if (session.busy) return;
-      await telegram('editMessageText', { chat_id: chatId, message_id: message.message_id, ...selectionMessage(selections.back(session), ui) });
+      session.busy = true;
+      try {
+        const previous = selections.back(session);
+        await prepareSelection(previous); await showSelection(previous, ui, true);
+      } finally { session.busy = false; }
       return;
     }
     const category = update.callback_query?.data?.match(/^(type|view):([a-f0-9]{16}):(track|album|artist|playlist)$/);
@@ -298,7 +351,8 @@ async function handleUpdate(update: Update): Promise<void> {
       session.busy = true;
       try {
         const type = category[3] as MusicSearchKind;
-        if (type === (session.collection.searchType || 'track')) return;
+        const currentType = category[1] === 'view' ? session.collection.entities ? 'album' : 'track' : session.collection.searchType || 'track';
+        if (type === currentType) return;
         const collection = category[1] === 'type' && session.collection.kind === 'search'
           ? await resolveBotMusic(session.collection.query || session.collection.title, session.collection.searchScope || session.collection.provider, type)
           : category[1] === 'view' && session.collection.kind === 'artist' && session.collection.sourceUrl
@@ -306,27 +360,60 @@ async function handleUpdate(update: Update): Promise<void> {
             : undefined;
         if (!collection) throw new ServiceError('SELECTION_EXPIRED', 'Invalid category');
         const replacement = selections.replace(session, collection, false);
-        await telegram('editMessageText', { chat_id: chatId, message_id: message.message_id, ...selectionMessage(replacement, ui) });
+        await prepareSelection(replacement);
+        await showSelection(replacement, ui, true);
+      } finally { session.busy = false; }
+      return;
+    }
+    const panel = update.callback_query?.data?.match(/^(filter|list):([a-f0-9]{16})$/);
+    const sourcePanel = update.callback_query?.data?.match(/^sources:([a-f0-9]{16}):(\d{1,3})$/);
+    if (panel || sourcePanel) {
+      const session = selections.get(chatId, userId, (panel?.[2] || sourcePanel?.[1])!, message.message_id, message.message_thread_id);
+      if (session.busy) return;
+      if (panel?.[1] === 'filter' && session.collection.kind !== 'search') throw new ServiceError('SELECTION_NUMBER', 'No source filter');
+      if (sourcePanel) selections.sources(session, Number(sourcePanel[2]));
+      session.panel = sourcePanel ? { group: Number(sourcePanel[2]) } : panel?.[1] === 'filter' ? 'providers' : undefined;
+      session.busy = true;
+      try { await showSelection(session, ui, true); } finally { session.busy = false; }
+      return;
+    }
+    const sourceScope = update.callback_query?.data?.match(/^scope:([a-f0-9]{16}):([a-z]+)$/);
+    if (sourceScope) {
+      const session = selections.get(chatId, userId, sourceScope[1]!, message.message_id, message.message_thread_id);
+      if (session.busy) return;
+      const source = sourceScope[2] as BotSource, kind = session.collection.searchType || 'track';
+      if (session.collection.kind !== 'search' || source !== 'all' && !searchableProviders(kind).some(provider => provider.id === source)) throw new ServiceError('SELECTION_NUMBER', 'Invalid search source');
+      session.busy = true;
+      try {
+        const collection = await resolveBotMusic(session.collection.query || session.collection.title, source, kind);
+        const replacement = selections.replace(session, collection, false);
+        await prepareSelection(replacement); await showSelection(replacement, ui, true);
       } finally { session.busy = false; }
       return;
     }
     const selectionCallback = update.callback_query?.data?.match(/^(pick|page):([a-f0-9]{16}):(\d{1,3})$/);
+    const explicitSource = update.callback_query?.data?.match(/^from:([a-f0-9]{16}):(\d{1,3}):(\d{1,3})$/);
     if (selectionCallback?.[1] === 'page') {
       const session = selections.get(chatId, userId, selectionCallback[2]!, message.message_id, message.message_thread_id);
       const page = Number(selectionCallback[3]);
-      if (page >= Math.ceil((session.collection.entities || session.collection.tracks).length / selectionPageSize)) throw new ServiceError('SELECTION_NUMBER', '頁碼無效。');
-      session.page = page;
-      await telegram('editMessageText', { chat_id: chatId, message_id: message.message_id, ...selectionMessage(session, ui) });
+      if (session.busy) return;
+      if (page >= Math.ceil(selectionCount(session) / selectionPageSize)) throw new ServiceError('SELECTION_NUMBER', '頁碼無效。');
+      session.page = page; session.panel = undefined;
+      session.busy = true;
+      try { await showSelection(session, ui, true); } finally { session.busy = false; }
       return;
     }
     const numberChoice = !update.callback_query && !cmd?.startsWith('/') && (isPrivate || replyToBot) ? selections.number(chatId, userId, text, message.reply_to_message?.message_id, message.message_thread_id) : undefined;
-    if (Date.now() - (lastRequest.get(userId) || 0) < (selectionCallback || numberChoice ? 500 : 3000)) { await notice(chatId, botText(ui, 'rateLimited'), message.message_id); return; }
+    if (Date.now() - (lastRequest.get(userId) || 0) < (selectionCallback || explicitSource || numberChoice ? 500 : 3000)) { await notice(chatId, botText(ui, 'rateLimited'), message.message_id); return; }
     lastRequest.set(userId, Date.now());
     for (const [id, time] of lastRequest) if (Date.now() - time > 60_000) lastRequest.delete(id);
     if (update.callback_query) {
       if (selectionCallback?.[1] === 'pick') {
         const session = selections.get(chatId, userId, selectionCallback[2]!, message.message_id, message.message_thread_id);
         await chooseSelection(session, Number(selectionCallback[3]), ui);
+      } else if (explicitSource) {
+        const session = selections.get(chatId, userId, explicitSource[1]!, message.message_id, message.message_thread_id);
+        await chooseSelection(session, Number(explicitSource[2]), ui, session.requestId, Number(explicitSource[3]));
       } else if (/^dl:/.test(update.callback_query.data || '')) {
         // Old cards lack a request/owner context. Ask for a fresh list rather
         // than downloading a different user's selection or deleting a card.

@@ -4,6 +4,7 @@ import { ServiceError } from './errors.js';
 import { parseMusicLink } from './links.js';
 import { resolveMusic } from './music.js';
 import { combineSearches } from './search.js';
+import { botProviders, searchableProviders } from './bot-providers.js';
 
 export type BotSource = Provider | 'all';
 const toSimplified = Converter({ from: 'tw', to: 'cn' });
@@ -23,8 +24,10 @@ async function bounded<T>(value: Promise<T>, timeout: number): Promise<T> {
 export async function resolveBotMusic(input: string, source: BotSource = 'all', kind: MusicSearchKind = 'track',
   resolver = resolveMusic, timeout = 4500): Promise<Collection> {
   let text = input.trim();
-  const prefix = /^(all|netease|spotify|ytm)\s+/i.exec(text);
-  if (prefix) { source = prefix[1]!.toLowerCase() as BotSource; text = text.slice(prefix[0].length).trim(); }
+  const prefix = /^(\S+)\s+/.exec(text);
+  if (prefix && ['all', ...botProviders.map(provider => provider.id)].includes(prefix[1]!.toLowerCase())) {
+    source = prefix[1]!.toLowerCase() as BotSource; text = text.slice(prefix[0].length).trim();
+  }
   const link = parseMusicLink(text);
   if (link) return resolver(text, link.provider, kind);
   if (!text) throw new ServiceError('INVALID_INPUT', 'Empty music search');
@@ -32,7 +35,7 @@ export async function resolveBotMusic(input: string, source: BotSource = 'all', 
     const value = await bounded(resolver(searchText(text, source), source, kind), timeout);
     return { ...value, query: text, searchScope: source };
   }
-  const value = await combineSearches(text, (['netease', 'spotify'] as const).map(provider => ({ provider,
+  const value = await combineSearches(text, searchableProviders(kind).map(({ id: provider }) => ({ provider,
     search: () => bounded(resolver(searchText(text, provider), provider, kind), timeout),
   })), [], kind);
   return { ...value, query: text, searchScope: 'all' };

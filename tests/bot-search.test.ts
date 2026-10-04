@@ -16,7 +16,7 @@ test('generic search and all category views keep independent sources, original q
     assert.deepEqual(calls, [['尘', 'netease', kind], ['塵', 'spotify', kind]]);
     assert.equal(collection.query, '塵'); assert.equal(collection.searchScope, 'all');
     assert.deepEqual((collection.entities || collection.tracks).map(item => item.provider), ['netease', 'spotify']);
-    const text = selectionMessage(new BotSelections().create(1, 1, 1, collection), 'en').text;
+    const text = selectionMessage(new BotSelections().create(1, 1, 1, collection), 'en').rich_message.html;
     assert.match(text, /All sources/); assert.match(text, /NetEase/); assert.match(text, /Spotify/);
   }
 });

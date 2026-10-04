@@ -10,7 +10,7 @@ test('group commands, mentions, member languages, owned reply selection and conc
   const env = { ...process.env }, realFetch = globalThis.fetch, realNow = Date.now;
   let now = realNow(), nextMessage = 1000;
   Date.now = () => now;
-  process.env.DATA_DIR = root; process.env.BOT_TOKEN = '999001:stub'; process.env.BOT_ALLOWED_USERS = '';
+  process.env.DATA_DIR = root; process.env.BOT_TOKEN = '999001:stub'; process.env.BOT_ALLOWED_USERS = ''; process.env.BOT_RICH_SEARCH = '0';
   process.env.NETEASE_API_URL = 'https://metadata.example.test/'; process.env.NETEASE_COOKIE = ''; process.env.MUSIC_U = '';
   const calls: { method: string; body: Record<string, any> }[] = [], queries: string[] = [];
   const songs = Array.from({ length: 10 }, (_, i) => ({ id: 10000 + i, name: `歌曲 ${i + 1}`, ar: [{ name: '草東沒有派對' }], al: { name: '醜奴兒' }, dt: 150000 }));
@@ -75,13 +75,13 @@ test('group commands, mentions, member languages, owned reply selection and conc
     assert.equal(topicMenus.length, 2);
     assert.equal(topicMenus.find((call) => call.body.text.includes('<b>草東</b>'))!.body.message_thread_id, 10);
     assert.equal(topicMenus.find((call) => call.body.text.includes('<b>人是猫</b>'))!.body.message_thread_id, 20);
-    assert.match(topicMenus.find((call) => call.body.text.includes('<b>草東</b>'))!.body.text, /reply to this list/);
+    assert.match(topicMenus.find((call) => call.body.text.includes('<b>草東</b>'))!.body.text, /tg:\/\/user\?id=90/);
 
     await message(40, '@muismbot 床', 90, 10);
     assert.equal(queries.at(-1), '床'); assert.equal(sent().body.message_thread_id, 10);
     const choices = selector();
     await callback(choices.page, choices.id, 90, 10);
-    assert.match(calls.findLast((call) => call.method === 'editMessageText')!.body.text, /6–10 \/ 10/);
+    assert.match(calls.findLast((call) => call.method === 'editMessageText')!.body.text, /9–10 \/ 10/);
     const before = audioCount();
     await message(41, '9', 90, 10); assert.equal(audioCount(), before);
     await message(42, '9', 91, 10, choices.id); assert.equal(audioCount(), before);

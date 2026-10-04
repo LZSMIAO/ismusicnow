@@ -74,7 +74,13 @@ export class BotPlayback {
         const upload = async (audioPath: string, job: DownloadJob, document: boolean) => {
           if ((await stat(audioPath)).size > 49 * 1024 * 1024) throw new ServiceError('FILE_TOO_LARGE', 'Audio exceeds Telegram upload limit');
           let cached: CachedMusic | undefined;
-          await sendMusic(async (method, form) => { form.set('disable_notification', 'true'); return this.telegram(method, form); }, {
+          await sendMusic(async (method, form) => {
+            form.set('disable_notification', 'true');
+            // Inline-query buttons are forbidden in channel posts. Only user
+            // cards need controls; the cache channel stores media references.
+            form.delete('reply_markup');
+            return this.telegram(method, form);
+          }, {
             chatId, job, track, ...presentation, asDocument: document, botUsername: this.username(), uiLanguage: 'en',
             bytes: new Uint8Array(await readFile(audioPath)), filename: `${safeFilename(`${track.artists.join(' - ')} - ${track.title}`)}${extname(audioPath)}`,
             onDelivered: (kind, message: any) => { if (message?.[kind]?.file_id) cached = { kind, fileId: message[kind].file_id, duration: presentation.duration, bytes: job.bytes!, audioSource: job.audioSource, audio: job.audio, presentation: job.presentation }; },

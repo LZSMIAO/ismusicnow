@@ -9,7 +9,7 @@ import { commandAvailable, runCommand } from '../process.js';
 
 interface Artist { id?: string; name: string; images?: { url: string }[] }
 interface Album { id?: string; name: string; images?: { url: string }[]; tracks?: Page<SpotifyTrack>; artists?: Artist[]; release_date?: string; total_tracks?: number }
-interface SpotifyTrack { id: string; name: string; type?: string; is_local?: boolean; artists: Artist[]; album?: Album; duration_ms: number; preview_url?: string | null }
+interface SpotifyTrack { id: string; name: string; type?: string; is_local?: boolean; artists: Artist[]; album?: Album; duration_ms: number; preview_url?: string | null; external_ids?: { isrc?: string } }
 interface SpotifyEntity extends Album { owner?: { display_name?: string }; followers?: { total: number } }
 interface Page<T> { items: T[]; total: number; next: string | null }
 let token: { value: string; expires: number } | undefined;
@@ -40,6 +40,7 @@ export function mapSpotify(track: SpotifyTrack, album?: Album): Track {
   const record = track.album || album;
   return { id: track.id, provider: 'spotify', title: track.name, artists: track.artists.map((a) => a.name),
     artistIds: track.artists.map((a) => a.id || ''),
+    isrc: track.external_ids?.isrc?.toUpperCase(),
     album: record?.name || '', albumUrl: record?.id ? `https://open.spotify.com/album/${record.id}` : undefined, cover: record?.images?.[0]?.url || '', durationMs: track.duration_ms || 0,
     sourceUrl: `https://open.spotify.com/track/${track.id}` };
 }

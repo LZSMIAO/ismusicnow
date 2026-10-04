@@ -9,7 +9,7 @@ test('typed search → owned artist view → albums → tracks, stale callbacks 
   const env = { ...process.env }, realFetch = globalThis.fetch, realNow = Date.now;
   let now = realNow(), nextMessage = 1000;
   Date.now = () => now;
-  process.env.DATA_DIR = root; process.env.BOT_TOKEN = '999002:stub'; process.env.BOT_ALLOWED_USERS = '';
+  process.env.DATA_DIR = root; process.env.BOT_TOKEN = '999002:stub'; process.env.BOT_ALLOWED_USERS = ''; process.env.BOT_RICH_SEARCH = '0';
   process.env.NETEASE_API_URL = 'https://metadata.example.test/'; process.env.NETEASE_COOKIE = ''; process.env.MUSIC_U = '';
   process.env.SPOTIFY_ACCESS_TOKEN = 'stub';
   const calls: { method: string; body: Record<string, any> }[] = [], upstream: { url: string; body: Record<string, any> }[] = [];
@@ -102,7 +102,7 @@ test('typed search → owned artist view → albums → tracks, stale callbacks 
     await callback(panel().reply_markup.inline_keyboard.flat().find((b: any) => b.callback_data.endsWith(':artist')).callback_data, spotifyMenu);
     await callback(button('pick:'), spotifyMenu);
     assert.match(panel().text, /Native artist/);
-    assert.match(panel().text, /1–5 \/ 11/, 'artist album pagination loads subsequent API pages');
+    assert.match(panel().text, /1–8 \/ 11/, 'artist album pagination loads subsequent API pages');
     assert.doesNotMatch(panel().text, /Top songs/);
     assert.ok(!panel().reply_markup.inline_keyboard.flat().some((b: any) => b.callback_data.startsWith('view:')), 'Spotify artist view exposes available albums without a dead top-tracks tab');
   } finally { globalThis.fetch = realFetch; Date.now = realNow; process.env = env; await rm(root, { recursive: true, force: true }); }

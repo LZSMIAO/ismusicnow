@@ -19,6 +19,7 @@ export interface Track {
   durationMs: number;
   sourceUrl: string;
   artistIds?: string[];
+  isrc?: string;
   metadataLanguages?: { title?: string; album?: string; artists?: string[] };
 }
 

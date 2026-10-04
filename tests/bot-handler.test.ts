@@ -11,7 +11,7 @@ test('plain text → reply/pagination → numeric or owned callback selection �
   const env = { ...process.env }, realFetch = globalThis.fetch, realNow = Date.now;
   let now = realNow(), nextMessage = 1000, failDelivery = false;
   Date.now = () => now;
-  process.env.DATA_DIR = root; process.env.BOT_TOKEN = '999000:stub'; process.env.BOT_ALLOWED_USERS = '';
+  process.env.DATA_DIR = root; process.env.BOT_TOKEN = '999000:stub'; process.env.BOT_ALLOWED_USERS = ''; process.env.BOT_RICH_SEARCH = '0';
   process.env.NETEASE_API_URL = 'https://metadata.example.test/'; process.env.NETEASE_COOKIE = ''; process.env.MUSIC_U = '';
   const calls: { method: string; body: Record<string, any> }[] = [];
   const songs = Array.from({ length: 10 }, (_, i) => ({ id: 10000 + i, name: `歌曲 ${i + 1}`, ar: [{ name: '草東沒有派對' }], al: { name: '醜奴兒' }, dt: 150000 }));
@@ -58,7 +58,7 @@ test('plain text → reply/pagination → numeric or owned callback selection �
     assert.match(sent.body.text, /All sources · Songs/); assert.match(sent.body.text, /NetEase/); assert.equal(sent.body.deleteAfterMs, undefined);
     const menuId = nextMessage, pageData = sent.body.reply_markup.inline_keyboard.flat().find((b: any) => b.callback_data.startsWith('page:')).callback_data;
     await callback(pageData, menuId);
-    assert.match(calls.findLast((call) => call.method === 'editMessageText')!.body.text, /6–10 \/ 10/);
+    assert.match(calls.findLast((call) => call.method === 'editMessageText')!.body.text, /9–10 \/ 10/);
     const audioCount = () => calls.filter((call) => call.method === 'sendAudio').length;
     await callback(sent.body.reply_markup.inline_keyboard.flat().find((b: any) => b.callback_data.startsWith('pick:')).callback_data, menuId, 43);
     assert.equal(audioCount(), 0);
