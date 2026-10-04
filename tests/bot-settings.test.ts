@@ -17,6 +17,21 @@ test('Original preserves all names; Chinese preferences convert metadata without
   assert.equal(track.title, '人是猫');
 });
 
+test('TC and SC normalize Chinese parts while native English, Japanese and Korean names remain unchanged', () => {
+  const chinese = { ...track, title: '音乐 Music', artists: ['张卡斯', 'Taylor Swift'], album: '人是猫 / Original' };
+  assert.equal(displayTrack(chinese, 'zh-Hant').title, '音樂 Music');
+  assert.deepEqual(displayTrack(chinese, 'zh-Hant').artists, ['張卡斯', 'Taylor Swift']);
+  const japanese = { ...track, title: '海の幽霊', album: '海の幽霊', artists: ['米津玄師'], metadataLanguages: { artists: ['ja'] } };
+  for (const choice of ['zh-Hant', 'zh-Hans'] as const) assert.deepEqual(displayTrack(japanese, choice), japanese);
+  const kanjiOnly = { ...japanese, title: '飛燕', album: '平熱' };
+  assert.equal(displayTrack(kanjiOnly, 'zh-Hans').title, '飛燕');
+  assert.equal(displayTrack(kanjiOnly, 'zh-Hans').artists[0], '米津玄師');
+  const korean = { ...track, artists: ['김윤아'], title: '봄날', album: '春' };
+  assert.deepEqual(displayTrack(korean, 'zh-Hans'), korean);
+  const duet = { ...chinese, artists: ['张卡斯', '宇多田ヒカル'], metadataLanguages: { title: 'zh', album: 'zh', artists: ['zh', 'ja'] } };
+  assert.deepEqual(displayTrack(duet, 'zh-Hant').artists, ['張卡斯', '宇多田ヒカル']);
+});
+
 test('first acquisition pauses, offers the requested choices, and resumes exactly once after a restart', async () => {
   const root = await mkdtemp(join(tmpdir(), 'ismusicnow-settings-'));
   try {
@@ -27,7 +42,7 @@ test('first acquisition pauses, offers the requested choices, and resumes exactl
     await flow.request(7, 42, track, 90);
     assert.equal(acquisitions.length, 0);
     assert.match(messages[0]!.text, /首次獲取/);
-    assert.match(JSON.stringify(messages[0]!.extra), /Original.*轉為繁體中文.*转为简体中文/);
+    assert.match(JSON.stringify(messages[0]!.extra), /Original.*中文統一繁體.*中文统一简体/);
     assert.doesNotMatch(JSON.stringify(messages[0]!.extra), /其他語言/);
     const restored = new BotLanguageSettings(new BotSettingsStore(root), send, acquire);
     await Promise.all([restored.callback(7, 42, 'lang:42:zh-Hant'), restored.callback(7, 42, 'lang:42:zh-Hant')]);
