@@ -11,6 +11,7 @@ import { publicError, ServiceError } from './errors.js';
 import { safeFilename } from './links.js';
 import { neteaseAudio } from './providers/netease.js';
 import { downloadSpotify } from './providers/spotify.js';
+import { downloadPublic } from './providers/public-audio.js';
 import { downloadYtm } from './providers/ytm.js';
 
 interface StoredJob extends DownloadJob { owner: string; path?: string }
@@ -68,9 +69,10 @@ export async function executeDownload(job: DownloadJob, directory: string): Prom
     await saveNeteaseAudio(audio.url, path);
     return path;
   }
-  if (job.format !== 'original') throw new ServiceError('ORIGINAL_ONLY', 'Spotify 與 YTM 只保留原始音源，不提供音質轉換。');
+  if (job.format !== 'original') throw new ServiceError('ORIGINAL_ONLY', '此來源只保留平台可用音源，不提供音質轉換。');
   if (job.track.provider === 'spotify') await downloadSpotify(job.track, directory);
-  else await downloadYtm(job.track, directory);
+  else if (job.track.provider === 'ytm') await downloadYtm(job.track, directory);
+  else await downloadPublic(job.track, directory);
   const files = await findAudio(directory);
   // Some upstream CLIs return exit code 0 even after an authentication failure.
   if (files.length !== 1) throw new ServiceError('NO_OUTPUT', '適配器沒有產生完整音訊，請檢查登入、訂閱權限及下載設定。', 502);
@@ -130,7 +132,7 @@ export class DownloadStore {
     await this.initialize(); await this.prune();
     if (this.jobs.size + tracks.length > 200) throw new ServiceError('QUEUE_FULL', '下載佇列已滿，請清除完成項目後再試。', 429);
     if (!tracks.length || tracks.length > 20) throw new ServiceError('BATCH_LIMIT', '每次可獲取 1 至 20 首歌曲。');
-    if (tracks.some((t) => t.provider !== 'netease') && format !== 'original') throw new ServiceError('ORIGINAL_ONLY', 'Spotify 與 YTM 只保留原始音源。');
+    if (tracks.some((t) => t.provider !== 'netease') && format !== 'original') throw new ServiceError('ORIGINAL_ONLY', '此來源只保留平台可用音源。');
     const created: StoredJob[] = [];
     for (const track of tracks) {
       const existing = [...this.jobs.values()].find((j) => j.owner === owner && j.track.provider === track.provider && j.track.id === track.id && j.format === format && ['queued', 'downloading'].includes(j.status));

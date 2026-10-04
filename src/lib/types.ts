@@ -1,4 +1,4 @@
-export type Provider = 'netease' | 'spotify' | 'ytm';
+export type Provider = 'netease' | 'spotify' | 'ytm' | 'soundcloud' | 'bandcamp' | 'bilibili';
 export type SearchSource = Provider | 'all';
 export type DownloadFormat = 'original' | 'mp3' | 'flac';
 export type MusicSearchKind = 'track' | 'album' | 'artist' | 'playlist';
@@ -56,6 +56,9 @@ export interface DownloadJob {
 }
 
 export interface ServiceStatus {
+  soundcloud: { downloaderReady: boolean };
+  bandcamp: { downloaderReady: boolean };
+  bilibili: { downloaderReady: boolean };
   netease: { ready: boolean; accountConfigured: boolean };
   spotify: { metadataConfigured: boolean; downloaderReady: boolean };
   ytm: { downloaderReady: boolean };

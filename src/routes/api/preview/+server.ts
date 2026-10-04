@@ -12,7 +12,7 @@ import type { RequestHandler } from './$types';
 export const GET: RequestHandler = async (event) => {
   try {
     rateLimit(event);
-    const source = z.enum(['netease', 'spotify', 'ytm']).safeParse(event.url.searchParams.get('provider'));
+    const source = z.enum(['netease', 'spotify', 'ytm', 'soundcloud', 'bandcamp', 'bilibili']).safeParse(event.url.searchParams.get('provider'));
     if (!source.success) throw new ServiceError('INVALID_PROVIDER', '請選擇有效的音樂來源。', 400);
     const provider = source.data;
     const id = event.url.searchParams.get('id') || '';
@@ -29,7 +29,7 @@ export const GET: RequestHandler = async (event) => {
     const downloadable = provider === 'netease' ? services.netease.ready : services[provider].downloaderReady;
     const message = provider === 'spotify' ? 'Spotify 未提供此曲試聽。'
       : provider === 'ytm' ? 'YouTube Music 不提供直接試聽。'
-      : '網易雲暫無可用音源，請檢查帳號或地區權限。';
+      : provider === 'netease' ? '網易雲暫無可用音源，請檢查帳號或地區權限。' : '此來源沒有直接試聽。';
     return json(raw ? { available: true, url: raw, limited, downloadable }
       : { available: false, downloadable, message: message + (downloadable ? '可下載後播放。' : '請在原平台播放。') });
   } catch (error) { return apiError(error); }

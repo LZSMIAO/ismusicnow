@@ -113,12 +113,12 @@ html.telegram-app{height:var(--imn-height,100dvh);overflow:hidden}
 .search-options{position:fixed;inset:auto;margin:0;padding:12px;border:0;border-radius:8px;background:var(--hover);color:var(--ink);box-shadow:0 12px 32px #0005;z-index:var(--layer-menu);overflow:auto;overscroll-behavior:contain;opacity:0;transform:translateY(-6px);transition:opacity 150ms var(--ease-out),transform 150ms var(--ease-out),display 150ms allow-discrete,overlay 150ms allow-discrete}
 .search-options:popover-open{opacity:1;transform:translateY(0);transition-duration:200ms}
 .search-options::backdrop{background:transparent}
-.search-sources{display:flex;align-items:center;gap:6px;overflow:auto;scrollbar-width:none;padding:2px 4px 10px}
+.search-sources{display:flex;align-items:center;gap:6px;min-width:0;padding:2px 0 10px}
 .search-sources::-webkit-scrollbar{display:none}
-.search-sources button{display:flex;align-items:center;justify-content:center;flex-shrink:0;min-height:36px;padding:7px 14px;border:0;border-radius:999px;font-size:.8125rem;font-weight:500;line-height:1.4;white-space:nowrap;color:var(--ink);background:var(--raised)}
-.search-sources button:hover{background:var(--edge)}
-.search-sources button[aria-checked=true]{background:var(--silver);color:var(--dark);font-weight:600}
-.search-sources button:focus-visible{outline-offset:2px}
+.source-control .source-chip{display:flex;align-items:center;justify-content:center;flex-shrink:0;min-height:36px;padding:7px 14px;border:0;border-radius:999px;font-size:.8125rem;font-weight:500;line-height:1.4;white-space:nowrap;color:var(--ink);background:var(--raised)}
+.source-control .source-chip:hover{background:var(--edge)}
+.source-control .source-chip[aria-checked=true]{background:var(--silver);color:var(--dark);font-weight:600}
+.source-control .source-chip:focus-visible{outline-offset:2px}
 .source-name-mobile{display:none}
 .search-history h2{font-size:1rem;font-weight:700;margin:10px 12px 12px}
 .search-history-list{display:flex;flex-direction:column;gap:2px}
@@ -132,7 +132,7 @@ html.telegram-app{height:var(--imn-height,100dvh);overflow:hidden}
 .search-history-text strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:1rem;font-weight:500;line-height:1.4}
 .search-history-text small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:.875rem;margin-top:3px}
 @starting-style{.search-options:popover-open{opacity:0;transform:translateY(-6px)}}
-@media(max-width:700px){.search-options{padding:10px 4px}.search-sources{padding:2px 8px 8px;gap:6px}.search-sources button{min-height:44px;padding:8px 12px;font-size:.8125rem}.source-name-desktop{display:none}.source-name-mobile{display:inline}.search-history h2{margin:8px 12px}.search-history-item{min-height:64px;gap:12px}.search-history-cover{width:40px;height:40px}.search-history-text strong{font-size:.9375rem}.search-history-text small{font-size:.8125rem}.searchbar .search-submit{display:grid;flex-shrink:0;width:28px;min-height:40px}}
+@media(max-width:700px){.search-options{padding:10px 4px}.search-sources{padding:2px 8px 8px;gap:6px}.source-control .source-chip{min-height:44px;padding:8px 12px;font-size:.8125rem}.source-name-desktop{display:none}.source-name-mobile{display:inline}.search-history h2{margin:8px 12px}.search-history-item{min-height:64px;gap:12px}.search-history-cover{width:40px;height:40px}.search-history-text strong{font-size:.9375rem}.search-history-text small{font-size:.8125rem}.searchbar .search-submit{display:grid;flex-shrink:0;width:28px;min-height:40px}}
 @media(prefers-reduced-motion:reduce){.search-options{transition:none!important;transform:none}}
 
 /* Download queue: native top-layer dialog, independent of the page grid. */
@@ -233,3 +233,17 @@ html.telegram-app{height:var(--imn-height,100dvh);overflow:hidden}
 .queue-focus-layer{position:absolute;left:0;right:min(420px,calc(100% - 24px));top:72px;bottom:var(--player-height,96px);pointer-events:none;opacity:0;-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}
 .queue-sheet::before{content:'';position:absolute;top:0;bottom:0;right:100%;width:32px;pointer-events:none;background:linear-gradient(to left,#0003,transparent);mask-image:linear-gradient(to bottom,transparent,#000 16px,#000 calc(100% - 16px),transparent)}
 @media(max-width:700px){.queue-focus-layer{top:calc(108px + var(--imn-safe-top,0px));bottom:calc(var(--player-height,104px) + var(--imn-safe-bottom,0px));-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}.queue-sheet::before{width:24px}}
+
+/* Source chips fit one row; only overflow goes into More. */
+.source-control{position:relative;padding:0 4px}
+.source-control .source-more{gap:6px;flex-shrink:0}
+.source-more svg{transition:transform 150ms var(--ease-out)}.source-more svg.rotated{transform:rotate(180deg)}
+.source-more-options{display:flex;flex-wrap:wrap;gap:6px;padding:0 0 12px}.source-more-options[hidden]{display:none}
+.source-measure{position:absolute;top:0;left:0;width:100%;display:flex;gap:6px;overflow:hidden;visibility:hidden;pointer-events:none}
+@media(max-width:700px){.source-control{padding:0 8px}.search-sources{padding:2px 0 8px}.source-control .source-chip{padding:8px 10px}.source-more-options{padding-bottom:10px}}
+@media(prefers-reduced-motion:reduce){.source-more svg{transition:none}}
+
+.source-capability{margin-left:6px;color:var(--muted);font-size:.6875rem;font-weight:400}
+.source-more-options{transition:opacity 150ms var(--ease-out),transform 150ms var(--ease-out),display 150ms allow-discrete;transform:translateY(0)}
+@starting-style{.source-more-options:not([hidden]){opacity:0;transform:translateY(-4px)}}
+@media(prefers-reduced-motion:reduce){.source-more-options{transition:none}}

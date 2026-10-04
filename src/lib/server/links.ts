@@ -39,12 +39,29 @@ export function parseMusicLink(input: string): MusicLink | null {
     }
     throw new ServiceError('UNSUPPORTED_LINK', 'YTM 支援 YouTube Music 歌曲與歌單連結。');
   }
+  if (['soundcloud.com', 'www.soundcloud.com'].includes(url.hostname)) {
+    const path = url.pathname.replace(/\/$/, '');
+    if (!/^\/[a-zA-Z0-9_-]+\/(?:sets\/)?[a-zA-Z0-9_-]+$/.test(path)) throw new ServiceError('UNSUPPORTED_LINK', 'SoundCloud 支援公開歌曲及 sets 歌單連結。');
+    return { provider: 'soundcloud', kind: path.includes('/sets/') ? 'playlist' : 'track', id: path, url: `https://soundcloud.com${path}` };
+  }
+  if (url.hostname === 'api.soundcloud.com' && /^\/tracks\/\d{1,16}$/.test(url.pathname)) return { provider: 'soundcloud', kind: 'track', id: url.pathname.split('/')[2]!, url: `https://api.soundcloud.com${url.pathname}` };
+  if (['www.bilibili.com', 'bilibili.com'].includes(url.hostname)) {
+    const match = /^\/video\/(BV[a-zA-Z0-9]{10})\/?$/.exec(url.pathname);
+    if (!match) throw new ServiceError('UNSUPPORTED_LINK', 'Bilibili 請使用含 BV 識別碼的完整影片連結。');
+    return { provider: 'bilibili', kind: 'track', id: match[1]!, url: `https://www.bilibili.com/video/${match[1]}` };
+  }
+  const bandcampHost = /^([a-z0-9][a-z0-9-]{0,62})\.bandcamp\.com$/.exec(url.hostname);
+  if (bandcampHost) {
+    const match = /^\/(track|album)\/([a-z0-9][a-z0-9-]{0,160})\/?$/.exec(url.pathname);
+    if (!match) throw new ServiceError('UNSUPPORTED_LINK', 'Bandcamp 支援藝術家頁面的歌曲及專輯連結。');
+    return { provider: 'bandcamp', kind: match[1] === 'track' ? 'track' : 'album', id: `${bandcampHost[1]}~${match[2]}`, url: `https://${url.hostname}/${match[1]}/${match[2]}` };
+  }
   if (['spotify.link', '163cn.tv'].includes(url.hostname)) throw new ServiceError('SHORT_LINK', '請在平台打開短連結，再複製完整的歌曲、專輯或歌單網址。');
-  throw new ServiceError('UNSUPPORTED_HOST', '目前支援網易雲音樂、Spotify 與 YouTube Music 的分享連結。');
+  throw new ServiceError('UNSUPPORTED_HOST', '支援網易雲、Spotify、YouTube Music、SoundCloud、Bandcamp 與 Bilibili 完整連結。');
 }
 
 export function validateTrackId(provider: Provider, id: string): void {
-  const pattern = provider === 'spotify' ? /^[a-zA-Z0-9]{22}$/ : provider === 'ytm' ? /^[a-zA-Z0-9_-]{11}$/ : /^\d{1,16}$/;
+  const pattern = provider === 'spotify' ? /^[a-zA-Z0-9]{22}$/ : provider === 'ytm' ? /^[a-zA-Z0-9_-]{11}$/ : provider === 'bilibili' ? /^BV[a-zA-Z0-9]{10}$/ : provider === 'bandcamp' ? /^[a-z0-9][a-z0-9-]{0,62}~[a-z0-9][a-z0-9-]{0,160}$/ : /^\d{1,16}$/;
   if (!pattern.test(id)) {
     throw new ServiceError('INVALID_TRACK', '曲目識別碼無效，請重新解析連結。');
   }

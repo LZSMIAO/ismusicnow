@@ -8,7 +8,7 @@ import type { RequestHandler } from './$types';
 export const GET: RequestHandler = async ({ locals }) => {
   try { return json(await downloads.list(locals.sessionId)); } catch (error) { return apiError(error); }
 };
-const schema = z.object({ tracks: z.array(z.object({ provider: z.enum(['netease', 'spotify', 'ytm']), id: z.string().max(22) })).min(1).max(20), format: z.enum(['original', 'mp3', 'flac']) });
+const schema = z.object({ tracks: z.array(z.object({ provider: z.enum(['netease', 'spotify', 'ytm', 'soundcloud', 'bandcamp', 'bilibili']), id: z.string().max(225) })).min(1).max(20), format: z.enum(['original', 'mp3', 'flac']) });
 export const POST: RequestHandler = async (event) => {
   try {
     rateLimit(event);

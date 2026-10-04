@@ -15,7 +15,7 @@ test('generic search and all category views keep independent sources, original q
     const collection = await resolveBotMusic('塵', 'all', kind, async (input, provider, type) => { calls.push([input, provider, type!]); return fixture(provider, type!); });
     assert.deepEqual(calls, [['尘', 'netease', kind], ['塵', 'spotify', kind]]);
     assert.equal(collection.query, '塵'); assert.equal(collection.searchScope, 'all');
-    assert.deepEqual((collection.entities || collection.tracks).map(item => item.provider), ['netease', 'spotify']);
+    assert.deepEqual((collection.entities || collection.tracks).map(item => item.provider).sort(), ['netease', 'spotify']);
     const text = selectionMessage(new BotSelections().create(1, 1, 1, collection), 'en').rich_message.html;
     assert.match(text, /All sources/); assert.match(text, /NetEase/); assert.match(text, /Spotify/);
   }

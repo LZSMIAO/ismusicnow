@@ -15,7 +15,7 @@ export class TelegramRequestError extends ServiceError {
   }
 }
 
-const sourceNames = { netease: '網易雲音樂', spotify: 'Spotify', ytm: 'YouTube Music' };
+const sourceNames = { netease: '網易雲音樂', spotify: 'Spotify', ytm: 'YouTube Music', soundcloud: 'SoundCloud', bandcamp: 'Bandcamp', bilibili: 'Bilibili' };
 export function musicCaption(track: Track, job: DownloadJob, language: BotLanguage = 'zh-Hant', botUsername = 'muismbot', recipient?: { id?: number; name?: string }): string {
   const audio = job.audio;
   const source = job.audioSource === 'netease' ? language === 'zh-Hans' ? '网易云音乐' : language === 'zh-Hant' ? '網易雲音樂' : 'NetEase' : sourceNames[job.audioSource];

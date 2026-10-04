@@ -114,3 +114,12 @@ Bot 使用跨用戶 Telegram `file_id` 快取，按平台、歌曲 ID 和獲取�
 ## Inline 分享
 
 任何聊天輸入 `@muismbot 關鍵字或連結`。預設跨來源搜尋，支援單曲、專輯、藝術家、歌單分類；平台前綴可指定來源。已快取 MP3 直接播放；首次選取在原訊息自動準備並轉為播放器。非 MP3 原始音源另做清楚標示的 MP3 播放版，原始檔另行獲取。需配置私有快取頻道並啟用全部 Inline feedback。詳見 [INLINE.md](INLINE.md)。
+
+### 網頁其他來源
+
+- SoundCloud：關鍵字搜尋、公開歌曲／sets 連結與平台可用音源下載。
+- Bandcamp：藝術家子域名的歌曲／專輯連結解析與公開可用音源下載；目前沒有站內關鍵字搜尋。公開串流不等於購買的無損原檔。
+- Bilibili：影片關鍵字搜尋、BV 完整連結解析與影片音軌下載；上傳者資料不代表原唱認證。
+- 新來源先用於網頁與 Mini App；Telegram inline 來源保持原有三個。
+
+上述三個適配器共用已安裝的 yt-dlp，無需新增 API key。公開內容可不填額外配置；需要帳號權限時，可在伺服器 `.env` 設 `SOUNDCLOUD_COOKIES_PATH`、`BANDCAMP_COOKIES_PATH` 或 `BILIBILI_COOKIES_PATH`，指向 `secrets/` 下的 Netscape cookies 檔（不提交 Git）。保留平台實際權限、格式及音質，不以其他平台音源替代。

@@ -24,7 +24,7 @@
   let section = $state<Section>('music'), musicScroll = 0;
   let sectionTrigger: HTMLElement | undefined;
   type View = { artists: MusicEntity[]; collection: Collection; selected: string[]; format: string; input: string; source: string };
-  let previous = $state<View[]>([]), viewInput = '', viewSource = 'all';
+  let previous = $state<View[]>([]), viewInput = $state(''), viewSource = 'all';
   let queueTrigger: HTMLElement | undefined;
   let queueAnimations: Animation[] = [], queueClosing = false, queueRevision = 0;
   let searchInput = $state<HTMLInputElement>();
@@ -54,7 +54,7 @@
     resizePlayer.observe(playerElement);
     const media = matchMedia('(prefers-reduced-motion: reduce)'); reduced = media.matches;
     const motion = () => reduced = media.matches; media.addEventListener('change', motion);
-    try { const saved: unknown = JSON.parse(localStorage.getItem('ismusicnow-recent') || '[]'); if (Array.isArray(saved)) recent = saved.filter((item) => item && typeof item.input === 'string' && typeof item.title === 'string' && typeof item.artist === 'string' && typeof item.cover === 'string' && ['track', 'album', 'playlist', 'search', 'artist'].includes(item.kind) && ['all', 'netease', 'spotify', 'ytm'].includes(item.provider)).slice(0, 8); } catch { /* Browsing works without local storage. */ }
+    try { const saved: unknown = JSON.parse(localStorage.getItem('ismusicnow-recent') || '[]'); if (Array.isArray(saved)) recent = saved.filter((item) => item && typeof item.input === 'string' && typeof item.title === 'string' && typeof item.artist === 'string' && typeof item.cover === 'string' && ['track', 'album', 'playlist', 'search', 'artist'].includes(item.kind) && ['all', 'netease', 'spotify', 'ytm', 'soundcloud', 'bandcamp', 'bilibili'].includes(item.provider)).slice(0, 8); } catch { /* Browsing works without local storage. */ }
     return () => { document.documentElement.classList.remove('queue-open', 'queue-moving'); queueRevision++; queueAnimations.forEach(animation => animation.cancel()); resizePlayer.disconnect(); document.documentElement.style.removeProperty('--player-height'); searchRequest?.abort(); clearTimeout(noticeTimer); stopQueue(); stopPlayer(); media.removeEventListener('change', motion); };
   });
   $effect(() => {
@@ -232,7 +232,7 @@
 <svelte:window onkeydown={keyboard} />
 <header class="app-header">
   <a class="brand" href="/" aria-label="MUISM 首頁" onclick={(e) => { e.preventDefault(); home(); }}><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span><strong>MUISM.</strong></a>
-  <SearchBar bind:value={input} bind:source bind:inputElement={searchInput} {loading} {recent} onrecent={(item) => void resolve(item.input, item.provider)} onsearch={() => void resolve()} />
+  <SearchBar bind:value={input} bind:source bind:inputElement={searchInput} {loading} {recent} priorities={input.trim() === viewInput.trim() ? collection?.providers || (collection ? [collection.provider] : []) : []} onrecent={(item) => void resolve(item.input, item.provider)} onsearch={() => void resolve()} />
   <nav class="mobile-nav" aria-label="行動版導覽"><button class="icon-button" aria-label="使用指南" aria-pressed={section === 'guide'} onclick={() => void showSection('guide')}><Library size={18} /></button><button class="icon-button" aria-label="下載佇列" aria-expanded={queueOpen} onclick={openQueue}><Download size={18} /></button></nav>
   <nav class="header-links" aria-label="項目連結"><a href="https://github.com/LZSMIAO/ismusicnow" target="_blank" rel="noreferrer" aria-label="GitHub，於新分頁開啟"><CodeXml size={18} /><span>GitHub</span></a><a href="https://t.me/muismbot" target="_blank" rel="noreferrer" aria-label="Telegram，於新分頁開啟"><Send size={18} /><span>Telegram</span></a></nav>
 </header>

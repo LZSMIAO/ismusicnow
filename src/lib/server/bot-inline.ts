@@ -35,10 +35,11 @@ export function cachedInlineAudio(record: CachedMusic): boolean {
 }
 const providers = botProviders.map(provider => provider.id);
 const kinds: MusicSearchKind[] = ['track', 'album', 'artist', 'playlist'];
-const codes = { netease: 'n', spotify: 's', ytm: 'y' } as const;
+const codes: Partial<Record<Provider, string>> = { netease: 'n', spotify: 's', ytm: 'y' };
 const codeProviders: Record<string, Provider> = { n: 'netease', s: 'spotify', y: 'ytm' };
 export function inlineStart(track: Pick<Track, 'provider' | 'id'>): string {
   validateTrackId(track.provider, track.id);
+  if (!codes[track.provider]) throw new ServiceError('UNSUPPORTED_LINK', '此來源請使用網頁播放器。');
   return `in_${codes[track.provider]}_${track.id}`;
 }
 export function parseInlineStart(value: string): Pick<Track, 'provider' | 'id'> | undefined {
@@ -62,6 +63,7 @@ export function parseInlineQuery(value: string) {
     input = input.slice(match[0].length).trim();
   }
   const link = parseMusicLink(input);
+  if (link && !providers.includes(link.provider)) throw new ServiceError('UNSUPPORTED_LINK', '此來源請使用網頁播放器。');
   if (link) provider = link.provider;
   return { input, provider, kind, albums: albums && link?.kind === 'artist' };
 }

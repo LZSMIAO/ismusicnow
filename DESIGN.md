@@ -52,3 +52,9 @@ Keyboard resize must never activate the compact landscape toolbar. Device orient
 - 抽屜以 transform 滑入 260ms／滑出最多 180ms；途中收起從當前畫面反向，較短路徑縮短時間。原生 dialog 保持焦點、Escape 與背景不可操作。
 - 獨立、固定半徑的模糊層以 opacity 淡入，僅覆蓋可見內容區；遮罩同步淡入。禁止逐幀動畫化頁面 filter 或陰影模糊半徑。
 - 陰影使用隨抽屜移動的 32px 柔和漸層；移除全高硬邊線與大範圍 box-shadow。縮減動態效果模式直接顯示／關閉。
+
+## Source chooser and relevance
+
+The source strip fits a single row using real intrinsic label widths. All sources and an explicit selected provider stay visible; overflow expands inline under More inside the same popover. Hidden measurement content is inert and clipped so it cannot create horizontal scroll. Source order follows the current result's provider relevance, only while the input still matches that query. User choices are not automatically replaced.
+
+Cross-platform keyword search ranks actual metadata, matching titles and artists before unsolicited cover/karaoke/live/remix variants. Explicit version requests retain their requested version. Ties use upstream rank and deterministic identity instead of fixed platform priority. Matching metadata is not proof of original authorship or complete playable audio.
