@@ -134,7 +134,7 @@
 
 <form bind:this={form} class="searchbar" class:search-expanded={open} role="search" onsubmit={submit}>
   <Search size={24} aria-hidden="true" />
-  <input id="music-input" bind:this={inputElement} bind:value aria-label="搜尋音樂或貼上連結" aria-controls="search-options" aria-expanded={open} aria-describedby="search-current-source" placeholder={source === 'all' ? '搜尋或貼上連結' : ['ytm', 'bandcamp'].includes(source) ? `貼上 ${selected.label} 連結` : `搜尋 ${selected.label}，或貼上連結`} maxlength="1000" autocomplete="off" onfocus={expand} onclick={expand} onkeydown={inputKeyboard} />
+  <input id="music-input" bind:this={inputElement} bind:value aria-label="搜尋音樂或貼上連結" aria-controls="search-options" aria-expanded={open} aria-describedby="search-current-source" placeholder={source === 'all' ? '搜尋或貼上連結' : source === 'bandcamp' ? `貼上 ${selected.label} 連結` : `搜尋 ${selected.label}，或貼上連結`} maxlength="1000" autocomplete="off" onfocus={expand} onclick={expand} onkeydown={inputKeyboard} />
   <span id="search-current-source" class="sr-only">搜尋來源：{selected.label}</span>
   <button class="search-submit" type="submit" aria-label={loading ? '重新搜尋' : '搜尋'} disabled={!value.trim()}><ArrowRight size={24} /></button>
 </form>
@@ -152,7 +152,7 @@
     </div>
     <div id="source-more-options" class="source-more-options" hidden={!more}>
       {#each overflow as option, index (option.value)}
-        <button type="button" class="source-chip" data-source={option.value} role="radio" aria-label={option.label} aria-checked={source === option.value} tabindex={index === 0 ? 0 : -1} onclick={() => { source = option.value; more = false; inputElement?.focus({ preventScroll: true }); }}>{option.label}{#if ['ytm','bandcamp'].includes(option.value)}<small class="source-capability">連結</small>{/if}</button>
+        <button type="button" class="source-chip" data-source={option.value} role="radio" aria-label={option.label} aria-checked={source === option.value} tabindex={index === 0 ? 0 : -1} onclick={() => { source = option.value; more = false; inputElement?.focus({ preventScroll: true }); }}>{option.label}{#if option.value === 'bandcamp'}<small class="source-capability">連結</small>{/if}</button>
       {/each}
     </div>
     <div bind:this={measure} class="source-measure" aria-hidden="true" inert>

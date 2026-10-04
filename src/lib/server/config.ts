@@ -1,4 +1,4 @@
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 
 const executable = (value: string) => value.includes('/') ? resolve(value) : value;
 
@@ -13,6 +13,7 @@ export const config = {
   votifyConfigPath: process.env.VOTIFY_CONFIG_PATH || '',
   spotifyAudioQuality: process.env.SPOTIFY_AUDIO_QUALITY || 'vorbis-high',
   ytdlpBin: executable(process.env.YTDLP_BIN || 'yt-dlp'),
+  ytmPythonBin: executable(process.env.YTM_PYTHON_BIN || (process.env.YTDLP_BIN?.includes('/') ? `${dirname(process.env.YTDLP_BIN)}/python` : 'python3')),
   ytmCookiesPath: process.env.YTM_COOKIES_PATH || '',
   maxFileBytes: 256 * 1024 * 1024,
   jobRetentionMs: 24 * 60 * 60 * 1000,

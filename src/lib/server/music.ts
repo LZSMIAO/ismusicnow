@@ -6,7 +6,7 @@ import { commandAvailable } from './process.js';
 import { neteaseArtistAlbums, neteaseTracks, resolveNetease, searchNetease } from './providers/netease.js';
 import { resolveSpotify, searchSpotify, spotifyArtistAlbums, spotifyDownloaderReady, spotifyMetadataConfigured, spotifyTrack } from './providers/spotify.js';
 import { resolvePublic, searchPublic, getPublicTrack, type PublicProvider } from './providers/public-audio.js';
-import { resolveYtm } from './providers/ytm.js';
+import { resolveYtm, searchYtm } from './providers/ytm.js';
 
 export async function resolveMusic(input: string, provider: Provider, searchType: MusicSearchKind = 'track'): Promise<Collection> {
   const text = input.trim();
@@ -20,13 +20,14 @@ export async function resolveMusic(input: string, provider: Provider, searchType
   }
   if (provider === 'netease') return searchNetease(text, searchType);
   if (provider === 'spotify') return searchSpotify(text, searchType);
-  if (provider !== 'ytm') return searchPublic(provider as PublicProvider, text, searchType);
-  throw new ServiceError('YTM_LINK_REQUIRED', 'YTM 目前支援連結獲取，請貼上 YouTube Music 歌曲或歌單網址。');
+  if (provider === 'ytm') return searchYtm(text, searchType);
+  return searchPublic(provider as PublicProvider, text, searchType);
 }
 
 export async function artistAlbums(sourceUrl: string): Promise<Collection> {
   const link = parseMusicLink(sourceUrl);
-  if (!link || link.kind !== 'artist' || !['netease', 'spotify'].includes(link.provider)) throw new ServiceError('UNSUPPORTED_LINK', '請使用藝術家連結。');
+  if (!link || link.kind !== 'artist' || !['netease', 'spotify', 'ytm'].includes(link.provider)) throw new ServiceError('UNSUPPORTED_LINK', '請使用藝術家連結。');
+  if (link.provider === 'ytm') return resolveYtm(link);
   return link.provider === 'netease' ? neteaseArtistAlbums(link.id) : spotifyArtistAlbums(link.id);
 }
 

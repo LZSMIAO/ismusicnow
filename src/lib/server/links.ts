@@ -29,6 +29,8 @@ export function parseMusicLink(input: string): MusicLink | null {
     return { provider: 'netease', kind, id, url: `https://music.163.com/${match[1]}?id=${id}` };
   }
   if (url.hostname === 'music.youtube.com') {
+    const browse = /^\/(?:browse|channel)\/(UC[a-zA-Z0-9_-]{22}|MPREb_[a-zA-Z0-9_-]{1,94})\/?$/.exec(url.pathname);
+    if (browse) return { provider: 'ytm', kind: browse[1]!.startsWith('UC') ? 'artist' : 'album', id: browse[1]!, url: `https://music.youtube.com/browse/${browse[1]}` };
     const video = url.searchParams.get('v');
     const playlist = url.searchParams.get('list');
     if (url.pathname === '/watch' && video && /^[a-zA-Z0-9_-]{11}$/.test(video)) {
@@ -37,7 +39,7 @@ export function parseMusicLink(input: string): MusicLink | null {
     if (url.pathname === '/playlist' && playlist && /^[a-zA-Z0-9_-]{10,100}$/.test(playlist)) {
       return { provider: 'ytm', kind: 'playlist', id: playlist, url: `https://music.youtube.com/playlist?list=${playlist}` };
     }
-    throw new ServiceError('UNSUPPORTED_LINK', 'YTM 支援 YouTube Music 歌曲與歌單連結。');
+    throw new ServiceError('UNSUPPORTED_LINK', 'YTM 支援歌曲、歌單、專輯與藝術家連結。');
   }
   if (['soundcloud.com', 'www.soundcloud.com'].includes(url.hostname)) {
     const path = url.pathname.replace(/\/$/, '');

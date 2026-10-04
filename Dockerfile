@@ -11,7 +11,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv ffmpeg ca-certificates \
   && rm -rf /var/lib/apt/lists/* \
   && python3 -m venv /app/.venv \
-  && /app/.venv/bin/pip install --no-cache-dir 'votify[librespot]==1.9.9' 'yt-dlp>=2026.2.4' \
+  && /app/.venv/bin/pip install --no-cache-dir 'votify[librespot]==1.9.9' 'yt-dlp>=2026.2.4' 'ytmusicapi==1.12.3' \
   && /app/.venv/bin/pip install --no-cache-dir --no-deps --force-reinstall \
     'https://github.com/kokarare1212/librespot-python/archive/683d9e76f91ba7ae03919494dac8d899ca505651.zip'
 COPY --from=build /app/build ./build
