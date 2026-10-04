@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { Converter } from 'opencc-js';
 import { z } from 'zod';
 import type { Track } from '../types.js';
+import { botLanguages, botLanguageNames, botText, type BotLanguage } from './bot-i18n.js';
 
 const languageSchema = z.enum(['original', 'zh-Hant', 'zh-Hans']);
 export type AlbumLanguage = z.infer<typeof languageSchema>;
@@ -17,13 +18,14 @@ const pendingSchema = z.object({
     artistIds: z.array(z.string()).optional(),
     metadataLanguages: z.object({ title: z.string().optional(), album: z.string().optional(), artists: z.array(z.string()).optional() }).optional() }),
 });
-const settingsSchema = z.object({ language: languageSchema.optional(), pending: pendingSchema.optional() });
+const uiLanguageSchema = z.enum(botLanguages);
+const settingsSchema = z.object({ language: languageSchema.optional(), uiLanguage: uiLanguageSchema.optional(), pending: pendingSchema.optional() });
 type UserSettings = z.infer<typeof settingsSchema>;
 export type PendingTrack = z.infer<typeof pendingSchema>;
 const pendingLifetime = 30 * 60_000;
 
 export function displayTrack(track: Track, language: AlbumLanguage): Track {
-  if (language === 'original') return { ...track, artists: [...track.artists] };
+  if (track.provider !== 'netease' || language === 'original') return { ...track, artists: [...track.artists] };
   const convert = converters[language] ||= Converter(language === 'zh-Hant' ? { from: 'cn', to: 'tw' } : { from: 'tw', to: 'cn' });
   const languages = track.metadataLanguages;
   const nativeContext = track.artists.some((name, i) => /[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(name) || /^(ja|ko)(-|$)/i.test(languages?.artists?.[i] || ''));
@@ -89,41 +91,85 @@ export class BotSettingsStore {
       return pending;
     });
   }
+  setUiLanguage(userId: number, language: BotLanguage): Promise<void> {
+    uiLanguageSchema.parse(language);
+    return this.change(userId, (settings) => { settings.uiLanguage = language; });
+  }
 }
 
 type Send = (chatId: number, text: string, extra?: Record<string, unknown>) => Promise<unknown>;
 type Acquire = (chatId: number, userId: number, track: Track, language: AlbumLanguage, messageId: number) => Promise<void>;
 
 export class BotLanguageSettings {
-  constructor(private store: BotSettingsStore, private send: Send, private acquire: Acquire) {}
-  async show(chatId: number, userId: number, first = false): Promise<void> {
-    const current = (await this.store.get(userId)).language;
+  constructor(private store: BotSettingsStore, private send: Send, private acquire: Acquire,
+    private onUiChange?: (chatId: number, language: BotLanguage) => Promise<void>) {}
+  async locale(userId: number): Promise<BotLanguage> { return (await this.store.get(userId)).uiLanguage || 'zh-Hant'; }
+  private name(language: AlbumLanguage, ui: BotLanguage): string {
+    return botText(ui, language === 'original' ? 'original' : language === 'zh-Hant' ? 'traditional' : 'simplified');
+  }
+  async show(chatId: number, userId: number): Promise<void> {
+    const settings = await this.store.get(userId), ui = settings.uiLanguage || 'zh-Hant';
+    await this.send(chatId, `${botText(ui, 'settings')}\n\n${botText(ui, 'uiLanguage')}：${botLanguageNames[ui]}\n${botText(ui, 'namesSetting')}：${settings.language ? this.name(settings.language, ui) : botText(ui, 'unset')}\n\n${botText(ui, 'scope')}`, {
+      reply_markup: { inline_keyboard: [
+        [{ text: botText(ui, 'uiLanguage'), callback_data: `setting:${userId}:ui` }],
+        [{ text: botText(ui, 'namesSetting'), callback_data: `setting:${userId}:names` }],
+      ] },
+    });
+  }
+  async showNames(chatId: number, userId: number, first = false): Promise<void> {
+    const settings = await this.store.get(userId), current = settings.language, ui = settings.uiLanguage || 'zh-Hant';
     const callback = (action: string) => `lang:${userId}:${action}`;
     const rows = [
-      [{ text: languageNames.original, callback_data: callback('original') }],
-      [{ text: languageNames['zh-Hant'], callback_data: callback('zh-Hant') }],
-      [{ text: languageNames['zh-Hans'], callback_data: callback('zh-Hans') }],
+      ...(['original', 'zh-Hant', 'zh-Hans'] as const).map((language) => [{ text: `${current === language ? '✓ ' : ''}${this.name(language, ui)}`, callback_data: callback(language) }]),
+      [{ text: botText(ui, 'back'), callback_data: `setting:${userId}:home` }],
     ];
-    const text = `${first ? '首次獲取：請選擇中文顯示字形。選完會自動繼續剛才的歌曲。' : 'Bot settings · 中文顯示字形'}\n\n目前：${current ? languageNames[current] : '尚未設定'}\n只統一中文歌名、歌手名、專輯名的繁簡字形。英文、日文、韓文等名稱保留原文，不翻譯。\n可隨時使用 /settings 更改。`;
+    const text = `${first ? botText(ui, 'firstNames') : botText(ui, 'namesSetting')}\n\n${botText(ui, 'current', { value: current ? this.name(current, ui) : botText(ui, 'unset') })}\n${botText(ui, 'namesScope')}`;
     await this.send(chatId, text, { reply_markup: { inline_keyboard: rows } });
   }
+  async showUi(chatId: number, userId: number): Promise<void> {
+    const ui = await this.locale(userId);
+    const buttons = botLanguages.map((language) => ({ text: `${ui === language ? '✓ ' : ''}${botLanguageNames[language]}`, callback_data: `ui:${userId}:${language}` }));
+    const rows = Array.from({ length: Math.ceil(buttons.length / 2) }, (_v, i) => buttons.slice(i * 2, i * 2 + 2));
+    rows.push([{ text: botText(ui, 'back'), callback_data: `setting:${userId}:home` }]);
+    await this.send(chatId, `${botText(ui, 'uiLanguage')}\n\n${botText(ui, 'current', { value: botLanguageNames[ui] })}\n${botText(ui, 'uiScope')}`, { reply_markup: { inline_keyboard: rows } });
+  }
   async request(chatId: number, userId: number, track: Track, messageId: number): Promise<void> {
+    if (track.provider !== 'netease') return this.acquire(chatId, userId, track, 'original', messageId);
     const language = await this.store.stage(userId, { chatId, messageId, track });
-    if (!language) return this.show(chatId, userId, true);
+    if (!language) return this.showNames(chatId, userId, true);
     await this.acquire(chatId, userId, track, language, messageId);
   }
   async callback(chatId: number, userId: number, data: string): Promise<boolean> {
-    if (!data.startsWith('lang:')) return false;
-    const match = /^lang:(\d+):(original|zh-Hant|zh-Hans)$/.exec(data);
-    if (!match || Number(match[1]) !== userId) {
-      await this.send(chatId, '這是其他用戶的設定按鈕，請使用 /settings 開啟自己的設定。');
+    if (!/^(lang|ui|setting):/.test(data)) return false;
+    const match = /^(lang|ui|setting):(\d+):([a-zA-Z-]+)$/.exec(data);
+    const ui = await this.locale(userId);
+    if (!match || Number(match[2]) !== userId) {
+      await this.send(chatId, botText(ui, 'wrongOwner'));
       return true;
     }
-    const action = match[2]!;
+    const action = match[3]!;
+    if (match[1] === 'setting') {
+      if (action === 'ui') await this.showUi(chatId, userId);
+      else if (action === 'names') await this.showNames(chatId, userId);
+      else if (action === 'home') await this.show(chatId, userId);
+      return true;
+    }
+    if (match[1] === 'ui') {
+      const parsed = uiLanguageSchema.safeParse(action);
+      if (!parsed.success) return true;
+      await this.store.setUiLanguage(userId, parsed.data);
+      // Private-chat command menus can follow this user's explicit preference.
+      // A menu API failure must not discard a successfully saved preference.
+      await this.onUiChange?.(chatId, parsed.data).catch(() => {});
+      await this.send(chatId, botText(parsed.data, 'uiSaved', { value: botLanguageNames[parsed.data] }));
+      await this.show(chatId, userId);
+      return true;
+    }
+    if (!languageSchema.safeParse(action).success) return true;
     const language = languageSchema.parse(action);
     const pending = await this.store.choose(userId, language);
-    await this.send(chatId, `已設定中文顯示字形：${languageNames[language]}。\n其他語言名稱保留原文；可用 /settings 更改。`);
-    if (pending) await this.acquire(pending.chatId, userId, pending.track, language, pending.messageId);
+    await this.send(chatId, botText(ui, 'namesSaved', { value: this.name(language, ui) }));
+    if (pending) await this.acquire(pending.chatId, userId, pending.track, pending.track.provider === 'netease' ? language : 'original', pending.messageId);
     return true;
   }
 }

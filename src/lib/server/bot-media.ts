@@ -5,6 +5,7 @@ import { parseFile } from 'music-metadata';
 import type { DownloadJob, Track } from '../types.js';
 import { runCommand } from './process.js';
 import { ServiceError } from './errors.js';
+import { botText, type BotLanguage } from './bot-i18n.js';
 
 export class TelegramRequestError extends ServiceError {
   constructor(public errorCode: number, public description: string) {
@@ -13,12 +14,12 @@ export class TelegramRequestError extends ServiceError {
 }
 
 const sourceNames = { netease: '網易雲音樂', spotify: 'Spotify', ytm: 'YouTube Music' };
-export function musicCaption(track: Track, job: DownloadJob): string {
+export function musicCaption(track: Track, job: DownloadJob, language: BotLanguage = 'zh-Hant'): string {
   const audio = job.audio;
-  return [`「${track.title}」— ${track.artists.join(' / ') || '未知歌手'}`.slice(0, 400),
-    `專輯：${track.album || '未提供專輯名稱'}`.slice(0, 300),
-    `來源：${sourceNames[job.audioSource]}`,
-    `${audio?.codec || '原始音源'}${job.bytes ? ` · ${(job.bytes / 1024 / 1024).toFixed(2)} MB` : ''}${audio?.bitrate ? ` · ${Math.round(audio.bitrate / 1000)} kbps` : ''}`,
+  return [`「${track.title}」— ${track.artists.join(' / ') || botText(language, 'unknownArtist')}`.slice(0, 400),
+    `${botText(language, 'album')}：${track.album || botText(language, 'unknownAlbum')}`.slice(0, 300),
+    `${botText(language, 'source')}：${job.audioSource === 'netease' ? language === 'zh-Hans' ? '网易云音乐' : language === 'zh-Hant' ? '網易雲音樂' : 'NetEase Cloud Music' : sourceNames[job.audioSource]}`,
+    `${audio?.codec || botText(language, 'originalAudio')}${job.bytes ? ` · ${(job.bytes / 1024 / 1024).toFixed(2)} MB` : ''}${audio?.bitrate ? ` · ${Math.round(audio.bitrate / 1000)} kbps` : ''}`,
     'via @ismusicnow_bot · 音樂主義'].join('\n');
 }
 
@@ -79,15 +80,17 @@ type Telegram = (method: string, form: FormData) => Promise<unknown>;
 export interface MusicUpload {
   chatId: number; replyTo: number; job: DownloadJob; track: Track;
   bytes: Uint8Array; filename: string; duration: number; thumbnail?: Uint8Array;
+  uiLanguage?: BotLanguage;
 }
 export function musicPayload(upload: MusicUpload, document = false, withThumbnail = true): FormData {
   const form = new FormData(), extension = extname(upload.filename).toLowerCase();
+  const language = upload.uiLanguage || 'zh-Hant';
   const mime: Record<string, string> = { '.flac': 'audio/flac', '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.ogg': 'audio/ogg', '.opus': 'audio/ogg', '.aac': 'audio/aac', '.webm': 'audio/webm' };
   form.set('chat_id', String(upload.chatId));
   form.set(document ? 'document' : 'audio', new Blob([new Uint8Array(upload.bytes)], { type: mime[extension] || 'application/octet-stream' }), upload.filename);
-  form.set('caption', musicCaption(upload.track, upload.job));
+  form.set('caption', musicCaption(upload.track, upload.job, language));
   form.set('reply_parameters', JSON.stringify({ message_id: upload.replyTo, allow_sending_without_reply: true }));
-  form.set('reply_markup', JSON.stringify({ inline_keyboard: [[{ text: '在來源平台開啟', url: upload.track.sourceUrl }], [{ text: '中文顯示字形', callback_data: 'open-settings' }]] }));
+  form.set('reply_markup', JSON.stringify({ inline_keyboard: [[{ text: botText(language, 'openSource'), url: upload.track.sourceUrl }], [{ text: botText(language, 'settings'), callback_data: 'open-settings' }]] }));
   if (!document) {
     form.set('title', upload.track.title.slice(0, 256));
     form.set('performer', upload.track.artists.join(' / ').slice(0, 256));

@@ -100,7 +100,7 @@ export class DownloadStore {
           continue;
         }
         if (['queued', 'downloading'].includes(job.status)) {
-          job.status = 'failed'; job.error = '服務已重啟，請重新加入下載。'; job.stage = '服務中斷';
+          job.status = 'failed'; job.error = '服務已重啟，請重新加入下載。'; job.errorCode = 'SERVICE_RESTARTED'; job.stage = '服務中斷';
           await this.persist(job);
         }
         this.jobs.set(job.id, job);
@@ -167,7 +167,8 @@ export class DownloadStore {
           if (resolve(output) !== resolve(finalPath)) await rename(output, finalPath);
           job.path = finalPath; job.bytes = size; job.status = 'completed'; job.stage = '可以保存';
         } catch (error) {
-          job.status = 'failed'; job.stage = '獲取失敗'; job.error = publicError(error).message;
+          const failure = publicError(error);
+          job.status = 'failed'; job.stage = '獲取失敗'; job.error = failure.message; job.errorCode = failure.code;
           await rm(directory, { recursive: true, force: true });
         }
         await this.persist(job);
