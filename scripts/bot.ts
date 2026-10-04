@@ -11,6 +11,7 @@ import { resolveNeteaseCommand } from '../src/lib/server/bot-input.js';
 import { BotLanguageSettings, BotSettingsStore, displayTrack, type AlbumLanguage } from '../src/lib/server/bot-settings.js';
 import { audioPresentation, musicReferencePayload, sendMusic, TelegramRequestError } from '../src/lib/server/bot-media.js';
 import { BotMusicCache, type CachedMusic } from '../src/lib/server/bot-cache.js';
+import { BotDispatch } from '../src/lib/server/bot-dispatch.js';
 import { BotInline, parseInlineStart, type InlineQuery } from '../src/lib/server/bot-inline.js';
 import { musicCacheKey } from '../src/lib/server/bot-cache-key.js';
 import { BotMessageCleanup } from '../src/lib/server/bot-cleanup.js';
@@ -29,7 +30,8 @@ const store = new DownloadStore('bot');
 const mediaCache = new BotMusicCache(token.split(':')[0]!);
 const selections = new BotSelections();
 const lastRequest = new Map<number, number>();
-let stopping = false, offset = 0, handlers = 0;
+let stopping = false, offset = 0;
+const dispatch = new BotDispatch();
 let botUsername = 'muismbot';
 const statePath = resolve(process.env.DATA_DIR || '.data', 'bot-offset', `${token.split(':')[0]}.json`);
 
@@ -377,10 +379,15 @@ async function main(): Promise<void> {
           void handle(update).catch(() => console.error('Inline 搜尋失敗。'));
           offset = update.update_id + 1; continue;
         }
-        while (handlers >= 4 && !stopping) await new Promise((done) => setTimeout(done, 500));
         if (stopping) break;
-        handlers++;
-        void handle(update).catch(() => console.error('Bot 請求失敗。')).finally(() => handlers--);
+        if (!dispatch.run(() => handle(update))) {
+          const user = update.message?.from || update.callback_query?.from;
+          if (user && !user.is_bot && permitted(user.id)) {
+            void preferences.locale(user.id).then(ui => update.callback_query
+              ? telegram('answerCallbackQuery', { callback_query_id: update.callback_query.id, text: botText(ui, 'rateLimited'), show_alert: true })
+              : update.message?.chat.type === 'private' ? notice(update.message.chat.id, botText(ui, 'rateLimited'), update.message.message_id) : undefined).catch(() => {});
+          }
+        }
         offset = update.update_id + 1;
       }
       const { mkdir, writeFile } = await import('node:fs/promises');
