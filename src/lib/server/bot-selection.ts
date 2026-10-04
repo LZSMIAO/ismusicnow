@@ -7,7 +7,7 @@ export const selectionLifetime = 30 * 60_000;
 export const selectionPageSize = 8;
 export interface MusicSelection {
   id: string; chatId: number; userId: number; requestId: number;
-  menuId?: number; createdAt: number; collection: Collection; page: number;
+  messageThreadId?: number; menuId?: number; createdAt: number; collection: Collection; page: number;
 }
 export class BotSelections {
   private sessions = new Map<string, MusicSelection>();
@@ -15,38 +15,39 @@ export class BotSelections {
   private replies = new Map<string, MusicSelection>();
   constructor(private now = Date.now) {}
   private key(chatId: number, id: number) { return `${chatId}:${id}`; }
+  private ownerKey(chatId: number, userId: number, thread?: number) { return `${chatId}:${thread ?? 0}:${userId}`; }
   private prune() {
     for (const session of this.sessions.values()) if (this.now() - session.createdAt >= selectionLifetime) this.drop(session);
   }
   private drop(session: MusicSelection) {
     this.sessions.delete(session.id);
-    if (this.latest.get(this.key(session.chatId, session.userId)) === session.id) this.latest.delete(this.key(session.chatId, session.userId));
+    if (this.latest.get(this.ownerKey(session.chatId, session.userId, session.messageThreadId)) === session.id) this.latest.delete(this.ownerKey(session.chatId, session.userId, session.messageThreadId));
     for (const [key, value] of this.replies) if (value === session) this.replies.delete(key);
   }
-  create(chatId: number, userId: number, requestId: number, collection: Collection): MusicSelection {
+  create(chatId: number, userId: number, requestId: number, collection: Collection, messageThreadId?: number): MusicSelection {
     this.prune();
     if (this.sessions.size >= 1000) this.drop(this.sessions.values().next().value!);
-    const session = { id: randomBytes(8).toString('hex'), chatId, userId, requestId, collection, createdAt: this.now(), page: 0 };
+    const session = { id: randomBytes(8).toString('hex'), chatId, userId, requestId, messageThreadId, collection, createdAt: this.now(), page: 0 };
     this.sessions.set(session.id, session);
-    this.latest.set(this.key(chatId, userId), session.id);
+    this.latest.set(this.ownerKey(chatId, userId, messageThreadId), session.id);
     this.replies.set(this.key(chatId, requestId), session);
     return session;
   }
-  get(chatId: number, userId: number, id: string, menuId?: number): MusicSelection {
+  get(chatId: number, userId: number, id: string, menuId?: number, messageThreadId?: number): MusicSelection {
     this.prune();
     const session = this.sessions.get(id);
     if (!session) throw new ServiceError('SELECTION_EXPIRED', '選曲列表已過期，請重新搜尋。');
-    if (session.chatId !== chatId || session.userId !== userId || (menuId !== undefined && session.menuId !== menuId)) throw new ServiceError('SELECTION_OWNER', '請開啟自己的選曲列表。', 403);
+    if (session.chatId !== chatId || session.userId !== userId || session.messageThreadId !== messageThreadId || (menuId !== undefined && session.menuId !== menuId)) throw new ServiceError('SELECTION_OWNER', '請開啟自己的選曲列表。', 403);
     return session;
   }
-  number(chatId: number, userId: number, text: string, replyTo?: number): { session: MusicSelection; track: Track } | undefined {
+  number(chatId: number, userId: number, text: string, replyTo?: number, messageThreadId?: number): { session: MusicSelection; track: Track } | undefined {
     this.prune();
     if (!/^\d{1,3}$/.test(text)) return undefined;
     const session = replyTo === undefined
-      ? this.sessions.get(this.latest.get(this.key(chatId, userId)) || '')
+      ? this.sessions.get(this.latest.get(this.ownerKey(chatId, userId, messageThreadId)) || '')
       : [...this.sessions.values()].find((item) => item.chatId === chatId && item.menuId === replyTo);
     if (!session) return undefined;
-    this.get(chatId, userId, session.id);
+    this.get(chatId, userId, session.id, undefined, messageThreadId);
     return { session, track: this.track(session, Number(text) - 1) };
   }
   track(session: MusicSelection, index: number): Track {
@@ -79,7 +80,7 @@ export function selectionMessage(session: MusicSelection, ui: BotLanguage) {
   if (page > 0) navigation.push({ text: `‹ ${botText(ui, 'previousPage')}`, callback_data: `page:${session.id}:${page - 1}` });
   if (start + tracks.length < collection.tracks.length) navigation.push({ text: `${botText(ui, 'nextPage')} ›`, callback_data: `page:${session.id}:${page + 1}` });
   if (navigation.length) rows.push(navigation);
-  return { text: [collection.title.slice(0, 120), botText(ui, 'selectTracks', { kind, source, start: start + 1, end: start + tracks.length, loaded: collection.tracks.length }),
+  return { text: [collection.title.slice(0, 120), botText(ui, session.chatId < 0 ? 'selectTracksGroup' : 'selectTracks', { kind, source, start: start + 1, end: start + tracks.length, loaded: collection.tracks.length }),
     collection.total > collection.tracks.length ? botText(ui, 'collectionLimit', { total: collection.total, loaded: collection.tracks.length }) : '',
     '', ...details].filter((text) => text !== '').join('\n'), reply_markup: { inline_keyboard: rows } };
 }

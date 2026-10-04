@@ -78,18 +78,19 @@ export async function audioPresentation(path: string, track: Track): Promise<{ d
 
 type Telegram = (method: string, form: FormData) => Promise<unknown>;
 export interface MusicUpload {
-  chatId: number; replyTo: number; job: DownloadJob; track: Track;
+  chatId: number; messageThreadId?: number; replyTo: number; job: DownloadJob; track: Track;
   bytes: Uint8Array; filename: string; duration: number; thumbnail?: Uint8Array;
   uiLanguage?: BotLanguage;
   onDelivered?: (kind: 'audio' | 'document', result: unknown) => void;
 }
 export interface MusicReference {
-  chatId: number; replyTo: number; job: DownloadJob; track: Track;
+  chatId: number; messageThreadId?: number; replyTo: number; job: DownloadJob; track: Track;
   fileId: string; kind: 'audio' | 'document'; duration: number; uiLanguage?: BotLanguage;
 }
 export function musicReferencePayload(reference: MusicReference): FormData {
   const form = new FormData(), language = reference.uiLanguage || 'zh-Hant';
   form.set('chat_id', String(reference.chatId));
+  if (reference.messageThreadId !== undefined) form.set('message_thread_id', String(reference.messageThreadId));
   form.set(reference.kind, reference.fileId);
   form.set('caption', musicCaption(reference.track, reference.job, language));
   form.set('reply_parameters', JSON.stringify({ message_id: reference.replyTo, allow_sending_without_reply: true }));
@@ -106,6 +107,7 @@ export function musicPayload(upload: MusicUpload, document = false, withThumbnai
   const language = upload.uiLanguage || 'zh-Hant';
   const mime: Record<string, string> = { '.flac': 'audio/flac', '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.ogg': 'audio/ogg', '.opus': 'audio/ogg', '.aac': 'audio/aac', '.webm': 'audio/webm' };
   form.set('chat_id', String(upload.chatId));
+  if (upload.messageThreadId !== undefined) form.set('message_thread_id', String(upload.messageThreadId));
   form.set(document ? 'document' : 'audio', new Blob([new Uint8Array(upload.bytes)], { type: mime[extension] || 'application/octet-stream' }), upload.filename);
   form.set('caption', musicCaption(upload.track, upload.job, language));
   form.set('reply_parameters', JSON.stringify({ message_id: upload.replyTo, allow_sending_without_reply: true }));

@@ -12,7 +12,7 @@ export const languageNames: Record<AlbumLanguage, string> = {
   original: 'Original（中文保留原樣）', 'zh-Hant': '中文統一繁體（TC）', 'zh-Hans': '中文统一简体（SC）',
 };
 const pendingSchema = z.object({
-  chatId: z.number().int(), messageId: z.number().int().positive(), createdAt: z.number(),
+  chatId: z.number().int(), messageId: z.number().int().positive(), messageThreadId: z.number().int().positive().optional(), createdAt: z.number(),
   track: z.object({ id: z.string(), provider: z.enum(['netease', 'spotify', 'ytm']), title: z.string(),
     artists: z.array(z.string()), album: z.string(), cover: z.string(), durationMs: z.number(), sourceUrl: z.string(),
     artistIds: z.array(z.string()).optional(),
@@ -104,11 +104,11 @@ export class BotSettingsStore {
 }
 
 type Send = (chatId: number, text: string, extra?: Record<string, unknown>) => Promise<unknown>;
-type Acquire = (chatId: number, userId: number, track: Track, language: AlbumLanguage, messageId: number) => Promise<void>;
+type Acquire = (chatId: number, userId: number, track: Track, language: AlbumLanguage, messageId: number, messageThreadId?: number) => Promise<void>;
 
 export class BotLanguageSettings {
   constructor(private store: BotSettingsStore, private send: Send, private acquire: Acquire,
-    private onUiChange?: (chatId: number, language: BotLanguage) => Promise<void>) {}
+    private onUiChange?: (chatId: number, language: BotLanguage, userId: number) => Promise<void>) {}
   async observeLanguage(userId: number, code?: string): Promise<void> { await this.store.observeLanguage(userId, code); }
   async locale(userId: number): Promise<BotLanguage> {
     const settings = await this.store.get(userId);
@@ -116,8 +116,8 @@ export class BotLanguageSettings {
   }
   async start(chatId: number, userId: number): Promise<void> {
     const ui = await this.locale(userId);
-    await this.onUiChange?.(chatId, ui).catch(() => {});
-    await this.send(chatId, botHelp(ui), { reply_markup: { inline_keyboard: [
+    await this.onUiChange?.(chatId, ui, userId).catch(() => {});
+    await this.send(chatId, botHelp(ui, chatId < 0), { reply_markup: { inline_keyboard: [
       [{ text: `${botLanguageNames[ui]} ｜ ${botText(ui, 'changeLanguage')}`, callback_data: `setting:${userId}:ui` }],
     ] } });
   }
@@ -150,11 +150,12 @@ export class BotLanguageSettings {
     rows.push([{ text: botText(ui, 'back'), callback_data: `setting:${userId}:home` }]);
     await this.send(chatId, `${botText(ui, 'uiLanguage')}\n\n${botText(ui, 'current', { value: botLanguageNames[ui] })}\n${botText(ui, 'uiScope')}`, { deleteAfterMs: 30 * 60_000, reply_markup: { inline_keyboard: rows } });
   }
-  async request(chatId: number, userId: number, track: Track, messageId: number): Promise<void> {
-    if (track.provider !== 'netease') return this.acquire(chatId, userId, track, 'original', messageId);
-    const language = await this.store.stage(userId, { chatId, messageId, track });
+  async request(chatId: number, userId: number, track: Track, messageId: number, messageThreadId?: number): Promise<void> {
+    const thread: [number?] = messageThreadId === undefined ? [] : [messageThreadId];
+    if (track.provider !== 'netease') return this.acquire(chatId, userId, track, 'original', messageId, ...thread);
+    const language = await this.store.stage(userId, { chatId, messageId, messageThreadId, track });
     if (!language) return this.showNames(chatId, userId, true, messageId);
-    await this.acquire(chatId, userId, track, language, messageId);
+    await this.acquire(chatId, userId, track, language, messageId, ...thread);
   }
   async callback(chatId: number, userId: number, data: string): Promise<boolean> {
     if (!/^(lang|ui|setting):/.test(data)) return false;
@@ -175,9 +176,9 @@ export class BotLanguageSettings {
       const parsed = uiLanguageSchema.safeParse(action);
       if (!parsed.success) return true;
       await this.store.setUiLanguage(userId, parsed.data);
-      // Private-chat command menus can follow this user's explicit preference.
+      // Group command menus are scoped to this member, not the whole group.
       // A menu API failure must not discard a successfully saved preference.
-      await this.onUiChange?.(chatId, parsed.data).catch(() => {});
+      await this.onUiChange?.(chatId, parsed.data, userId).catch(() => {});
       await this.send(chatId, botText(parsed.data, 'uiSaved', { value: botLanguageNames[parsed.data] }), { deleteAfterMs: 15_000 });
       await this.show(chatId, userId);
       return true;
@@ -186,7 +187,7 @@ export class BotLanguageSettings {
     const language = languageSchema.parse(action);
     const pending = await this.store.choose(userId, language);
     await this.send(chatId, botText(ui, 'namesSaved', { value: this.name(language, ui) }), { deleteAfterMs: 15_000 });
-    if (pending) await this.acquire(pending.chatId, userId, pending.track, pending.track.provider === 'netease' ? language : 'original', pending.messageId);
+    if (pending) await this.acquire(pending.chatId, userId, pending.track, pending.track.provider === 'netease' ? language : 'original', pending.messageId, ...(pending.messageThreadId === undefined ? [] : [pending.messageThreadId]));
     return true;
   }
 }
