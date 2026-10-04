@@ -190,6 +190,14 @@ export class DownloadStore {
     try { await stat(path); } catch { throw new ServiceError('EXPIRED', '音訊檔案已不存在，請重新獲取。', 410); }
     return { path, job: this.publicJob(job) };
   }
+  async remove(owner: string, id: string): Promise<void> {
+    await this.initialize();
+    const job = this.jobs.get(id);
+    if (!job || job.owner !== owner || ['queued', 'downloading'].includes(job.status)) return;
+    this.jobs.delete(id);
+    await rm(join(this.root, `${id}.json`), { force: true });
+    await rm(join(this.root, id), { force: true, recursive: true });
+  }
   async clear(owner: string): Promise<void> {
     await this.initialize();
     for (const job of this.jobs.values()) {

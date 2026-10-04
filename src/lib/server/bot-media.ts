@@ -81,6 +81,25 @@ export interface MusicUpload {
   chatId: number; replyTo: number; job: DownloadJob; track: Track;
   bytes: Uint8Array; filename: string; duration: number; thumbnail?: Uint8Array;
   uiLanguage?: BotLanguage;
+  onDelivered?: (kind: 'audio' | 'document', result: unknown) => void;
+}
+export interface MusicReference {
+  chatId: number; replyTo: number; job: DownloadJob; track: Track;
+  fileId: string; kind: 'audio' | 'document'; duration: number; uiLanguage?: BotLanguage;
+}
+export function musicReferencePayload(reference: MusicReference): FormData {
+  const form = new FormData(), language = reference.uiLanguage || 'zh-Hant';
+  form.set('chat_id', String(reference.chatId));
+  form.set(reference.kind, reference.fileId);
+  form.set('caption', musicCaption(reference.track, reference.job, language));
+  form.set('reply_parameters', JSON.stringify({ message_id: reference.replyTo, allow_sending_without_reply: true }));
+  form.set('reply_markup', JSON.stringify({ inline_keyboard: [[{ text: botText(language, 'openSource'), url: reference.track.sourceUrl }]] }));
+  if (reference.kind === 'audio') {
+    form.set('title', reference.track.title.slice(0, 256));
+    form.set('performer', reference.track.artists.join(' / ').slice(0, 256));
+    if (reference.duration > 0) form.set('duration', String(reference.duration));
+  }
+  return form;
 }
 export function musicPayload(upload: MusicUpload, document = false, withThumbnail = true): FormData {
   const form = new FormData(), extension = extname(upload.filename).toLowerCase();
@@ -90,7 +109,7 @@ export function musicPayload(upload: MusicUpload, document = false, withThumbnai
   form.set(document ? 'document' : 'audio', new Blob([new Uint8Array(upload.bytes)], { type: mime[extension] || 'application/octet-stream' }), upload.filename);
   form.set('caption', musicCaption(upload.track, upload.job, language));
   form.set('reply_parameters', JSON.stringify({ message_id: upload.replyTo, allow_sending_without_reply: true }));
-  form.set('reply_markup', JSON.stringify({ inline_keyboard: [[{ text: botText(language, 'openSource'), url: upload.track.sourceUrl }], [{ text: botText(language, 'settings'), callback_data: 'open-settings' }]] }));
+  form.set('reply_markup', JSON.stringify({ inline_keyboard: [[{ text: botText(language, 'openSource'), url: upload.track.sourceUrl }]] }));
   if (!document) {
     form.set('title', upload.track.title.slice(0, 256));
     form.set('performer', upload.track.artists.join(' / ').slice(0, 256));
@@ -101,7 +120,11 @@ export function musicPayload(upload: MusicUpload, document = false, withThumbnai
 }
 export async function sendMusic(telegram: Telegram, upload: MusicUpload): Promise<'audio' | 'document'> {
   // The original bot also sends FLAC through sendAudio. Never transcode the song.
-  const delivered = (result: unknown) => result && typeof result === 'object' && 'document' in result && !('audio' in result) ? 'document' as const : 'audio' as const;
+  const delivered = (result: unknown, fallback: 'audio' | 'document' = 'audio') => {
+    const kind = result && typeof result === 'object' && 'document' in result && !('audio' in result) ? 'document' as const : fallback;
+    upload.onDelivered?.(kind, result);
+    return kind;
+  };
   let rejected: unknown;
   try { return delivered(await telegram('sendAudio', musicPayload(upload))); }
   catch (error) { rejected = error; }
@@ -110,5 +133,5 @@ export async function sendMusic(telegram: Telegram, upload: MusicUpload): Promis
     catch (error) { rejected = error; }
   }
   if (!(rejected instanceof TelegramRequestError) || rejected.errorCode !== 400 || !/audio|file type|wrong file|failed to process/i.test(rejected.description)) throw rejected;
-  await telegram('sendDocument', musicPayload(upload, true)); return 'document';
+  return delivered(await telegram('sendDocument', musicPayload(upload, true)), 'document');
 }

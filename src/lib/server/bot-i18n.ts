@@ -2,6 +2,17 @@ import { Converter } from 'opencc-js';
 
 export const botLanguages = ['zh-Hant', 'zh-Hans', 'en', 'ja', 'ko', 'es', 'fr', 'ru'] as const;
 export type BotLanguage = typeof botLanguages[number];
+export function telegramLanguage(code?: string): BotLanguage {
+  const tag = (code || '').trim().replaceAll('_', '-').toLowerCase();
+  if (/^zh(?:-|$)/.test(tag)) {
+    if (/(?:^|-)hant(?:-|$)/.test(tag)) return 'zh-Hant';
+    if (/(?:^|-)hans(?:-|$)/.test(tag)) return 'zh-Hans';
+    if (/(?:^|-)(cn|sg)(?:-|$)/.test(tag)) return 'zh-Hans';
+    return 'zh-Hant';
+  }
+  const primary = tag.split('-')[0];
+  return (['en', 'ja', 'ko', 'es', 'fr', 'ru'] as const).find((language) => language === primary) || 'zh-Hant';
+}
 export const botLanguageNames: Record<BotLanguage, string> = {
   'zh-Hant': '繁體中文', 'zh-Hans': '简体中文', en: 'English', ja: '日本語', ko: '한국어',
   es: 'Español', fr: 'Français', ru: 'Русский',
@@ -9,6 +20,7 @@ export const botLanguageNames: Record<BotLanguage, string> = {
 // Translate the static template before inserting music metadata. UI language
 // must never translate or normalize a song, artist, album, URL or filename.
 const catalog = {
+  changeLanguage: ["更改語言", "Change language", "言語を変更", "언어 변경", "Cambiar idioma", "Changer de langue", "Изменить язык"],
   settings: ["Bot 設定", "Bot settings", "Bot の設定", "봇 설정", "Ajustes del bot", "Paramètres du bot", "Настройки бота"],
   uiLanguage: ["Bot 介面語言", "Bot interface language", "Bot の表示言語", "봇 인터페이스 언어", "Idioma del bot", "Langue du bot", "Язык бота"],
   namesSetting: ["網易雲中文名稱字形", "NetEase Chinese names", "NetEase の中国語表記", "NetEase 중국어 표기", "Nombres chinos de NetEase", "Noms chinois de NetEase", "Китайские названия NetEase"],

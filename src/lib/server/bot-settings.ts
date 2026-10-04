@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { Converter } from 'opencc-js';
 import { z } from 'zod';
 import type { Track } from '../types.js';
-import { botLanguages, botLanguageNames, botText, type BotLanguage } from './bot-i18n.js';
+import { botHelp, botLanguages, botLanguageNames, botText, telegramLanguage, type BotLanguage } from './bot-i18n.js';
 
 const languageSchema = z.enum(['original', 'zh-Hant', 'zh-Hans']);
 export type AlbumLanguage = z.infer<typeof languageSchema>;
@@ -19,7 +19,7 @@ const pendingSchema = z.object({
     metadataLanguages: z.object({ title: z.string().optional(), album: z.string().optional(), artists: z.array(z.string()).optional() }).optional() }),
 });
 const uiLanguageSchema = z.enum(botLanguages);
-const settingsSchema = z.object({ language: languageSchema.optional(), uiLanguage: uiLanguageSchema.optional(), pending: pendingSchema.optional() });
+const settingsSchema = z.object({ language: languageSchema.optional(), uiLanguage: uiLanguageSchema.optional(), telegramLanguage: uiLanguageSchema.optional(), pending: pendingSchema.optional() });
 type UserSettings = z.infer<typeof settingsSchema>;
 export type PendingTrack = z.infer<typeof pendingSchema>;
 const pendingLifetime = 30 * 60_000;
@@ -95,6 +95,12 @@ export class BotSettingsStore {
     uiLanguageSchema.parse(language);
     return this.change(userId, (settings) => { settings.uiLanguage = language; });
   }
+  async observeLanguage(userId: number, code?: string): Promise<void> {
+    if (!code) return;
+    const language = telegramLanguage(code);
+    if ((await this.get(userId)).telegramLanguage === language) return;
+    await this.change(userId, (settings) => { settings.telegramLanguage = language; });
+  }
 }
 
 type Send = (chatId: number, text: string, extra?: Record<string, unknown>) => Promise<unknown>;
@@ -103,12 +109,23 @@ type Acquire = (chatId: number, userId: number, track: Track, language: AlbumLan
 export class BotLanguageSettings {
   constructor(private store: BotSettingsStore, private send: Send, private acquire: Acquire,
     private onUiChange?: (chatId: number, language: BotLanguage) => Promise<void>) {}
-  async locale(userId: number): Promise<BotLanguage> { return (await this.store.get(userId)).uiLanguage || 'zh-Hant'; }
+  async observeLanguage(userId: number, code?: string): Promise<void> { await this.store.observeLanguage(userId, code); }
+  async locale(userId: number): Promise<BotLanguage> {
+    const settings = await this.store.get(userId);
+    return settings.uiLanguage || settings.telegramLanguage || 'zh-Hant';
+  }
+  async start(chatId: number, userId: number): Promise<void> {
+    const ui = await this.locale(userId);
+    await this.onUiChange?.(chatId, ui).catch(() => {});
+    await this.send(chatId, botHelp(ui), { reply_markup: { inline_keyboard: [
+      [{ text: botText(ui, 'changeLanguage'), callback_data: `setting:${userId}:ui` }],
+    ] } });
+  }
   private name(language: AlbumLanguage, ui: BotLanguage): string {
     return botText(ui, language === 'original' ? 'original' : language === 'zh-Hant' ? 'traditional' : 'simplified');
   }
   async show(chatId: number, userId: number): Promise<void> {
-    const settings = await this.store.get(userId), ui = settings.uiLanguage || 'zh-Hant';
+    const settings = await this.store.get(userId), ui = settings.uiLanguage || settings.telegramLanguage || 'zh-Hant';
     await this.send(chatId, `${botText(ui, 'settings')}\n\n${botText(ui, 'uiLanguage')}：${botLanguageNames[ui]}\n${botText(ui, 'namesSetting')}：${settings.language ? this.name(settings.language, ui) : botText(ui, 'unset')}\n\n${botText(ui, 'scope')}`, {
       reply_markup: { inline_keyboard: [
         [{ text: botText(ui, 'uiLanguage'), callback_data: `setting:${userId}:ui` }],
@@ -117,7 +134,7 @@ export class BotLanguageSettings {
     });
   }
   async showNames(chatId: number, userId: number, first = false): Promise<void> {
-    const settings = await this.store.get(userId), current = settings.language, ui = settings.uiLanguage || 'zh-Hant';
+    const settings = await this.store.get(userId), current = settings.language, ui = settings.uiLanguage || settings.telegramLanguage || 'zh-Hant';
     const callback = (action: string) => `lang:${userId}:${action}`;
     const rows = [
       ...(['original', 'zh-Hant', 'zh-Hans'] as const).map((language) => [{ text: `${current === language ? '✓ ' : ''}${this.name(language, ui)}`, callback_data: callback(language) }]),
