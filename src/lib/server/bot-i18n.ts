@@ -102,6 +102,6 @@ export function botCommands(language: BotLanguage) {
     .map(([command, key]) => ({ command, description: botText(language, key).slice(0, 256) }));
 }
 export function botHelp(language: BotLanguage): string {
-  return ['ismusicnow · 音樂主義', '', botText(language, 'helpIntro'), ...botCommands(language).map((c) => `/${c.command} — ${c.description}`),
-    '', botText(language, 'firstNotice'), '', botText(language, 'sourceNote'), botText(language, 'license')].join('\n');
+  return ['ismusicnow · 音樂主義', '', botText(language, 'helpIntro'),
+    ...botCommands(language).map((c) => `/${c.command} — ${c.description}`)].join('\n');
 }
