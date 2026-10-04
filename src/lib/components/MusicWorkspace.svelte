@@ -117,7 +117,7 @@
   <a class="brand" href="/" aria-label="ismusicnow 首頁" onclick={(e) => { e.preventDefault(); home(); }}><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span><strong>ismusicnow.</strong></a>
   <form class="searchbar" role="search" onsubmit={(e) => { e.preventDefault(); void resolve(); }}><Search size={22} /><input id="music-input" bind:this={searchInput} bind:value={input} aria-label="搜尋音樂或貼上連結" placeholder="搜尋音樂，或貼上連結" maxlength="1000" autocomplete="off" /><SelectMenu id="source-menu" bind:value={source} options={sourceOptions} label="搜尋來源" /><button class="search-submit" type="submit" aria-label={loading ? '重新搜尋' : '搜尋'} disabled={!input.trim()}><ArrowRight size={18} /></button></form>
   <nav class="mobile-nav" aria-label="行動版導覽"><a class="icon-button" href="/guide" aria-label="使用指南"><Library size={18} /></a><button class="icon-button" aria-label="下載佇列" aria-expanded={queueOpen} onclick={openQueue}><Download size={18} /></button></nav>
-  <div class="header-links"><a href="https://github.com/LZSMIAO/ismusicnow" target="_blank" rel="noreferrer">GitHub ↗</a><a href="https://t.me/ismusicnow_bot" target="_blank" rel="noreferrer">Telegram ↗</a></div>
+  <div class="header-links"><a href="https://github.com/LZSMIAO/ismusicnow" target="_blank" rel="noreferrer">GitHub ↗</a><a href="https://t.me/muismbot" target="_blank" rel="noreferrer">Telegram ↗</a></div>
 </header>
 <div class="workspace" class:preview-hidden={!previewVisible}>
   <aside class="library" aria-label="音樂導覽">
