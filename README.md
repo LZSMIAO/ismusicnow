@@ -62,14 +62,18 @@ pnpm bot
 
 ## Telegram
 
-Bot：[\@ismusicnow_bot](https://t.me/ismusicnow_bot)。直接貼音樂連結即可；支援 `/search`、`/spotify`、`/netease`、`/download`、`/lyric`、`/about`。`/start` 會說明使用方式。
+Bot：[\@ismusicnow_bot](https://t.me/ismusicnow_bot)。直接貼音樂連結即可；支援 `/search`、`/spotify`、`/netease`、`/download`、`/lyric`、`/about`。`/start` 說明使用方式，只放一個「更改語言」按鈕，點開後才展開八種語言。Bot 預設跟隨 Telegram 回報的用戶語言，手動選擇優先；無法匹配或只回報 `zh` 時使用繁中。
 
 `/settings`（或 `/setting`）提供兩項獨立設定：
 
 - **Bot 介面語言**：繁中、簡中、English、日本語、한국어、Español、Français、Русский。用於 Bot 指令說明、按鈕、提示、卡片欄位標籤和錯誤訊息；私聊命令選單跟隨使用者選擇。歌曲、歌手、專輯與檔名保留各自來源／名稱字形偏好，不隨介面語言翻譯。
 - **網易雲中文名稱字形**：Original（中文保留原樣）／中文統一繁體（TC）／中文统一简体（SC）。只有首次獲取網易雲歌曲才提示選擇，選完自動繼續剛才的歌曲；Spotify、YTM 直接獲取，名稱保留來源原文。只統一網易雲中文部分；英文、日文、韓文等名稱保留原文。繁簡轉換使用本機 OpenCC，無須另外申請翻譯 API。
 
-網易雲名稱字形偏好作用於 Telegram 音樂卡片的中文歌名、中文歌手名、中文專輯名與顯示檔名，不改動原始音訊或檔案內標籤。兩項設定分別按用戶持久保存在 bot 的 `DATA_DIR/bot-users/`（Docker 主機為 `data/bot/bot-users/`），服務重啟後仍保留；群組按鈕只能由對應用戶修改自己的偏好。舊版已選的名稱字形偏好繼續沿用於網易雲。網易雲藝人語言線索與原生別名會用來保護日文漢字姓名；缺乏語言標記的純漢字名稱仍可能有歧義。
+網易雲名稱字形偏好作用於 Telegram 音樂卡片的中文歌名、中文歌手名與中文專輯名。共用快取的音訊檔名、原始音訊及檔案內標籤保留來源原文。兩項設定分別按用戶持久保存在 bot 的 `DATA_DIR/bot-users/`（Docker 主機為 `data/bot/bot-users/`），服務重啟後仍保留；群組按鈕只能由對應用戶修改自己的偏好。舊版已選的名稱字形偏好繼續沿用於網易雲。網易雲藝人語言線索與原生別名會用來保護日文漢字姓名；缺乏語言標記的純漢字名稱仍可能有歧義。
+
+Bot 使用跨用戶 Telegram `file_id` 快取，按平台、歌曲 ID 和獲取音質區分；Spotify 自訂配置變更也會區分快取。第一次成功上傳後保存實際音訊／文件類型與音質資料，立即清除 VPS 音訊副本；命中直接重用 Telegram 檔案，不再下載或上傳。多人同時索取共用一次下載和首次上傳。卡片文字仍按每位收件人的介面語言及網易雲字形設定生成，卡片只保留來源連結按鈕，設定透過 `/settings` 進入。
+
+索引保存在 `DATA_DIR/telegram-media/<bot-id>/`，跨重啟保留，不需要中轉 channel。Telegram 明確拒絕失效識別碼時重新獲取；網路、限流或收件人錯誤不觸發重複上傳。啟用前的檔案未保存 `file_id`，首次再獲取會建立快取。此快取僅用於 bot，網頁端仍使用原有下載流程。[Telegram 檔案重用](https://core.telegram.org/bots/api#sending-files)
 
 音訊優先以 `sendAudio` 發送，包含專輯、封面縮圖、實測時長、編碼、大小、位元率、來源連結及回覆原訊息。FLAC 也嘗試原版的音樂卡片方式；若 Telegram 明確拒絕格式，保留相同原始檔以文件發送，不轉碼。Telegram 官方文件只保證 MP3／M4A 的音樂播放器支援，因此其他格式的卡片呈現仍取決於 Telegram。[Bot API](https://core.telegram.org/bots/api#sendaudio)
 

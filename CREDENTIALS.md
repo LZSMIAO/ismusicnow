@@ -30,7 +30,15 @@ SPOTIFY_ACCESS_TOKEN=
 
 ## Spotify 原始音源 cookies
 
-登入自己的 Spotify 網頁帳號，依 [Votify 設定說明](https://github.com/glomatico/votify#-prerequisites) 將 Spotify 網站 cookies 匯出為 Netscape cookies.txt，再使用 1Panel 上傳到 `/opt/ismusicnow/secrets/spotify-cookies.txt`。只匯出 Spotify 網站的 cookies。
+cookies 在已登入 Spotify 的瀏覽器匯出，Developer Dashboard 不提供這個檔案。依 [Votify 設定說明](https://github.com/glomatico/votify#-prerequisites)：
+
+1. Chrome／Edge 使用官方擴充商店的 [Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc)；Firefox 可使用 Votify 文件連結的 Export Cookies。
+2. 在同一瀏覽器開啟 [Spotify 網頁播放器](https://open.spotify.com/)，登入自己的 Spotify 帳號。
+3. 在 Spotify 分頁點擴充功能，匯出目前 Spotify 網站的 Netscape cookies.txt；不要匯出所有網站。
+4. 將下載檔案改名為 `spotify-cookies.txt`。
+5. 在 1Panel「主機 → 文件」進入 `/opt/ismusicnow/secrets/`，上傳檔案，再依本文件末尾設定讀取權限。現有 Compose 已將目錄唯讀掛載至 `/app/secrets/`。
+
+cookies 留在本機及 VPS，不放到 GitHub 或聊天；登入失效時重新匯出。
 
 `.env` 使用容器內路徑：
 
@@ -76,7 +84,11 @@ YTM_COOKIES_PATH=/app/secrets/ytm-cookies.txt
 
 可選 `BOT_ALLOWED_USERS=你的TelegramUserID`，多個 ID 用逗號分隔；留空則 bot 公開可用。
 
-`/settings` 提供獨立的「Bot 介面語言」與「網易雲中文名稱字形」。Bot 語言支援繁中、簡中、English、日本語、한국어、Español、Français、Русский，只影響提示、按鈕、指令及卡片欄位標籤；網易雲字形選擇 Original／TC／SC，只作用於網易雲中文歌名、歌手、專輯及顯示檔名。Spotify／YTM 的名稱保持來源原文；只有首次網易雲獲取會提示選擇字形。兩項偏好分別按用戶保存在 `data/bot/bot-users/`，需隨 bot 資料一同備份。翻譯文案與 OpenCC 在本機運行，不需要新 API、翻譯 key 或 `.env` 配置，原始音訊與檔案內標籤保持原文。
+`/start` 按 Telegram 的 `language_code` 匹配支援的八種語言，只放一個「更改語言」按鈕，點開後才顯示列表。手動選擇優先；缺失／無法匹配或不明繁簡的 `zh` 使用繁中。
+
+`/settings` 提供獨立的「Bot 介面語言」與「網易雲中文名稱字形」。Bot 語言支援繁中、簡中、English、日本語、한국어、Español、Français、Русский，只影響提示、按鈕、指令及卡片欄位標籤；網易雲字形選擇 Original／TC／SC，只作用於網易雲中文歌名、歌手、專輯及顯示名稱。Spotify／YTM 名稱保持來源原文。網易雲字形只選一次，音樂卡片不放設定按鈕，之後用 `/settings` 修改。兩項偏好按用戶保存在 `data/bot/bot-users/`，需隨 bot 資料備份。翻譯文案與 OpenCC 在本機運行，不需要新 API、翻譯 key 或 `.env` 配置，原始音訊與檔案內標籤保持原文。
+
+Telegram 音訊快取不需要新 token 或中轉 channel。首次成功上傳後的檔案識別碼及音質資料保存在 `data/bot/telegram-media/<bot-id>/`，需隨 bot 資料備份；命中仍按收件人偏好生成卡片文字。
 
 ## 權限與套用
 
