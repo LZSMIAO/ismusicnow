@@ -16,12 +16,17 @@ export const GET: RequestHandler = async (event) => {
     const provider = source.data;
     const id = event.url.searchParams.get('id') || '';
     validateTrackId(provider, id);
-    let raw = provider === 'netease' ? await neteasePreview(id) : provider === 'spotify' ? await spotifyPreview(id) : null;
+    const netease = provider === 'netease' ? await neteasePreview(id) : null;
+    let raw = netease?.url || (provider === 'spotify' ? await spotifyPreview(id) : null);
+    const limited = provider === 'netease' ? !!netease?.limited : true;
     if (raw && provider === 'netease') { const url = validateAudioUrl(raw); url.protocol = 'https:'; raw = url.href; }
     if (raw && provider === 'spotify') {
       const url = new URL(raw);
       if (url.protocol !== 'https:' || url.username || url.password || url.port || !['scdn.co', 'spotifycdn.com', 'akamaized.net'].some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`))) raw = null;
     }
-    return json(raw ? { available: true, url: raw, maxSeconds: 30 } : { available: false, message: '此來源未提供本站可用的試聽片段。可在原平台播放，或下載完成後預覽。' });
+    const message = provider === 'spotify' ? 'Spotify 未提供此曲的直接試聽音源；可下載完整音訊後播放。'
+      : provider === 'ytm' ? 'YTM 尚未提供直接播放；可使用 YTM 適配器下載後播放。'
+      : '網易雲未提供此曲的播放音源，請檢查帳號或地區權限。';
+    return json(raw ? { available: true, url: raw, limited } : { available: false, message });
   } catch (error) { return apiError(error); }
 };

@@ -124,8 +124,9 @@ export async function neteaseLyrics(id: string): Promise<string> {
   return body.lrc?.lyric || '';
 }
 
-export async function neteasePreview(id: string): Promise<string | null> {
+export async function neteasePreview(id: string): Promise<{ url: string; limited: boolean } | null> {
   const body = await neteaseRequest('song_url_v1', { id, crypto: 'eapi', level: 'standard' });
-  // Trial clips are valid here; full downloads retain their existing checks.
-  return body.data?.[0]?.url || null;
+  // Preserve the platform's access level; the player does not impose a time cap.
+  const audio = body.data?.[0];
+  return audio?.url ? { url: audio.url, limited: !!audio.freeTrialInfo } : null;
 }
