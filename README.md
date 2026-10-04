@@ -58,6 +58,10 @@ pnpm install --frozen-lockfile
 cp .env.example .env
 python3 -m venv .venv
 .venv/bin/pip install 'votify[librespot]==1.9.9' yt-dlp
+.venv/bin/pip install --no-deps --force-reinstall 'https://github.com/kokarare1212/librespot-python/archive/683d9e76f91ba7ae03919494dac8d899ca505651.zip'
+source .venv/bin/activate
+chmod +x scripts/votify-session.py
+# 本機 .env 使用 VOTIFY_BIN=scripts/votify-session.py
 pnpm check
 pnpm test
 pnpm build
