@@ -64,9 +64,9 @@ pnpm bot
 
 Bot：[\@ismusicnow_bot](https://t.me/ismusicnow_bot)。直接貼音樂連結即可；支援 `/search`、`/spotify`、`/netease`、`/download`、`/lyric`、`/about`。`/start` 會說明使用方式。
 
-`/settings`（或 `/setting`）設定 Album 顯示語言。首次獲取直接提供 **Original（保留原文）／轉為繁體中文／转为简体中文** 三個選項。選完自動繼續剛才的歌曲，後續獲取沿用每位用戶的偏好。繁簡轉換使用本機 OpenCC，無須另外申請翻譯 API。
+`/settings`（或 `/setting`）設定 中文顯示字形。首次獲取直接提供 **Original（中文保留原樣）／中文統一繁體（TC）／中文统一简体（SC）** 三個選項。選完自動繼續剛才的歌曲，後續獲取沿用每位用戶的偏好。只統一中文部分的繁簡字形；英文、日文、韓文等名稱保留原文，不翻譯。繁簡轉換使用本機 OpenCC，無須另外申請翻譯 API。
 
-偏好作用於 Telegram 音樂卡片的歌名、歌手、專輯與顯示檔名，不改動原始音訊或檔案內標籤。設定持久保存在 bot 的 `DATA_DIR/bot-users/`（Docker 主機為 `data/bot/bot-users/`），服務重啟後仍保留；群組按鈕只能由對應用戶修改自己的偏好。
+偏好作用於 Telegram 音樂卡片的中文歌名、中文歌手名、中文專輯名與顯示檔名，不改動原始音訊或檔案內標籤。設定持久保存在 bot 的 `DATA_DIR/bot-users/`（Docker 主機為 `data/bot/bot-users/`），服務重啟後仍保留；群組按鈕只能由對應用戶修改自己的偏好。網易雲藝人語言線索與原生別名會用來保護日文漢字姓名；缺乏語言標記的純漢字名稱仍可能有歧義。
 
 音訊優先以 `sendAudio` 發送，包含專輯、封面縮圖、實測時長、編碼、大小、位元率、來源連結及回覆原訊息。FLAC 也嘗試原版的音樂卡片方式；若 Telegram 明確拒絕格式，保留相同原始檔以文件發送，不轉碼。Telegram 官方文件只保證 MP3／M4A 的音樂播放器支援，因此其他格式的卡片呈現仍取決於 Telegram。[Bot API](https://core.telegram.org/bots/api#sendaudio)
 
