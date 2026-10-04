@@ -8,12 +8,14 @@ import type { Track } from '../types.js';
 const languageSchema = z.enum(['original', 'zh-Hant', 'zh-Hans']);
 export type AlbumLanguage = z.infer<typeof languageSchema>;
 export const languageNames: Record<AlbumLanguage, string> = {
-  original: 'Original（保留原文）', 'zh-Hant': '繁體中文', 'zh-Hans': '简体中文',
+  original: 'Original（中文保留原樣）', 'zh-Hant': '中文統一繁體（TC）', 'zh-Hans': '中文统一简体（SC）',
 };
 const pendingSchema = z.object({
   chatId: z.number().int(), messageId: z.number().int().positive(), createdAt: z.number(),
   track: z.object({ id: z.string(), provider: z.enum(['netease', 'spotify', 'ytm']), title: z.string(),
-    artists: z.array(z.string()), album: z.string(), cover: z.string(), durationMs: z.number(), sourceUrl: z.string() }),
+    artists: z.array(z.string()), album: z.string(), cover: z.string(), durationMs: z.number(), sourceUrl: z.string(),
+    artistIds: z.array(z.string()).optional(),
+    metadataLanguages: z.object({ title: z.string().optional(), album: z.string().optional(), artists: z.array(z.string()).optional() }).optional() }),
 });
 const settingsSchema = z.object({ language: languageSchema.optional(), pending: pendingSchema.optional() });
 type UserSettings = z.infer<typeof settingsSchema>;
@@ -23,7 +25,16 @@ const pendingLifetime = 30 * 60_000;
 export function displayTrack(track: Track, language: AlbumLanguage): Track {
   if (language === 'original') return { ...track, artists: [...track.artists] };
   const convert = converters[language] ||= Converter(language === 'zh-Hant' ? { from: 'cn', to: 'tw' } : { from: 'tw', to: 'cn' });
-  return { ...track, title: convert(track.title), artists: track.artists.map(convert), album: convert(track.album) };
+  const languages = track.metadataLanguages;
+  const nativeContext = track.artists.some((name, i) => /[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(name) || /^(ja|ko)(-|$)/i.test(languages?.artists?.[i] || ''));
+  const chineseOnly = (text: string, hint?: string) => {
+    if (!/\p{Script=Han}/u.test(text) || /[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(text)) return text;
+    if (hint && hint !== 'und' && !/^zh(-|$)/i.test(hint)) return text;
+    if ((!hint || hint === 'und') && nativeContext) return text;
+    return convert(text);
+  };
+  return { ...track, title: chineseOnly(track.title, languages?.title),
+    artists: track.artists.map((name, i) => chineseOnly(name, languages?.artists?.[i])), album: chineseOnly(track.album, languages?.album) };
 }
 const converters: Partial<Record<Exclude<AlbumLanguage, 'original'>, (text: string) => string>> = {};
 
@@ -89,11 +100,11 @@ export class BotLanguageSettings {
     const current = (await this.store.get(userId)).language;
     const callback = (action: string) => `lang:${userId}:${action}`;
     const rows = [
-      [{ text: 'Original（保留原文）', callback_data: callback('original') }],
-      [{ text: '轉為繁體中文', callback_data: callback('zh-Hant') }],
-      [{ text: '转为简体中文', callback_data: callback('zh-Hans') }],
+      [{ text: languageNames.original, callback_data: callback('original') }],
+      [{ text: languageNames['zh-Hant'], callback_data: callback('zh-Hant') }],
+      [{ text: languageNames['zh-Hans'], callback_data: callback('zh-Hans') }],
     ];
-    const text = `${first ? '首次獲取：請先選擇 Album 顯示語言。選完會自動繼續剛才的歌曲。' : 'Bot settings · Album 顯示語言'}\n\n目前：${current ? languageNames[current] : '尚未設定'}\n適用於音樂卡片的歌名、歌手與專輯；不改動原始音訊或檔案內標籤。\n可隨時使用 /settings 更改。`;
+    const text = `${first ? '首次獲取：請選擇中文顯示字形。選完會自動繼續剛才的歌曲。' : 'Bot settings · 中文顯示字形'}\n\n目前：${current ? languageNames[current] : '尚未設定'}\n只統一中文歌名、歌手名、專輯名的繁簡字形。英文、日文、韓文等名稱保留原文，不翻譯。\n可隨時使用 /settings 更改。`;
     await this.send(chatId, text, { reply_markup: { inline_keyboard: rows } });
   }
   async request(chatId: number, userId: number, track: Track, messageId: number): Promise<void> {
@@ -111,7 +122,7 @@ export class BotLanguageSettings {
     const action = match[2]!;
     const language = languageSchema.parse(action);
     const pending = await this.store.choose(userId, language);
-    await this.send(chatId, `已設定 Album 顯示語言：${languageNames[language]}。\n以後獲取會沿用，可用 /settings 更改。`);
+    await this.send(chatId, `已設定中文顯示字形：${languageNames[language]}。\n其他語言名稱保留原文；可用 /settings 更改。`);
     if (pending) await this.acquire(pending.chatId, userId, pending.track, language, pending.messageId);
     return true;
   }

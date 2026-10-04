@@ -87,7 +87,7 @@ export function musicPayload(upload: MusicUpload, document = false, withThumbnai
   form.set(document ? 'document' : 'audio', new Blob([new Uint8Array(upload.bytes)], { type: mime[extension] || 'application/octet-stream' }), upload.filename);
   form.set('caption', musicCaption(upload.track, upload.job));
   form.set('reply_parameters', JSON.stringify({ message_id: upload.replyTo, allow_sending_without_reply: true }));
-  form.set('reply_markup', JSON.stringify({ inline_keyboard: [[{ text: '在來源平台開啟', url: upload.track.sourceUrl }], [{ text: 'Album 顯示語言', callback_data: 'open-settings' }]] }));
+  form.set('reply_markup', JSON.stringify({ inline_keyboard: [[{ text: '在來源平台開啟', url: upload.track.sourceUrl }], [{ text: '中文顯示字形', callback_data: 'open-settings' }]] }));
   if (!document) {
     form.set('title', upload.track.title.slice(0, 256));
     form.set('performer', upload.track.artists.join(' / ').slice(0, 256));
