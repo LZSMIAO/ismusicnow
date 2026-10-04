@@ -50,9 +50,13 @@ export class BotMessageCleanup {
       }
     });
   }
-  flush(): Promise<void> {
+  async removeNow(chatId: number, messageId: number): Promise<void> {
+    await this.schedule(chatId, messageId, 0);
+    await this.flush({ chatId, messageId });
+  }
+  flush(target?: { chatId: number; messageId: number }): Promise<void> {
     return this.change(async (entries) => {
-      const due = entries.filter((entry) => entry.due <= this.now()).slice(0, 20);
+      const due = entries.filter((entry) => entry.due <= this.now() && (!target || (entry.chatId === target.chatId && entry.messageId === target.messageId))).slice(0, 20);
       for (const entry of due) {
         let finished = false;
         try { await this.remove(entry.chatId, entry.messageId); finished = true; }

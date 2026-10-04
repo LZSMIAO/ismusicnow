@@ -21,6 +21,20 @@ export const botLanguageNames: Record<BotLanguage, string> = {
 // Translate the static template before inserting music metadata. UI language
 // must never translate or normalize a song, artist, album, URL or filename.
 const catalog = {
+  single: ["單曲", "Songs", "曲", "곡", "Canciones", "Titres", "Песни"],
+  artist: ["藝術家", "Artists", "アーティスト", "아티스트", "Artistas", "Artistes", "Исполнители"],
+  hotTracks: ["熱門單曲", "Top songs", "人気の曲", "인기곡", "Canciones populares", "Titres populaires", "Популярные песни"],
+  backResults: ["返回", "Back", "戻る", "뒤로", "Volver", "Retour", "Назад"],
+  close: ["關閉", "Close", "閉じる", "닫기", "Cerrar", "Fermer", "Закрыть"],
+  chooseNumber: ["點序號選擇", "Choose a number", "番号を選択", "번호 선택", "Elige un número", "Choisissez un numéro", "Выберите номер"],
+  chooseNumberGroup: ["點序號，或回覆列表輸入序號", "Choose a number, or reply to this list with its number", "番号を選ぶか、一覧に番号で返信", "번호 선택 또는 목록에 번호로 답장", "Elige un número o responde a esta lista con el número", "Choisissez un numéro ou répondez à cette liste avec le numéro", "Выберите номер или ответьте на список номером"],
+  resultsLimit: ["載入 {loaded} / {total} 個結果", "Loaded {loaded} / {total} results", "{total} 件中 {loaded} 件を表示", "{total}개 중 {loaded}개 표시", "{loaded} / {total} resultados", "{loaded} / {total} résultats", "{loaded} / {total} результатов"],
+  tracksCount: ["{count} 首", "{count} songs", "{count} 曲", "{count}곡", "{count} canciones", "{count} titres", "{count} песен"],
+  noResults: ["沒有符合的結果，試試其他分類或關鍵字。", "No matches. Try another category or keyword.", "見つかりません。種類やキーワードを変えてください。", "결과가 없습니다. 다른 분류나 검색어를 선택하세요.", "Sin resultados. Prueba otra categoría o palabra.", "Aucun résultat. Essayez une autre catégorie ou recherche.", "Нет результатов. Выберите другую категорию или запрос."],
+  cmdAlbum: ["搜尋專輯", "Search albums", "アルバムを検索", "앨범 검색", "Buscar álbumes", "Chercher des albums", "Поиск альбомов"],
+  cmdArtist: ["搜尋藝術家", "Search artists", "アーティストを検索", "아티스트 검색", "Buscar artistas", "Chercher des artistes", "Поиск исполнителей"],
+  cmdPlaylist: ["搜尋歌單", "Search playlists", "プレイリストを検索", "재생목록 검색", "Buscar listas", "Chercher des playlists", "Поиск плейлистов"],
+
   changeLanguage: ["切換語言", "Switch language", "言語を変更", "언어 변경", "Cambiar idioma", "Changer de langue", "Изменить язык"],
   settings: ["Bot 設定", "Bot settings", "Bot の設定", "봇 설정", "Ajustes del bot", "Paramètres du bot", "Настройки бота"],
   uiLanguage: ["Bot 介面語言", "Bot interface language", "Bot の表示言語", "봇 인터페이스 언어", "Idioma del bot", "Langue du bot", "Язык бота"],
@@ -54,10 +68,11 @@ const catalog = {
   selectionOwner: ["這是其他用戶的選曲列表，請自己發送關鍵字或連結。", "This selection belongs to another user. Send your own keywords or link.", "他のユーザーのリストです。自分のキーワードかリンクを送信してください。", "다른 사용자의 목록입니다. 검색어나 링크를 직접 보내세요.", "Esta selección pertenece a otra persona. Envía tu propia búsqueda o enlace.", "Cette sélection appartient à un autre utilisateur. Envoyez votre recherche ou lien.", "Этот список другого пользователя. Отправьте свой запрос или ссылку."],
   selectionNumber: ["請使用目前列表中的曲目序號。歌曲 ID 請用 /netease ID。", "Use a song number from the current list. For a song ID, use /netease ID.", "現在のリストの曲番号を使ってください。曲 ID は /netease ID で指定します。", "현재 목록의 곡 번호를 사용하세요. 곡 ID는 /netease ID로 지정하세요.", "Usa un número de la lista actual. Para un ID usa /netease ID.", "Utilisez un numéro de la liste actuelle. Pour un ID : /netease ID.", "Укажите номер из списка. Для ID песни используйте /netease ID."],
   rateLimited: ["請稍候幾秒再發送下一個請求。", "Wait a few seconds before your next request.", "次のリクエストまで数秒お待ちください。", "다음 요청까지 잠시 기다려 주세요.", "Espera unos segundos antes de otra solicitud.", "Attendez quelques secondes avant la prochaine demande.", "Подождите несколько секунд перед следующим запросом."],
+  browseIntro: ["發送歌名、藝術家名稱或連結；搜尋結果可切換單曲、專輯、藝術家與歌單。", "Send a song, artist name or link. Switch between songs, albums, artists and playlists in the results.", "曲名・アーティスト名・リンクを送信。結果で曲・アルバム・アーティスト・プレイリストを切り替えられます。", "곡명, 아티스트 이름 또는 링크를 보내세요. 결과에서 곡·앨범·아티스트·재생목록을 선택하세요.", "Envía una canción, artista o enlace. Cambia entre canciones, álbumes, artistas y listas en los resultados.", "Envoyez un titre, un artiste ou un lien. Les résultats proposent titres, albums, artistes et playlists.", "Отправьте название песни, исполнителя или ссылку. В результатах можно выбрать песни, альбомы, исполнителей или плейлисты."],
   helpIntro: ["直接發送歌名、歌手名或音樂連結。搜尋結果可點選或發送序號。", "Send a song name, artist name or music link. Choose a result or send its number.", "曲名・アーティスト名・音楽リンクを送信してください。結果を選ぶか、番号を送信できます。", "곡명·아티스트명·음악 링크를 보내세요. 검색 결과를 선택하거나 번호를 보낼 수 있습니다.", "Envía un título, artista o enlace musical. Elige un resultado o envía su número.", "Envoyez un titre, un artiste ou un lien musical. Choisissez un résultat ou envoyez son numéro.", "Отправьте название песни, исполнителя или ссылку. Выберите результат или отправьте его номер."],
   helpGroup: ["群組請使用 /search@{botUsername} 關鍵字，或回覆 Bot 搜尋。點選結果，或回覆列表並輸入序號。", "In groups, use /search@{botUsername} keywords or reply to the bot to search. Choose a result, or reply to its list with a number.", "グループでは /search@{botUsername} キーワード、または Bot への返信で検索できます。結果を選ぶか、リストに番号で返信してください。", "그룹에서는 /search@{botUsername} 검색어 또는 봇에 답장하여 검색하세요. 결과를 선택하거나 목록에 번호로 답장하세요.", "En grupos, usa /search@{botUsername} palabras o responde al bot para buscar. Elige un resultado o responde a la lista con un número.", "En groupe, utilisez /search@{botUsername} mots-clés ou répondez au bot. Choisissez un résultat ou répondez à la liste avec un numéro.", "В группе используйте /search@{botUsername} запрос или ответьте боту. Выберите результат или ответьте на список номером."],
   cmdNetease: ["網易雲歌名、ID 或連結；關鍵字取第一首", "NetEase name, ID or link; first keyword result", "NetEase の曲名・ID・リンク（検索は最初の曲）", "NetEase 곡명·ID·링크 (검색 첫 번째 곡)", "NetEase: nombre, ID o enlace; primer resultado", "NetEase : titre, ID ou lien ; premier résultat", "NetEase: название, ID или ссылка; первый результат"],
-  cmdSearch: ["搜尋網易雲並選曲", "Search NetEase and choose a song", "NetEase を検索して曲を選択", "NetEase 검색 후 곡 선택", "Buscar en NetEase y elegir canción", "Chercher sur NetEase et choisir un titre", "Поиск NetEase с выбором песни"],
+  cmdSearch: ["搜尋網易雲：單曲、專輯、藝術家、歌單", "Search NetEase: songs, albums, artists, playlists", "NetEase の曲・アルバム・アーティスト・プレイリストを検索", "NetEase 곡·앨범·아티스트·재생목록 검색", "Buscar en NetEase: canciones, álbumes, artistas y listas", "Chercher sur NetEase : titres, albums, artistes, playlists", "Поиск NetEase: песни, альбомы, исполнители, плейлисты"],
   cmdSpotify: ["搜尋 Spotify", "Search Spotify", "Spotify を検索", "Spotify 검색", "Buscar en Spotify", "Chercher sur Spotify", "Поиск Spotify"],
   cmdYtm: ["獲取 YouTube Music 連結", "Download a YouTube Music link", "YouTube Music のリンクから取得", "YouTube Music 링크 다운로드", "Descargar enlace de YouTube Music", "Télécharger un lien YouTube Music", "Загрузить по ссылке YouTube Music"],
   cmdDownload: ["解析音樂連結並獲取", "Resolve and download a music link", "音楽リンクを解析して取得", "음악 링크 분석 및 다운로드", "Analizar y descargar enlace musical", "Analyser et télécharger un lien musical", "Разобрать и загрузить музыкальную ссылку"],
@@ -110,10 +125,10 @@ const errors: Record<string, BotTextKey> = {
 export const botError = (language: BotLanguage, code?: string) => botText(language, errors[code || ''] || 'serviceError');
 export function botCommands(language: BotLanguage) {
   return ([['netease', 'cmdNetease'], ['music', 'cmdNetease'], ['search', 'cmdSearch'], ['spotify', 'cmdSpotify'],
-    ['ytm', 'cmdYtm'], ['download', 'cmdDownload'], ['lyric', 'cmdLyric'], ['settings', 'cmdSettings'], ['about', 'cmdAbout']] as const)
+    ['ytm', 'cmdYtm'], ['album', 'cmdAlbum'], ['artist', 'cmdArtist'], ['playlist', 'cmdPlaylist'], ['download', 'cmdDownload'], ['lyric', 'cmdLyric'], ['settings', 'cmdSettings'], ['about', 'cmdAbout']] as const)
     .map(([command, key]) => ({ command, description: botText(language, key).slice(0, 256) }));
 }
 export function botHelp(language: BotLanguage, group = false, botUsername = 'muismbot'): string {
-  return ['ismusicnow · 音樂主義', '', botText(language, group ? 'helpGroup' : 'helpIntro', { botUsername }),
-    ...botCommands(language).map((c) => `/${c.command} — ${c.description}`)].join('\n');
+  return ['ismusicnow · 音樂主義', '', botText(language, group ? 'helpGroup' : 'browseIntro', { botUsername }),
+    ...botCommands(language).filter(c => ['search', 'netease', 'spotify', 'ytm', 'settings'].includes(c.command)).map((c) => `/${c.command} — ${c.description}`)].join('\n');
 }
