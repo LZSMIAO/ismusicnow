@@ -28,7 +28,7 @@
       <div class="music-input"><Link2 size={19} aria-hidden="true" /><input id="music-input" bind:value={input} disabled={busy} autocomplete="off" required maxlength="1000" placeholder={provider === 'ytm' ? '貼上 YouTube Music 歌曲或歌單連結' : '貼上音樂連結，或搜尋歌名、演出者…'} /><button type="button" class="icon-button" aria-label="從剪貼簿貼上" title="貼上連結" disabled={busy} onclick={paste}><Clipboard size={18} /></button></div>
       <button class="primary-button" disabled={busy || !input.trim()} type="submit">{busy ? '正在尋找…' : '獲取音樂'}<ArrowRight size={18} /></button>
     </div>
-    <div class="input-meta"><span><Search size={14} /> 連結自動辨識來源{provider === 'ytm' ? ' · YTM 支援連結獲取' : ' · 關鍵字使用所選平台'}</span><button class="text-button" type="button" disabled={busy} onclick={() => input = provider === 'netease' ? 'https://music.163.com/song?id=186016' : provider === 'spotify' ? 'https://open.spotify.com/track/6rqhFgbbKwnb9MLmUQDhG6' : 'https://music.youtube.com/watch?v=Zi_XLOBDo_Y'}>填入範例連結 <ArrowRight size={13} /></button></div>
+    <div class="input-meta"><span><Search size={14} /> 連結自動辨識來源{provider === 'ytm' ? ' · YTM 支援連結獲取' : ' · 關鍵字使用所選平台'}</span><button class="text-button" type="button" disabled={busy} onclick={() => input = provider === 'netease' ? 'https://music.163.com/song?id=4010201' : provider === 'spotify' ? 'https://open.spotify.com/track/18gqCQzqYb0zvurQPlRkpo' : 'https://music.youtube.com/watch?v=Zi_XLOBDo_Y'}>填入範例連結 <ArrowRight size={13} /></button></div>
     {#if clipboardNotice}<p class="form-notice" role="status">{clipboardNotice}</p>{/if}
   </form>
 </section>
