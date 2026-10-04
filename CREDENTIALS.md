@@ -80,7 +80,7 @@ YTM_COOKIES_PATH=/app/secrets/ytm-cookies.txt
 
 ## Telegram
 
-`@ismusicnow_bot` 的 `BOT_TOKEN` 已配置。之後若需要取得或更新 token，在官方 [@BotFather](https://t.me/BotFather) 選擇自己的 bot，依其 API Token 選單操作，再自行更新 `.env` 的 `BOT_TOKEN`。[官方說明](https://core.telegram.org/bots/tutorial#obtain-your-bot-token)
+`@muismbot` 的 `BOT_TOKEN` 已配置。之後若需要取得或更新 token，在官方 [@BotFather](https://t.me/BotFather) 選擇自己的 bot，依其 API Token 選單操作，再自行更新 `.env` 的 `BOT_TOKEN`。[官方說明](https://core.telegram.org/bots/tutorial#obtain-your-bot-token)
 
 可選 `BOT_ALLOWED_USERS=你的TelegramUserID`，多個 ID 用逗號分隔；留空則 bot 公開可用。
 

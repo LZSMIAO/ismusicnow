@@ -2,7 +2,7 @@
 
 獨立的音樂獲取工具：SvelteKit 網頁、Telegram bot、Node.js 佇列與 Python 下載適配器。貼上連結或搜尋，選擇歌曲，再保存原始音源。
 
-網頁：[music.ism.tw](https://music.ism.tw) · Bot：[@ismusicnow_bot](https://t.me/ismusicnow_bot) · [憑證取得與設定](CREDENTIALS.md) · [部署紀錄](DEPLOYMENT.md)
+網頁：[music.ism.tw](https://music.ism.tw) · Bot：[@muismbot](https://t.me/muismbot) · [憑證取得與設定](CREDENTIALS.md) · [部署紀錄](DEPLOYMENT.md)
 
 ## 來源
 
@@ -74,19 +74,19 @@ pnpm bot
 
 ## Telegram
 
-Bot：[\@ismusicnow_bot](https://t.me/ismusicnow_bot)。私聊可直接發送歌名、歌手名或音樂連結；關鍵字預設搜尋網易雲候選歌曲，點選或發送序號獲取。群組普通聊天不觸發搜尋；使用指定 bot 的命令或回覆 bot。收到音樂連結或 `@ismusicnow_bot 關鍵字` 時也會識別，但 Telegram 隱私模式會限制是否收到這些消息。支援 `/search`、`/spotify`、`/netease`、`/download`、`/lyric`、`/about`。`/start` 說明使用方式，只放一個「目前語言 ｜ 切換語言」按鈕，點開後才展開八種語言。Bot 預設跟隨 Telegram 回報的用戶語言，手動選擇優先；未匹配／首次未提供語言時使用 English。中文先看 Hant／Hans，再看 TW／HK／MO 或 CN／SG，只有 `zh` 時用簡中；非中文按主要語言匹配，地區變體沿用同一介面語言。沒有新語言碼時沿用上次 Telegram 回報的語言；手動設定始終優先。私聊命令選單和群組內每位成員的命令選單跟隨同一判定；群組使用 `chat_member` 範圍，改語言不會改全群的選單。
+Bot：[\@muismbot](https://t.me/muismbot)。私聊可直接發送歌名、歌手名或音樂連結；關鍵字預設搜尋網易雲候選歌曲，點選或發送序號獲取。群組普通聊天不觸發搜尋；使用指定 bot 的命令或回覆 bot。收到音樂連結或 `@muismbot 關鍵字` 時也會識別，但 Telegram 隱私模式會限制是否收到這些消息。支援 `/search`、`/spotify`、`/netease`、`/download`、`/lyric`、`/about`。`/start` 說明使用方式，只放一個「目前語言 ｜ 切換語言」按鈕，點開後才展開八種語言。Bot 預設跟隨 Telegram 回報的用戶語言，手動選擇優先；未匹配／首次未提供語言時使用 English。中文先看 Hant／Hans，再看 TW／HK／MO 或 CN／SG，只有 `zh` 時用簡中；非中文按主要語言匹配，地區變體沿用同一介面語言。沒有新語言碼時沿用上次 Telegram 回報的語言；手動設定始終優先。私聊命令選單和群組內每位成員的命令選單跟隨同一判定；群組使用 `chat_member` 範圍，改語言不會改全群的選單。
 
 搜尋和專輯／歌單選曲每頁 8 首，顯示歌曲、歌手、專輯與時長，支援翻頁和全局序號。只有目前自己的列表接受短序號；沒有列表時提示重新搜尋，歌曲 ID 可明確使用 `/netease ID`。列表按用戶、聊天、話題和訊息綁定，30 分鐘後失效；重啟後重新搜尋。連結單曲直接獲取，專輯／歌單可逐首點選，搜尋列表在成功後清理。網易雲和 Spotify 的合集最多載入 100 首，YTM 最多 100 項；顯示實際載入數，不把前 8 首當完整合集。`/netease` 與 `/music` 保留原有「關鍵字獲取首個結果」行為，`/search` 和直接發送關鍵字提供候選選擇。
 
 群組使用方式：
 
-- `/search@ismusicnow_bot 草東沒有派對`：搜尋候選歌曲。
-- `/netease@ismusicnow_bot 床`：保留原指令行為，獲取第一個匹配；ID 或音樂連結也可作參數。
+- `/search@muismbot 草東沒有派對`：搜尋候選歌曲。
+- `/netease@muismbot 床`：保留原指令行為，獲取第一個匹配；ID 或音樂連結也可作參數。
 - 點選自己的選曲按鈕，或**回覆自己的列表**輸入 `1`、`2` 等序號；群組直接發數字不觸發獲取。
-- `/settings@ismusicnow_bot`：設定自己的 Bot 語言和網易雲中文名稱字形。
+- `/settings@muismbot`：設定自己的 Bot 語言和網易雲中文名稱字形。
 - 普通群組、超級群組和論壇話題沿用同一流程；提示、設定、歌詞和音樂留在請求所在話題。首次字形選擇後，待處理歌曲會回原話題。
 
-隱私模式開啟時，優先使用 `/命令@ismusicnow_bot` 或回覆 bot；純連結／普通 @提及可能不會送達。Bot 是群組管理員或已關閉隱私模式時，可收到更多群組消息，但仍忽略普通聊天。匿名管理員／頻道身分無法對應個人偏好，目前不接受此類請求，請用個人身分。[Telegram 群組收訊規則](https://core.telegram.org/bots/faq#what-messages-will-my-bot-get)
+隱私模式開啟時，優先使用 `/命令@muismbot` 或回覆 bot；純連結／普通 @提及可能不會送達。Bot 是群組管理員或已關閉隱私模式時，可收到更多群組消息，但仍忽略普通聊天。匿名管理員／頻道身分無法對應個人偏好，目前不接受此類請求，請用個人身分。[Telegram 群組收訊規則](https://core.telegram.org/bots/faq#what-messages-will-my-bot-get)
 
 音樂和選曲列表先回覆對應用戶訊息；只有成功送出音樂／歌詞後才排程刪除該請求（約 2 秒），失敗請求保留。進度在任務結束後 2 秒清理，設定成功提示 15 秒、文件格式說明 30 秒、錯誤／限流提示 60 秒清理；選曲和設定面板 30 分鐘後清理，音樂卡片與 `/start`／說明保留。待刪 ID 保存在 `DATA_DIR/bot-cleanup/<bot-id>.json`，跨重啟繼續，僅清理新版本記錄的指定訊息，不掃描歷史。私聊可刪用戶請求；群組需管理權限，超級群組需 `can_delete_messages`，權限不足不影響音樂交付。[Telegram 刪訊息規則](https://core.telegram.org/bots/api#deletemessage)
 

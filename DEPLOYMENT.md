@@ -1,15 +1,17 @@
 # 部署紀錄
 
+2026-10-04：Telegram 服務切換至 `@muismbot`。指令選單、群組命令範例、網頁入口及音樂卡片署名同步更新；程式以 `getMe` 的身分生成群組說明和卡片。輪詢進度、訊息清理與音訊快取依 bot ID 隔離。保留使用者語言和網易雲字形偏好；舊 bot 的待處理訊息不沿用。Telegram 檔案 ID 不能跨 bot 共用，新 bot 首次獲取後建立自己的快取。
+
 2026-10-04 部署至既有 VPS，項目目錄 `/opt/ismusicnow`。
 
 本次 bot 更新：加入跨用戶 Telegram `file_id` 音訊快取，按平台、歌曲 ID 與獲取音質分開；成功上傳後清除 VPS 音訊副本，多人同時索取共用一次下載。快取索引隨 `data/bot/telegram-media/` 備份，依 bot ID 隔離，重啟仍保留。卡片文字按各用戶偏好生成，音訊檔名及嵌入標籤保留來源原文。不需要中轉 channel；明確失效的 Telegram 識別碼會重新取得，網路、限流與收件人錯誤不重複上傳。
 
-Bot 介面預設跟隨 Telegram 語言，手動選擇優先；無法匹配或只回報 `zh` 使用繁中。`/start` 只放一個「更改語言」按鈕，點開才展開八種語言。網易雲名稱字形只需首次選一次，之後透過 `/settings` 修改；新音樂卡片移除設定按鈕。33 項測試及 TypeScript 檢查通過，涵蓋共用快取、重啟、音質及 bot 隔離、失效索引更新、原始音訊／文件類型、用戶語言及卡片字形。Spotify cookies 匯出步驟見 [CREDENTIALS.md](CREDENTIALS.md)。
+Bot 介面預設跟隨 Telegram 語言，手動選擇優先；無法匹配時使用 English；只有 `zh` 時使用簡中。`/start` 只放一個「目前語言 ｜ 切換語言」按鈕，點開才展開八種語言。網易雲名稱字形只需首次選一次，之後透過 `/settings` 修改；新音樂卡片移除設定按鈕。33 項測試及 TypeScript 檢查通過，涵蓋共用快取、重啟、音質及 bot 隔離、失效索引更新、原始音訊／文件類型、用戶語言及卡片字形。Spotify cookies 匯出步驟見 [CREDENTIALS.md](CREDENTIALS.md)。
 
 | 入口／服務 | 配置 |
 | --- | --- |
 | 網頁 | https://music.ism.tw |
-| Telegram | https://t.me/ismusicnow_bot |
+| Telegram | https://t.me/muismbot |
 | 原 profile 頁 | https://gitmusicpage.ism.tw |
 | Web 反向代理 | 1Panel / OpenResty → `http://127.0.0.1:28500` |
 | Web 與 bot | Docker Compose，bot 使用 long polling |
