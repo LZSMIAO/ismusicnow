@@ -46,7 +46,7 @@ test('plain text → reply/pagination → numeric or owned callback selection �
     await message(90, '/start');
     let sent = calls.filter((call) => call.method === 'sendMessage').at(-1)!;
     assert.equal(sent.body.reply_markup.inline_keyboard.flat().length, 1);
-    assert.equal(sent.body.reply_markup.inline_keyboard[0][0].text, 'English ｜ Switch language');
+    assert.equal(sent.body.reply_markup.inline_keyboard[0][0].text, '🇬🇧 English ｜ 🌐 Switch language');
     const startId = nextMessage;
     await callback(sent.body.reply_markup.inline_keyboard[0][0].callback_data, startId, 42, sent.body.text);
     const expanded = calls.findLast((call) => call.method === 'editMessageText')!;
@@ -88,7 +88,7 @@ test('plain text → reply/pagination → numeric or owned callback selection �
     await callback('ui:42:ja', nextMessage);
     await message(140, '/start');
     sent = calls.findLast((call) => call.method === 'sendMessage')!;
-    assert.equal(sent.body.reply_markup.inline_keyboard[0][0].text, '日本語 ｜ 言語を変更');
+    assert.equal(sent.body.reply_markup.inline_keyboard[0][0].text, '🇯🇵 日本語 ｜ 🌐 言語を変更');
     now += 31 * 60_000;
     const removed: number[] = [];
     await new BotMessageCleanup('999000', async (_chat, id) => { removed.push(id); }, root, () => now).flush();
