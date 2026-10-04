@@ -8,6 +8,7 @@ import { safeFilename } from '../src/lib/server/links.js';
 import { resolveNeteaseCommand } from '../src/lib/server/bot-input.js';
 import { BotLanguageSettings, BotSettingsStore, displayTrack, type AlbumLanguage } from '../src/lib/server/bot-settings.js';
 import { audioPresentation, sendMusic, TelegramRequestError } from '../src/lib/server/bot-media.js';
+import { metadataForDisplay } from '../src/lib/server/bot-metadata.js';
 import type { Track, Provider, Collection } from '../src/lib/types.js';
 
 const token = process.env.BOT_TOKEN;
@@ -36,9 +37,10 @@ const preferences = new BotLanguageSettings(new BotSettingsStore(), send, sendTr
 
 async function sendTrack(chatId: number, userId: number, track: Track, language: AlbumLanguage, messageId: number): Promise<void> {
   const owner = `tg:${chatId}:${userId}`;
-  const visible = displayTrack(track, language);
+  let visible = displayTrack(track, language);
   await send(chatId, `正在獲取「${visible.title}」的 ${track.provider === 'ytm' ? 'YTM' : track.provider} 原始音源…`);
   const [created] = await store.create(owner, [track], 'original');
+  if (language !== 'original') visible = displayTrack(await metadataForDisplay(track), language);
   const until = Date.now() + 360_000;
   while (Date.now() < until && !stopping) {
     const job = (await store.list(owner)).find((j) => j.id === created!.id)!;
@@ -104,7 +106,7 @@ async function handle(update: Update): Promise<void> {
     if (cmd === '/start' && /^\d{1,16}$/.test(args)) {
       await sendCollection(chatId, userId, await resolveNeteaseCommand(args), message.message_id);
     } else if (['/start', '/help', '/about'].includes(cmd || '')) {
-      await send(chatId, 'ismusicnow · 音樂主義\n\n直接貼上網易雲、Spotify 或 YouTube Music 連結。\n/netease 歌名／歌曲ID／連結 — 直接獲取網易雲；關鍵字取第一個結果\n/music 或 /musicid — 同 /netease\n/search 歌名 — 搜尋網易雲並選曲\n/spotify 歌名 — 搜尋 Spotify\n/ytm 連結 — 獲取 YouTube Music\n/lyric 歌名／歌曲ID／連結 — 獲取網易雲 LRC 歌詞\n/settings — Album 顯示語言：Original／繁中／簡中\n首次獲取先選語言，之後記住你的偏好。\n\nSpotify 只使用 Spotify 原始音源；YTM 是獨立適配器。\n開源授權 GPL-3.0，不附帶擔保。');
+      await send(chatId, 'ismusicnow · 音樂主義\n\n直接貼上網易雲、Spotify 或 YouTube Music 連結。\n/netease 歌名／歌曲ID／連結 — 直接獲取網易雲；關鍵字取第一個結果\n/music 或 /musicid — 同 /netease\n/search 歌名 — 搜尋網易雲並選曲\n/spotify 歌名 — 搜尋 Spotify\n/ytm 連結 — 獲取 YouTube Music\n/lyric 歌名／歌曲ID／連結 — 獲取網易雲 LRC 歌詞\n/settings — 中文顯示字形：Original／TC／SC\n首次獲取先選語言，之後記住你的偏好。\n\nSpotify 只使用 Spotify 原始音源；YTM 是獨立適配器。\n開源授權 GPL-3.0，不附帶擔保。');
     } else if (cmd === '/lyric') {
       if (!args) { await send(chatId, '請輸入 /lyric 網易雲歌名、歌曲 ID 或連結。'); return; }
       const collection = await resolveNeteaseCommand(args);
@@ -128,7 +130,7 @@ async function main(): Promise<void> {
   const me = await telegram<{ username: string }>('getMe');
   const webhook = await telegram<{ url: string }>('getWebhookInfo');
   if (webhook.url) throw new Error('此 bot 已設定 webhook，請先確認其用途；輪詢模式沒有更改現有 webhook。');
-  await telegram('setMyCommands', { commands: [{ command: 'netease', description: '透過關鍵詞、歌曲 ID 或連結獲取網易雲' }, { command: 'music', description: '透過關鍵詞、歌曲 ID 或連結獲取網易雲' }, { command: 'search', description: '搜尋網易雲音樂並選曲' }, { command: 'spotify', description: '搜尋 Spotify' }, { command: 'ytm', description: '獲取 YouTube Music 連結' }, { command: 'download', description: '解析音樂連結並獲取' }, { command: 'lyric', description: '透過歌名、ID 或連結獲取網易雲 LRC 歌詞' }, { command: 'settings', description: 'Album 顯示語言：Original／繁中／簡中' }, { command: 'about', description: '關於音樂主義' }] });
+  await telegram('setMyCommands', { commands: [{ command: 'netease', description: '透過關鍵詞、歌曲 ID 或連結獲取網易雲' }, { command: 'music', description: '透過關鍵詞、歌曲 ID 或連結獲取網易雲' }, { command: 'search', description: '搜尋網易雲音樂並選曲' }, { command: 'spotify', description: '搜尋 Spotify' }, { command: 'ytm', description: '獲取 YouTube Music 連結' }, { command: 'download', description: '解析音樂連結並獲取' }, { command: 'lyric', description: '透過歌名、ID 或連結獲取網易雲 LRC 歌詞' }, { command: 'settings', description: '中文顯示字形：Original／TC／SC' }, { command: 'about', description: '關於音樂主義' }] });
   try { offset = JSON.parse(await readFile(statePath, 'utf8')).offset || 0; } catch { /* First launch. */ }
   console.log(`ismusicnow bot @${me.username} 已啟動（long polling）`);
   while (!stopping) {
