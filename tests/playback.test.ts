@@ -55,17 +55,18 @@ test('full downloaded audio plays past 30 seconds and advances only on ended', a
   assert.equal(Media.latest.ondurationchange, null);
 });
 
-test('platform clips retain their real duration and are marked limited', async () => {
-  const originalAudio = globalThis.Audio, originalFetch = globalThis.fetch;
+test('limited NetEase previews trigger preparation of full audio automatically', async () => {
+  const originalAudio = globalThis.Audio, originalFetch = globalThis.fetch, calls: string[] = [];
   globalThis.Audio = Media as unknown as typeof Audio;
-  globalThis.fetch = async () => new Response(JSON.stringify({ available: true, url: 'https://p.scdn.co/clip', limited: true }));
+  globalThis.fetch = async input => {
+    calls.push(String(input));
+    return Response.json(calls.length === 1 ? { available: true, url: 'https://music.example/clip', limited: true } : { available: true, url: 'https://music.example/full', limited: false, downloadable: true });
+  };
   const player = createPreviewState(() => {}), stop = player.mount();
   try {
-    Media.latest.duration = 28.2;
-    await player.play({ ...track, provider: 'spotify' }, []);
-    assert.equal(player.length, 28.2);
-    assert.equal(player.limited, true);
-    assert.equal(player.status, 'playing');
+    await player.play(track, []);
+    assert.deepEqual(calls, ['/api/preview?provider=netease&id=1', '/api/playback']);
+    assert.equal(player.limited, false); assert.equal(player.status, 'playing'); assert.equal(Media.latest.src, 'https://music.example/full');
   } finally { stop(); globalThis.Audio = originalAudio; globalThis.fetch = originalFetch; }
 });
 
@@ -94,7 +95,7 @@ test('missing Spotify audio exposes the real capability and clears when leaving 
   } finally { stop(); globalThis.Audio = originalAudio; globalThis.fetch = originalFetch; }
 });
 
-test('Spotify full playback uses the listening endpoint, not the 30-second preview endpoint', async () => {
+test('Spotify full playback has no daily song budget and never requests a clip', async () => {
   const originalAudio = globalThis.Audio, originalFetch = globalThis.fetch;
   const calls: string[] = [];
   globalThis.Audio = Media as unknown as typeof Audio;
@@ -105,10 +106,10 @@ test('Spotify full playback uses the listening endpoint, not the 30-second previ
   const player = createPreviewState(() => {}), stop = player.mount();
   try {
     await player.play({...track,provider:'spotify'},[]);
-    assert.deepEqual(calls,['/api/listen/spotify']);
+    assert.deepEqual(calls,['/api/playback']);
     assert.equal(player.limited,false);
     assert.equal(player.length,245.5);
-    assert.equal(player.remaining,4);
+    assert.equal('remaining' in player,false);
     assert.equal(player.status,'playing');
     player.seek(120); assert.equal(player.elapsed,120);
   } finally {stop();globalThis.Audio=originalAudio;globalThis.fetch=originalFetch;}
@@ -127,4 +128,16 @@ test('iPhone gesture blocking leaves prepared full audio ready for the next tap'
     await player.play({...track,provider:'spotify'},[]);
     assert.equal(player.status,'playing'); assert.equal(player.error,''); assert.equal(requests,1);
   }finally{stop();globalThis.Audio=originalAudio;globalThis.fetch=originalFetch;}
+});
+
+test('QQ playback prepares full browser audio automatically without a download click', async () => {
+  const originalAudio=globalThis.Audio, originalFetch=globalThis.fetch;
+  globalThis.Audio=Media as unknown as typeof Audio;
+  globalThis.fetch=async (input,init)=>{
+    assert.equal(input,'/api/playback'); assert.deepEqual(JSON.parse(String(init?.body)),{provider:'qq',id:'qq-id'});
+    return Response.json({available:true,status:'completed',url:'https://music.example/qq.m4a',limited:false,downloadable:true});
+  };
+  const player=createPreviewState(()=>{}),stop=player.mount();
+  try { await player.play({...track,provider:'qq',id:'qq-id'},[]); assert.equal(player.status,'playing'); assert.equal(player.limited,false); assert.equal(Media.latest.src,'https://music.example/qq.m4a'); }
+  finally{stop();globalThis.Audio=originalAudio;globalThis.fetch=originalFetch;}
 });

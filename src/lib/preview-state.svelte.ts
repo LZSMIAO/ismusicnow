@@ -5,7 +5,7 @@ import { api } from './ui.js';
 export function createPreviewState(onfinish: () => void) {
   let track = $state<Track | null>(null);
   let status = $state<'idle' | 'loading' | 'playing' | 'paused' | 'unavailable' | 'error'>('idle');
-  let elapsed = $state(0), length = $state(0), volume = $state(.7), error = $state(''), ready = $state(false), limited = $state(false), canDownload = $state(false), preparing = $state(''), remaining = $state<number | undefined>();
+  let elapsed = $state(0), length = $state(0), volume = $state(.7), error = $state(''), ready = $state(false), limited = $state(false), canDownload = $state(false), preparing = $state('');
   let audio: HTMLAudioElement | undefined, request: AbortController | undefined, generation = 0, finished = false;
   function finish() {
     if (finished) return;
@@ -14,7 +14,7 @@ export function createPreviewState(onfinish: () => void) {
   return {
     get track() { return track; }, get status() { return status; }, get elapsed() { return elapsed; },
     get currentTime() { return audio?.currentTime ?? elapsed; },
-    get length() { return length; }, get volume() { return volume; }, get error() { return error; }, get ready() { return ready; }, get limited() { return limited; }, get canDownload() { return canDownload; }, get preparing() { return preparing; }, get remaining() { return remaining; },
+    get length() { return length; }, get volume() { return volume; }, get error() { return error; }, get ready() { return ready; }, get limited() { return limited; }, get canDownload() { return canDownload; }, get preparing() { return preparing; },
     mount() {
       audio = new Audio(); audio.preload = 'metadata'; audio.volume = volume;
       audio.onplaying = () => status = 'playing';
@@ -43,6 +43,11 @@ export function createPreviewState(onfinish: () => void) {
       generation++; request?.abort(); audio?.pause(); audio?.removeAttribute('src');
       track = null; status = 'idle'; error = ''; preparing = ''; elapsed = length = 0; ready = limited = canDownload = false;
     },
+    select(next: Track) {
+      if (track?.provider === next.provider && track.id === next.id) return;
+      generation++; request?.abort(); audio?.pause(); audio?.removeAttribute('src');
+      track = next; status = 'paused'; error = preparing = ''; elapsed = 0; length = next.durationMs / 1000; ready = limited = false;
+    },
     pause() { generation++; request?.abort(); preparing = ''; audio?.pause(); if (status === 'loading' || status === 'playing') status = 'paused'; },
     async play(next: Track, jobs: DownloadJob[]) {
       if (!audio) return;
@@ -53,22 +58,21 @@ export function createPreviewState(onfinish: () => void) {
         return;
       }
       const sequence = ++generation; request?.abort(); request = new AbortController(); audio.pause();
-      audio.removeAttribute('src'); audio.load(); track = next; status = 'loading'; elapsed = 0; length = next.durationMs / 1000; ready = false; limited = false; canDownload = false; remaining = undefined; preparing = ''; error = ''; finished = false;
+      audio.removeAttribute('src'); audio.load(); track = next; status = 'loading'; elapsed = 0; length = next.durationMs / 1000; ready = false; limited = false; canDownload = false; preparing = ''; error = ''; finished = false;
       try {
         const local = jobs.find((job) => job.status === 'completed' && job.track.provider === next.provider && job.track.id === next.id);
         const localUrl = local && telegramBridge()
           ? (await api<{ url: string }>(`/api/downloads/${local.id}/access`, { method: 'POST', body: JSON.stringify({ purpose: 'preview' }), signal: request.signal })).url
           : local ? `/api/downloads/${local.id}/preview` : undefined;
         let result = local ? { available: true, url: localUrl, limited: false, downloadable: true }
-          : next.provider === 'spotify' ? { available: false, status: '', remaining: undefined as number | undefined, message: '', downloadable: true, url: undefined as string | undefined, limited: false } : await api<{ available: boolean; url?: string; limited?: boolean; downloadable?: boolean; message?: string; status?: string; remaining?: number }>(`/api/preview?provider=${next.provider}&id=${encodeURIComponent(next.id)}`, { signal: request.signal });
-        if (next.provider === 'spotify' && !local) {
+          : next.provider !== 'netease' ? { available: false, status: '', message: '', downloadable: true, url: undefined as string | undefined, limited: false } : await api<{ available: boolean; url?: string; limited?: boolean; downloadable?: boolean; message?: string; status?: string; remaining?: number }>(`/api/preview?provider=${next.provider}&id=${encodeURIComponent(next.id)}`, { signal: request.signal });
+        if (!local && (next.provider !== 'netease' || !result.available || result.limited)) {
           type ListenResult = { available: boolean; url?: string; limited?: boolean; downloadable?: boolean; message?: string; status?: string; remaining?: number };
-          result = await api<ListenResult>('/api/listen/spotify', { method: 'POST', body: JSON.stringify({ id: next.id }), signal: request.signal });
-          remaining = result.remaining;
+          result = await api<ListenResult>('/api/playback', { method: 'POST', body: JSON.stringify({ provider: next.provider, id: next.id }), signal: request.signal });
           const deadline = Date.now() + 600000;
           while (result.status === 'preparing') {
             if (sequence !== generation) return;
-            preparing = result.message || '正在準備 Spotify 完整音訊…';
+            preparing = result.message || '正在準備完整音訊…';
             await new Promise<void>((resolve, reject) => {
               const signal = request!.signal;
               const abort = () => { clearTimeout(timer); reject(signal.reason); };
@@ -76,9 +80,8 @@ export function createPreviewState(onfinish: () => void) {
               signal.addEventListener('abort', abort, { once: true }); if (signal.aborted) abort();
             });
             if (Date.now() > deadline) throw new Error('音訊準備超時，請稍後重新按播放。');
-            result = await api<ListenResult>(`/api/listen/spotify/${encodeURIComponent(next.id)}`, { signal: request.signal });
+            result = await api<ListenResult>(`/api/playback/${next.provider}/${encodeURIComponent(next.id)}`, { signal: request.signal });
           }
-          remaining = result.remaining ?? remaining;
         }
         if (sequence !== generation || !audio) return;
         preparing = '';
@@ -89,8 +92,7 @@ export function createPreviewState(onfinish: () => void) {
         await audio.play();
       } catch (e) {
         if (sequence !== generation) return;
-        if (e instanceof Error && 'code' in e && e.code === 'SPOTIFY_LISTEN_LIMIT') remaining = 0;
-        preparing = ''; canDownload = next.provider === 'spotify' || canDownload;
+        preparing = ''; canDownload = true;
         if (e instanceof Error && e.name === 'NotAllowedError' && audio?.src) { status = 'paused'; error = '音訊已準備好，按播放即可開始。'; }
         else { status = 'error'; error = e instanceof Error ? e.message : '無法播放，請稍後重試。'; }
       }

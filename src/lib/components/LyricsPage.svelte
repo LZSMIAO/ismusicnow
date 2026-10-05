@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { ChevronLeft, Music2, RotateCcw } from '@lucide/svelte';
   import type { LyricPlayer, LyricLineMouseEvent } from '@applemusic-like-lyrics/core';
   import type { Track } from '#lib/types.js';
@@ -14,31 +14,34 @@
   } = $props();
   let host: HTMLDivElement, closeButton: HTMLButtonElement;
   let renderer = $state<LyricPlayer>(), failed = $state(false);
-  let frame = 0, lastFrame = 0, settleUntil = 0;
+  let frame = 0, lastFrame = 0;
   const current = $derived(lyricIndex(lines, elapsed));
   const status = $derived(loading ? '正在讀取歌詞…' : error || (instrumental ? '純音樂' : '暫無歌詞'));
   function animate(time: number) {
     frame = 0;
     if (!renderer || document.hidden) return;
-    renderer.setCurrentTime(gettime() * 1000);
-    renderer.update(Math.min(64, Math.max(0, time - (lastFrame || time)))); lastFrame = time;
-    if (playing || time < settleUntil) frame = requestAnimationFrame(animate);
+    // Keep the scroll engine alive while paused; inertia can outlast a short wake timer.
+    // Cap render work at 60 Hz on high-refresh displays.
+    if (!lastFrame || time - lastFrame >= 15) {
+      renderer.setCurrentTime(gettime() * 1000);
+      renderer.update(Math.min(50, Math.max(0, time - (lastFrame || time)))); lastFrame = time;
+    }
+    frame = requestAnimationFrame(animate);
   }
   function wake() {
-    settleUntil = performance.now() + 650;
     if (!frame && renderer && !document.hidden) { lastFrame = 0; frame = requestAnimationFrame(animate); }
   }
   $effect(() => {
     if (!renderer) return;
-    renderer.setLyricLines(toPlayerLines(lines, length || track.durationMs / 1000), gettime() * 1000);
+    renderer.setLyricLines(toPlayerLines(lines, track.durationMs / 1000 || untrack(() => length)), untrack(gettime) * 1000);
     wake();
   });
   $effect(() => { if (!renderer) return; if (playing) renderer.resume(); else renderer.pause(); wake(); });
-  $effect(() => { elapsed; if (renderer && !playing) { renderer.setCurrentTime(gettime() * 1000, true); wake(); } });
+  // Explicit jumps are detected by AMLL from the media clock; repeated paused updates are not seeks.
   onMount(() => {
     let disposed = false;
     const media = matchMedia('(prefers-reduced-motion: reduce)');
-    function motion() { renderer?.setEnableBlur(!media.matches && innerWidth > 700); renderer?.setEnableScale(false); wake(); }
+    function motion() { renderer?.setEnableBlur(false); renderer?.setEnableScale(!media.matches); renderer?.setEnableSpring(!media.matches); wake(); }
     const visibility = () => { if (document.hidden) { cancelAnimationFrame(frame); frame = 0; } else wake(); };
     const escape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !document.querySelector('.queue-modal[open]')) onclose(); };
     closeButton.focus({ preventScroll: true });
@@ -46,9 +49,9 @@
     void import('@applemusic-like-lyrics/core').then(({ LyricPlayer }) => {
       if (disposed) return;
       const instance = new LyricPlayer();
-      // CSS transitions avoid a perpetual spring simulation and overshooting.
-      instance.setEnableSpring(false); instance.setEnableScale(false); instance.setEnableBlur(!media.matches && innerWidth > 700);
-      instance.setAlignPosition(.42); instance.setOverscanPx(160);
+      // Use one position engine: CSS transition fallback was trailing manual scroll and newly mounted lines.
+      instance.setEnableSpring(!media.matches); instance.setEnableScale(!media.matches); instance.setEnableBlur(false);
+      instance.setAlignPosition(.42); instance.setOverscanPx(600);
       instance.getElement().setAttribute('aria-hidden', 'true');
       instance.addEventListener('line-click', event => {
         const row = (event as LyricLineMouseEvent).line;

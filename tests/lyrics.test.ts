@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { toPlayerLines } from '../src/lib/lyric-player.js';
-import { parseLrc, lyricIndex } from '../src/lib/lyrics.js';
+import { parseLrc, lyricIndex, displayLyricLines } from '../src/lib/lyrics.js';
 
 test('timed lyrics handle multiple tags, offsets, instrumental gaps and backwards seeking', () => {
   const lines = parseLrc('[ar:artist]\n[offset:-500]\n[00:03.50][00:08.500]repeat\n[00:01.00]first\n[00:06.00]\n[00:99.00]invalid');
@@ -40,4 +40,12 @@ test('AMLL conversion preserves sentence timing and instrumental gaps without in
   assert.equal(lines.length, 2); assert.equal(lines[0]?.endTime, 3000);
   assert.deepEqual(lines[0]?.words, [{ word: 'one sentence', startTime: 1250, endTime: 3000 }]);
   assert.equal(lines[1]?.endTime, 12000); assert.deepEqual(toPlayerLines([], 0), []);
+});
+
+test('display lyrics remove introductory credits without changing real lyric timing', () => {
+  const lines = [{ time: 0, text: 'Spring Rain - Artist' }, { time: 1, text: '词：Artist' }, { time: 2, text: '和声 : Singer' }, { time: 12, text: '曲終人未散' }, { time: 20, text: '' }, { time: 25, text: 'Spring Rain - Artist' }];
+  const visible = displayLyricLines(lines, 'Spring Rain', ['Artist']);
+  assert.deepEqual(visible, lines.slice(3));
+  assert.equal(lyricIndex(visible, 15), 0);
+  assert.equal(lyricIndex(visible, 20), 1);
 });

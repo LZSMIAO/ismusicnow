@@ -1,6 +1,8 @@
 <script lang="ts">
   import { ArrowRight, ChevronDown, Music2, Search } from '@lucide/svelte';
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
+  import { slide } from 'svelte/transition';
+  import { quartOut } from 'svelte/easing';
   import { providerNames } from '#lib/ui.js';
   import type { Provider, SearchSource } from '#lib/types.js';
 
@@ -20,12 +22,15 @@
   })]);
   const selected = $derived(options.find(option => option.value === source) || options[0]);
   let form: HTMLFormElement, panel: HTMLDivElement, sourceRow: HTMLDivElement, measure: HTMLDivElement;
-  let capacity = $state(2), more = $state(false);
+  let capacity = $state(2), more = $state(false), reduced = $state(false);
+  let expansionRevision = 0;
   const pinned = $derived(source !== 'all' ? [options[0]!, selected, ...options.slice(1).filter(o => o.value !== source)] : options);
   const visible = $derived(pinned.slice(0, capacity)), overflow = $derived(pinned.slice(capacity));
   function fitSources() {
     if (!sourceRow || !measure) return;
-    const available = sourceRow.clientWidth;
+    const panelStyle = getComputedStyle(panel), controlStyle = getComputedStyle(sourceRow.parentElement!);
+    const available = sourceRow.clientWidth || width - parseFloat(panelStyle.paddingLeft) - parseFloat(panelStyle.paddingRight) - parseFloat(controlStyle.paddingLeft) - parseFloat(controlStyle.paddingRight);
+    if (available <= 0) return;
     const items = [...measure.querySelectorAll<HTMLElement>('[data-source]')];
     const sizes = new Map(items.map(item => [item.dataset.source, item.getBoundingClientRect().width]));
     const gap = 6, moreWidth = measure.querySelector<HTMLElement>('.source-more')!.getBoundingClientRect().width;
@@ -38,7 +43,7 @@
     }
     capacity = Math.max(1, count);
   }
-  $effect(() => { void pinned; if (open) fitSources(); });
+  $effect(() => { void pinned; fitSources(); });
   let open = $state(false), top = $state(0), left = $state(0), width = $state(0), maxHeight = $state(0);
   function position() {
     const bounds = form.getBoundingClientRect(), viewport = window.visualViewport;
@@ -47,11 +52,16 @@
     top = bounds.bottom + 8;
     maxHeight = Math.max(0, Math.min(560, (viewport ? viewport.height + viewport.offsetTop : window.innerHeight) - top - 12));
   }
-  function expand() {
-    position();
+  async function expand() {
+    const revision = ++expansionRevision;
+    position(); fitSources();
+    // Paint the final chip count on the very first visible frame.
+    await tick();
+    if (revision !== expansionRevision || document.activeElement !== inputElement) return;
     if (!panel.matches(':popover-open')) panel.showPopover();
   }
   function close(restore = false) {
+    expansionRevision++;
     // Restore first: focusing the input must not reopen a panel just dismissed with Escape.
     if (restore) inputElement?.focus({ preventScroll: true });
     panel.hidePopover(); more = false;
@@ -65,8 +75,10 @@
     if (event.isComposing) return;
     if (event.key === 'Escape') { event.preventDefault(); close(); }
     if (event.key === 'ArrowDown') {
-      event.preventDefault(); expand();
-      (panel.querySelector<HTMLButtonElement>('.search-history-item') || panel.querySelector<HTMLButtonElement>('[aria-checked="true"]'))?.focus({ preventScroll: true });
+      event.preventDefault();
+      void expand().then(() => {
+        (panel.querySelector<HTMLButtonElement>('.search-history-item') || panel.querySelector<HTMLButtonElement>('[aria-checked="true"]'))?.focus({ preventScroll: true });
+      });
     }
   }
   function recentKeyboard(event: KeyboardEvent) {
@@ -104,7 +116,10 @@
     // Manual popover: native light-dismiss sees the input outside the panel and
     // closes it between focus and click, causing a close/open flash. One owner
     // handles outside clicks, focus departure and Escape instead.
-    const observer = new ResizeObserver(fitSources); observer.observe(sourceRow); observer.observe(measure);
+    const media = matchMedia('(prefers-reduced-motion: reduce)');
+    reduced = media.matches;
+    const motion = () => reduced = media.matches; media.addEventListener('change', motion);
+    const observer = new ResizeObserver(fitSources); observer.observe(form);
     const reposition = () => { if (panel.matches(':popover-open')) position(); };
     const escape = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && panel.matches(':popover-open')) { event.preventDefault(); close(true); }
@@ -123,7 +138,7 @@
     document.addEventListener('focusin', focused);
     document.addEventListener('pointerdown', outside, true);
     return () => {
-      observer.disconnect();
+      expansionRevision++; observer.disconnect(); media.removeEventListener('change', motion);
       window.removeEventListener('resize', reposition); window.removeEventListener('scroll', reposition, true);
       window.visualViewport?.removeEventListener('resize', reposition); window.visualViewport?.removeEventListener('scroll', reposition);
       document.removeEventListener('keydown', escape);
@@ -138,6 +153,10 @@
   <input id="music-input" bind:this={inputElement} bind:value aria-label="搜尋音樂或貼上連結" aria-controls="search-options" aria-expanded={open} aria-describedby="search-current-source" placeholder={source === 'all' ? '搜尋或貼上連結' : source === 'bandcamp' ? `貼上 ${selected.label} 連結` : `搜尋 ${selected.label}，或貼上連結`} maxlength="1000" autocomplete="off" onfocus={expand} onclick={expand} onkeydown={inputKeyboard} />
   <span id="search-current-source" class="sr-only">搜尋來源：{selected.label}</span>
   <button class="search-submit" type="submit" aria-label={loading ? '重新搜尋' : '搜尋'} disabled={!value.trim()}><ArrowRight size={24} /></button>
+    <div bind:this={measure} class="source-control source-measure" aria-hidden="true" inert>
+      {#each catalogue as option}<span class="source-chip" data-source={option.value}>{#if option.value === 'ytm'}<span class="source-name-desktop">YTM</span><span class="source-name-mobile">YTM</span>{:else}{option.label}{/if}</span>{/each}
+      <span class="source-chip source-more">More <ChevronDown size={14} /></span>
+    </div>
 </form>
 <div id="search-options" bind:this={panel} popover="manual" class="search-options" aria-label="搜尋選項" style={`top:${top}px;left:${left}px;width:${width}px;max-height:${maxHeight}px`} onbeforetoggle={(event: ToggleEvent) => open = event.newState === 'open'}>
   <div class="source-control" role="radiogroup" tabindex="-1" aria-label="搜尋來源" onkeydown={optionKeyboard}>
@@ -151,15 +170,11 @@
         <button type="button" class="source-chip source-more" aria-expanded={more} aria-controls="source-more-options" aria-label="More，更多音樂來源" onclick={() => more = !more}>More <ChevronDown size={14} class={more ? 'rotated' : ''} /></button>
       {/if}
     </div>
-    <div id="source-more-options" class="source-more-options" hidden={!more}>
+    {#if more}<div id="source-more-options" class="source-more-options" in:slide={{ duration: reduced ? 0 : 200, easing: quartOut }} out:slide={{ duration: reduced ? 0 : 160, easing: quartOut }}>
       {#each overflow as option, index (option.value)}
         <button type="button" class="source-chip" data-source={option.value} role="radio" aria-label={option.label} aria-checked={source === option.value} tabindex={index === 0 ? 0 : -1} onclick={() => { source = option.value; more = false; inputElement?.focus({ preventScroll: true }); }}>{option.label}{#if option.value === 'bandcamp'}<small class="source-capability">連結</small>{/if}</button>
       {/each}
-    </div>
-    <div bind:this={measure} class="source-measure" aria-hidden="true" inert>
-      {#each catalogue as option}<span class="source-chip" data-source={option.value}>{#if option.value === 'ytm'}<span class="source-name-desktop">YTM</span><span class="source-name-mobile">YTM</span>{:else}{option.label}{/if}</span>{/each}
-      <span class="source-chip source-more">More <ChevronDown size={14} /></span>
-    </div>
+    </div>{/if}
   </div>
   {#if recent.length}
     <section class="search-history" aria-label="最近搜尋">
