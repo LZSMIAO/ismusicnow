@@ -16,6 +16,7 @@ services:
     mem_limit: 1g
     cpus: 1.0
   bot:
+    env_file: [.env, .telegram-api.env]
     # Read only this bot's music cache, without exposing the API database.
     group_add: ["10001"]
     volumes:

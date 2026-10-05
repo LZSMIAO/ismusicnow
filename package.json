@@ -27,6 +27,7 @@
     "@neteasecloudmusicapienhanced/api": "4.41.0",
     "music-metadata": "12.0.0",
     "opencc-js": "1.4.2",
+    "teleproto": "1.229.1",
     "zod": "4.6.5"
   },
   "devDependencies": {

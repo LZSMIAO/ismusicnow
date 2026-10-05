@@ -53,7 +53,7 @@ test('group commands, mentions, member languages, owned reply selection and conc
     assert.equal(calls.length, 0); assert.equal(queries.length, 0);
 
     await message(20, '/start@muismbot', 90, 10);
-    assert.equal(sent().body.message_thread_id, 10); assert.equal(sent().body.reply_parameters, undefined);
+    assert.equal(sent().body.message_thread_id, 10); assert.deepEqual(sent().body.reply_parameters, { message_id:20, allow_sending_without_reply:false });
     assert.match(sent().body.text, /In groups, use \/search@muismbot/);
     assert.equal(sent().body.reply_markup.inline_keyboard.flat().length, 1);
     assert.deepEqual(calls.findLast((call) => call.method === 'setMyCommands')!.body.scope, { type: 'chat_member', chat_id: -100, user_id: 90 });
@@ -75,7 +75,8 @@ test('group commands, mentions, member languages, owned reply selection and conc
     assert.equal(topicMenus.length, 2);
     assert.equal(topicMenus.find((call) => call.body.text.includes('<b>草東</b>'))!.body.message_thread_id, 10);
     assert.equal(topicMenus.find((call) => call.body.text.includes('<b>人是猫</b>'))!.body.message_thread_id, 20);
-    assert.match(topicMenus.find((call) => call.body.text.includes('<b>草東</b>'))!.body.text, /tg:\/\/user\?id=90/);
+    assert.doesNotMatch(topicMenus.find((call) => call.body.text.includes('<b>草東</b>'))!.body.text, /tg:\/\/user/);
+    assert.equal(topicMenus.find((call) => call.body.text.includes('<b>草東</b>'))!.body.reply_parameters.message_id, 30);
 
     await message(40, '@muismbot 床', 90, 10);
     assert.equal(queries.at(-1), '床'); assert.equal(sent().body.message_thread_id, 10);
@@ -91,16 +92,17 @@ test('group commands, mentions, member languages, owned reply selection and conc
     await message(44, '9', 90, 10, choices.id);
     const audio = calls.findLast((call) => call.method === 'sendAudio')!;
     assert.equal(audio.body.audio, 'cached:10008'); assert.equal(audio.body.message_thread_id, '10');
-    assert.equal(audio.body.reply_parameters, undefined); assert.match(audio.body.caption, /tg:\/\/user\?id=90/);
+    assert.deepEqual(audio.body.reply_parameters, { message_id:44, allow_sending_without_reply:false }); assert.doesNotMatch(audio.body.caption, /tg:\/\/user/);
     const deleted = calls.filter(call => call.method === 'deleteMessage').map(call => call.body.message_id);
-    for (const id of [40, 44, choices.id]) assert.ok(deleted.includes(id), 'accepted requests are deleted immediately');
+    assert.ok(deleted.includes(choices.id), 'fulfilled menus are removed');
+    for (const id of [30,31,40,44]) assert.ok(!deleted.includes(id), 'group requests remain available for real replies');
     for (const id of [41, 42, 43]) assert.ok(!deleted.includes(id), 'ignored or failed requests must survive');
 
     await message(50, '草東沒有派對', 90, 20, 1000);
     assert.equal(queries.at(-1), '草东没有派对'); const replyChoices = selector();
     await callback(replyChoices.pick, replyChoices.id, 90, 20);
     assert.equal(calls.findLast((call) => call.method === 'sendAudio')!.body.message_thread_id, '20');
-    assert.equal(calls.findLast((call) => call.method === 'sendAudio')!.body.reply_parameters, undefined);
+    assert.equal(calls.findLast((call) => call.method === 'sendAudio')!.body.reply_parameters.message_id, 50);
     await message(60, '/netease@muismbot 10000', 90, undefined, undefined, -101);
     assert.equal(calls.findLast((call) => call.method === 'sendAudio')!.body.chat_id, '-101');
     assert.equal(calls.findLast((call) => call.method === 'sendAudio')!.body.message_thread_id, undefined);
@@ -115,7 +117,7 @@ test('group commands, mentions, member languages, owned reply selection and conc
     assert.equal((await new BotSettingsStore().get(92)).pending?.messageThreadId, 10);
     await callback('lang:92:original', firstPrompt, 92, 20);
     assert.equal(calls.findLast((call) => call.method === 'sendAudio')!.body.message_thread_id, '10');
-    assert.equal(calls.findLast((call) => call.method === 'sendAudio')!.body.reply_parameters, undefined);
+    assert.equal(calls.findLast((call) => call.method === 'sendAudio')!.body.reply_parameters.message_id, 70);
     assert.ok(calls.some(call => call.method === 'deleteMessage' && call.body.message_id === firstPrompt));
     const prompts = () => calls.filter(call => call.method === 'sendMessage' && call.body.text?.includes('first NetEase download')).length;
     const promptCount = prompts();

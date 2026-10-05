@@ -25,7 +25,7 @@ test('selection numbers are scoped to user/chat, absolute across pages, and expi
   assert.equal(choices.number(7, 42, '10000'), undefined);
   session.page = 1;
   const page = selectionMessage(session, 'en');
-  assert.match(page.text, /9–10 \/ 10/); assert.match(page.text, /Showing loaded results/);
+  assert.match(page.text, /9–10 \/ 10/); assert.doesNotMatch(page.text, /Showing loaded results/);
   assert.match(page.text, /醜奴兒 · 2:30/);
   assert.doesNotMatch(page.text, /<blockquote/);
   assert.match(page.rich_message.html, /<details><summary>/);
@@ -96,7 +96,7 @@ test('forum selection numbers and callbacks cannot cross topics, even for the sa
   assert.throws(() => choices.number(-100, 42, '1', 91, 20), { code: 'SELECTION_OWNER' });
   assert.throws(() => choices.get(-100, 42, a.id, 91, 20), { code: 'SELECTION_OWNER' });
   assert.equal(choices.get(-100, 42, a.id, 91, 10), a);
-  assert.match(selectionMessage(a, 'en').text, /tg:\/\/user\?id=42/);
+  assert.doesNotMatch(selectionMessage(a, 'en').text, /tg:\/\/user/);
   choices.delivered(-100, 90);
   assert.equal(choices.number(-100, 42, '2', undefined, 20)?.session.id, b.id);
 });

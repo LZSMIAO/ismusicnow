@@ -13,7 +13,8 @@ export class BotSelectionDelivery {
   constructor(private telegram: Telegram, private enabled = process.env.BOT_RICH_SEARCH !== '0') {}
   async show(session: MusicSelection, ui: BotLanguage, names: AlbumLanguage, edit = false): Promise<{ message_id: number }> {
     const presentation = selectionMessage(session, ui, names);
-    const target = { chat_id: session.chatId, ...(edit ? { message_id: session.menuId } : { message_thread_id: session.messageThreadId }) };
+    const target = { chat_id: session.chatId, ...(edit ? { message_id: session.menuId } : { message_thread_id: session.messageThreadId,
+      ...(session.chatId < 0 ? { reply_parameters: { message_id: session.requestId, allow_sending_without_reply: false } } : {}) }) };
     const rich = session.rich ?? this.enabled;
     try {
       const result = await this.telegram<{ message_id: number }>(edit ? 'editMessageText' : rich ? 'sendRichMessage' : 'sendMessage', {

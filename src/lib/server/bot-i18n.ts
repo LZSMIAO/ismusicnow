@@ -29,6 +29,9 @@ export function botLanguageLabel(language: BotLanguage): string {
 // Translate the static template before inserting music metadata. UI language
 // must never translate or normalize a song, artist, album, URL or filename.
 const catalog = {
+  requestedBy: ["由 {user} 獲取", "Requested by {user}", "{user} が取得", "요청: {user}", "Solicitado por {user}", "Demandé par {user}", "Запросил(а) {user}"],
+  searchStatus: ["搜尋狀態", "Search status", "検索状況", "검색 상태", "Estado de búsqueda", "État de recherche", "Статус поиска"],
+  unavailableSearchSources: ["暫時無法搜尋：{sources}", "Search unavailable: {sources}", "検索できません：{sources}", "검색 불가: {sources}", "Búsqueda no disponible: {sources}", "Recherche indisponible : {sources}", "Поиск недоступен: {sources}"],
   playbackVersion: ["Telegram 播放版（MP3 轉碼）", "Telegram playback copy (MP3 conversion)", "Telegram 再生用（MP3 変換）", "Telegram 재생용 (MP3 변환)", "Copia reproducible de Telegram (conversión MP3)", "Copie de lecture Telegram (conversion MP3)", "Версия для Telegram (конвертация MP3)"],
   originalFile: ["原始檔", "Original file", "元のファイル", "원본 파일", "Archivo original", "Fichier original", "Оригинальный файл"],
   preparePlayback: ["正在準備播放…", "Preparing playback…", "再生を準備中…", "재생 준비 중…", "Preparando reproducción…", "Préparation de la lecture…", "Подготовка воспроизведения…"],

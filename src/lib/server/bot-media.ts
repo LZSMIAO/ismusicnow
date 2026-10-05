@@ -50,9 +50,9 @@ export function musicCaption(track: Track, job: DownloadJob, language: BotLangua
     escapeHtml(audioDetails),
     `via @${escapeHtml(botUsername)}`,
   ].filter(Boolean).join('\n');
-  return [recipient?.id ? `<a href="tg://user?id=${recipient.id}">${escapeHtml(shortText(recipient.name || String(recipient.id), 40))}</a>` : '',
-    `<b>「${title}」</b> — ${artists}`,
-    `<blockquote expandable>${details}</blockquote>`].filter(Boolean).join('\n');
+  return [`<b>「${title}」</b> — ${artists}`, `<blockquote expandable>${details}</blockquote>`,
+    recipient?.id ? botText(language, 'requestedBy', { user: `<a href="tg://user?id=${recipient.id}">${escapeHtml(shortText(recipient.name || String(recipient.id), 40))}</a>` }) : '',
+  ].filter(Boolean).join('\n');
 }
 export function musicTrack(track: Track, job: Pick<DownloadJob, 'audioTrack'>): Track {
   const actual = job.audioTrack;

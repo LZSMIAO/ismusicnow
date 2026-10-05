@@ -6,6 +6,7 @@ import { botText, type BotLanguage } from './bot-i18n.js';
 import { displayTrack, type AlbumLanguage } from './bot-settings.js';
 import { botProviderName, searchableProviders } from './bot-providers.js';
 import { recordingGroups, rankedSources, type RecordingGroup, type SourceEvidence } from './bot-recordings.js';
+import { providerNames } from '../ui.js';
 
 export const selectionLifetime = 30 * 60_000;
 export const selectionPageSize = 8;
@@ -145,15 +146,19 @@ export function selectionMessage(session: MusicSelection, ui: BotLanguage, names
   const kind = botText(ui, key === 'album' ? 'album' : key === 'playlist' ? 'playlist' : key === 'artist' ? 'artist' : 'single');
   const summary = [source, kind, visible.length ? `${start + 1}–${start + visible.length} / ${items.length}` : ''].filter(Boolean).join(' · ');
   const title = shortText(collection.title, 90);
-  const owner = session.chatId < 0 ? `<a href="tg://user?id=${session.userId}">${escapeHtml(shortText(session.userName || String(session.userId), 40))}</a>` : '';
-  const header = [owner, `<b>${escapeHtml(title)}</b>`, escapeHtml(summary)].filter(Boolean).join('\n');
+  const header = [`<b>${escapeHtml(title)}</b>`, escapeHtml(summary)].filter(Boolean).join('\n');
   const navigation: Button[] = [];
   if (session.history?.length) navigation.push({ text: `↩ ${botText(ui, 'backResults')}`, callback_data: `back:${session.id}` });
   if (page > 0) navigation.push({ text: `‹ ${botText(ui, 'previousPage')}`, callback_data: `page:${session.id}:${page - 1}` });
   navigation.push({ text: botText(ui, 'close'), callback_data: selectionCloseData(session) });
   if (start + visible.length < items.length) navigation.push({ text: `${botText(ui, 'nextPage')} ›`, callback_data: `page:${session.id}:${page + 1}` });
   const layout: Button = { text: botText(ui, session.rich === false ? 'richLayout' : 'compatLayout'), callback_data: `layout:${session.id}:${session.rich === false ? 'rich' : 'buttons'}` };
-  const footer = search && collection.total > collection.tracks.length + (collection.entities?.length || 0) ? botText(ui, 'partialResults') : '';
+  // The page count already states how many results are available. Keep real
+  // provider failures accessible in the disclosure, without raw upstream errors.
+  const failedProviders = [...new Set(collection.warnings.flatMap(warning => Object.entries(providerNames)
+    .filter(([, name]) => warning.startsWith(`${name}：`) || warning.startsWith(`${name}:`))
+    .map(([id]) => botProviderName(id as Track['provider']))))];
+  const status = collection.warnings.length ? failedProviders.length ? botText(ui, 'unavailableSearchSources', { sources: failedProviders.join(' · ') }) : botText(ui, 'partialSources') : '';
   const tabs: Button[] = search && collection.provider !== 'ytm' ? (['track', 'album', 'artist', 'playlist'] as const).filter(type => scope === 'all' || searchableProviders(type).some(provider => provider.id === scope)).map(type => ({
     text: `${(collection.searchType || 'track') === type ? '✓ ' : ''}${botText(ui, type === 'track' ? 'single' : type)}`, callback_data: `type:${session.id}:${type}`,
   })) : collection.kind === 'artist' && collection.provider === 'netease' ? [
@@ -173,8 +178,8 @@ export function selectionMessage(session: MusicSelection, ui: BotLanguage, names
     const note = botText(ui, providers ? 'sourceSearchScope' : 'sourceAvailability');
     const rows = chunks(buttons, 2);
     rows.push([{ text: botText(ui, 'backResults'), callback_data: `list:${session.id}` }, { text: botText(ui, 'close'), callback_data: selectionCloseData(session) }]);
-    return { text: [owner, `<b>${escapeHtml(panelTitle)}</b>`, escapeHtml(note)].filter(Boolean).join('\n'), parse_mode: 'HTML' as const,
-      link_preview_options: { is_disabled: true }, reply_markup: { inline_keyboard: [...rows, [layout]] }, rich_message: { html: `<p>${[owner, `<b>${escapeHtml(panelTitle)}</b>`, escapeHtml(note)].filter(Boolean).join('<br>')}</p>` + rows.slice(0, -1).map(row => `<tg-button-row>${row.map(richButton).join('')}</tg-button-row>`).join(''), skip_entity_detection: true },
+    return { text: [`<b>${escapeHtml(panelTitle)}</b>`, escapeHtml(note)].filter(Boolean).join('\n'), parse_mode: 'HTML' as const,
+      link_preview_options: { is_disabled: true }, reply_markup: { inline_keyboard: [...rows, [layout]] }, rich_message: { html: `<p>${[`<b>${escapeHtml(panelTitle)}</b>`, escapeHtml(note)].filter(Boolean).join('<br>')}</p>` + rows.slice(0, -1).map(row => `<tg-button-row>${row.map(richButton).join('')}</tg-button-row>`).join(''), skip_entity_detection: true },
       rich_keyboard: { inline_keyboard: [rows.at(-1)!, [layout]] } };
   }
   const details: string[] = [], tableRows: string[] = [], fallbackRows: Button[][] = [];
@@ -194,20 +199,17 @@ export function selectionMessage(session: MusicSelection, ui: BotLanguage, names
       const value = displayTrack(candidate, names);
       return `<b>${escapeHtml(versionTitle(value.title, 128))}</b><br>${escapeHtml(shortText(value.artists.join(' / '), 160))}<br>${escapeHtml(botProviderName(value.provider))} · ${escapeHtml(duration(value.durationMs))}${value.album ? `<br>${escapeHtml(botText(ui, 'album'))}：${escapeHtml(shortText(value.album, 128))}` : ''}`;
     }).join('<br><br>'));
-    tableRows.push(`<tr><td valign="top">${richButton(pick)}${artists ? `<br>${escapeHtml(artists)}` : ''}</td><td valign="top" align="right">${escapeHtml(extra)}</td><td valign="top">${richButton(sourcePick)}${more ? `<br>${richButton(more)}` : ''}</td></tr>`);
+    tableRows.push(`<tr><td valign="top" align="left">${richButton(pick)}${artists ? `<br>${escapeHtml(artists)}` : ''}</td><td valign="top" align="right">${escapeHtml(extra)}</td><td valign="top" align="left">${richButton(sourcePick)}${more ? `<br>${richButton(more)}` : ''}</td></tr>`);
     fallbackRows.push([{ text: versionTitle(shown.title, 56), callback_data: pick.callback_data }, sourcePick, ...(more ? [more] : [])]);
   });
   const rows = [...(search ? [[filter]] : []), ...(tabs.length ? [tabs] : []), ...fallbackRows, navigation, [layout]];
-  const heading = `<tr><th>${escapeHtml(botText(ui, collection.entities ? key === 'artist' ? 'artist' : key === 'playlist' ? 'playlist' : 'album' : 'songArtist'))}</th><th align="right">${escapeHtml(botText(ui, collection.entities ? 'details' : 'duration'))}</th><th>${escapeHtml(botText(ui, 'source'))}</th></tr>`;
-  const rich = `<p>${[owner, `<b>${escapeHtml(title)}</b>`, search ? richButton(filter) + ` · ${escapeHtml(kind)} · ${visible.length ? `${start + 1}–${start + visible.length} / ${items.length}` : ''}` : escapeHtml(summary)].filter(Boolean).join('<br>')}</p>` +
+  const heading = `<tr><th align="left" valign="top">${escapeHtml(botText(ui, collection.entities ? key === 'artist' ? 'artist' : key === 'playlist' ? 'playlist' : 'album' : 'songArtist'))}</th><th align="right" valign="top">${escapeHtml(botText(ui, collection.entities ? 'details' : 'duration'))}</th><th align="left" valign="top">${escapeHtml(botText(ui, 'source'))}</th></tr>`;
+  const rich = `<p>${[`<b>${escapeHtml(title)}</b>`, search ? richButton(filter) + ` · ${escapeHtml(kind)} · ${visible.length ? `${start + 1}–${start + visible.length} / ${items.length}` : ''}` : escapeHtml(summary)].filter(Boolean).join('<br>')}</p>` +
     (tabs.length ? `<p>${tabs.map(richButton).join(' · ')}</p>` : '') +
-    (tableRows.length ? `<table compact>${heading}${tableRows.join('')}</table><details><summary>${escapeHtml(botText(ui, 'releaseDetails'))}</summary>${details.map(text => `<p>${text}</p>`).join('')}</details>` : `<p>${escapeHtml(botText(ui, 'noResults'))}</p>`) +
-    (footer ? `<footer>${escapeHtml(footer)}</footer>` : '') +
-    (collection.warnings.length ? `<footer>${escapeHtml(botText(ui, 'partialSources'))}</footer>` : '');
+    (tableRows.length ? `<table compact>${heading}${tableRows.join('')}</table><details><summary>${escapeHtml(botText(ui, 'releaseDetails'))}</summary>${details.map(text => `<p>${text}</p>`).join('')}${status ? `<p><b>${escapeHtml(botText(ui, 'searchStatus'))}</b><br>${escapeHtml(status)}</p>` : ''}</details>` : `<p>${escapeHtml(botText(ui, 'noResults'))}</p>${status ? `<p>${escapeHtml(status)}</p>` : ''}`);
   return { text: [header, collection.kind === 'artist' ? escapeHtml(botText(ui, collection.entities ? 'album' : 'hotTracks')) : '',
     ...visible.map(item => { const shown = displayTrack('durationMs' in item ? item : { ...item, album: '', durationMs: 0 }, names); const extra = 'durationMs' in item ? [shortText(shown.album, 48), duration(item.durationMs)] : [item.year, item.count === undefined ? '' : botText(ui, 'tracksCount', { count: item.count })]; return `${escapeHtml(versionTitle(shown.title, 72))} · ${escapeHtml([shortText(shown.artists.join(' / '), 64), ...extra, botProviderName(item.provider)].filter(Boolean).join(' · '))}`; }),
-    !visible.length ? escapeHtml(botText(ui, 'noResults')) : '', footer,
-    collection.warnings.length ? escapeHtml(botText(ui, 'partialSources')) : '',
+    !visible.length ? escapeHtml(botText(ui, 'noResults')) : '', status ? `<i>${escapeHtml(status)}</i>` : '',
   ].filter(Boolean).join('\n'), parse_mode: 'HTML' as const, link_preview_options: { is_disabled: true }, reply_markup: { inline_keyboard: rows },
     rich_message: { html: rich, skip_entity_detection: true }, rich_keyboard: { inline_keyboard: [navigation, [layout]] } };
 }

@@ -44,6 +44,8 @@ test('eight table rows are direct actions with optional source panels/details, b
     const value = selectionMessage(session, ui), html = value.rich_message.html;
     assert.equal((html.match(/<tr>/g) || []).length, 9);
     assert.match(html, /\(Live\)/); assert.match(html, /<details><summary>/); assert.doesNotMatch(html, /<details open|tg-spoiler/);
+    assert.match(html, /<th align="left" valign="top">/); assert.match(html, /<th align="right" valign="top">/);
+    assert.doesNotMatch(html, /tg:\/\/user|<footer>/);
     assert.ok(value.text.replace(/<[^>]+>/g, '').length < 4096);
     for (const data of [...html.matchAll(/data="([^"]+)"/g)].map(match => match[1]!)) assert.ok(Buffer.byteLength(data) <= 64);
     assert.ok(!value.rich_keyboard.inline_keyboard.flat().some(button => /^\d+$/.test(button.text)));
@@ -55,6 +57,11 @@ test('eight table rows are direct actions with optional source panels/details, b
   assert.doesNotMatch(selectionMessage(grouped, 'en').rich_message.html, />YTM</, 'link-only adapter does not appear as a keyword search source');
   grouped.panel = { group: 0 };
   assert.match(selectionMessage(grouped, 'en').rich_message.html, /from:[a-f0-9]+:0:1/);
+  grouped.panel = undefined;
+  grouped.collection.warnings = ['Spotify：upstream error with private URL https://secret.example.test', '網易雲音樂：timeout'];
+  const failed = selectionMessage(grouped, 'en');
+  assert.match(failed.rich_message.html, /<details>[^]*Search unavailable: Spotify · NetEase[^]*<\/details>/);
+  assert.doesNotMatch(failed.rich_message.html, /secret\.example|upstream error|<footer>|Showing loaded/);
 });
 test('source ordering and request lookup expire, and replacement invalidates old callbacks only after successful edit', () => {
   let now = 1000;
