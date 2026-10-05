@@ -16,6 +16,7 @@ import { safeFilename } from '../src/lib/server/links.js';
 import { resolveNeteaseCommand } from '../src/lib/server/bot-input.js';
 import { BotLanguageSettings, BotSettingsStore, displayTrack, type AlbumLanguage } from '../src/lib/server/bot-settings.js';
 import { audioPresentation, musicReferencePayload, sendMusic, TelegramRequestError } from '../src/lib/server/bot-media.js';
+import { BotCaptionDetails } from '../src/lib/server/bot-caption-details.js';
 import { BotMusicCache, rejectedFileId, type CachedMusic } from '../src/lib/server/bot-cache.js';
 import { BotDispatch } from '../src/lib/server/bot-dispatch.js';
 import { BotPlayback } from '../src/lib/server/bot-playback.js';
@@ -50,7 +51,9 @@ interface User { id: number; language_code?: string; is_bot?: boolean; first_nam
 interface Message { message_id: number; message_thread_id?: number; sender_chat?: { id: number }; via_bot?: { id: number; is_bot?: boolean }; chat: { id: number; type?: string }; from?: User; text?: string; entities?: { type: string; offset: number; url?: string; user?: { id: number } }[]; reply_to_message?: { message_id: number; from?: { username?: string } } }
 interface Update { update_id: number; message?: Message; callback_query?: { id: string; from: User; data?: string; message?: Message; inline_message_id?: string }; inline_query?: InlineQuery; chosen_inline_result?: { result_id: string; from: User; inline_message_id?: string; query: string } }
 
+const captionDetails = new BotCaptionDetails(token.split(':')[0]!);
 export async function telegram<T>(method: string, body: Record<string, unknown> | FormData = {}): Promise<T> {
+  body = await captionDetails.prepare(method, body);
   const response = await fetch(`${endpoint}${method}`, { method: 'POST',
     headers: body instanceof FormData ? undefined : { 'Content-Type': 'application/json' },
     body: body instanceof FormData ? body : JSON.stringify(body), signal: AbortSignal.timeout(botRequestTimeout(method, body, transport.local)) });
@@ -298,6 +301,18 @@ async function handleUpdate(update: Update): Promise<void> {
   // Anonymous group senders cannot own personal settings or selection lists.
   if (!userId || user.is_bot || update.message?.sender_chat || !permitted(userId)) return;
   await preferences.observeLanguage(userId, user.language_code);
+  if (update.callback_query?.data?.startsWith('md:')) {
+    const callback = update.callback_query;
+    await telegram('answerCallbackQuery', { callback_query_id: callback.id });
+    const payload = await captionDetails.toggle(callback.data!);
+    if (payload) {
+      const address = callback.inline_message_id ? { inline_message_id: callback.inline_message_id } : callback.message ? { chat_id: callback.message.chat.id, message_id: callback.message.message_id } : undefined;
+      if (address) await telegram('editMessageCaption', { ...address, ...payload }).catch(error => {
+        if (!(error instanceof TelegramRequestError && /message is not modified/i.test(error.description))) throw error;
+      });
+    }
+    return;
+  }
   if (update.chosen_inline_result) { await inline.chosen(update.chosen_inline_result); return; }
   if (update.callback_query?.inline_message_id) {
     await inline.callback({ ...update.callback_query, inline_message_id: update.callback_query.inline_message_id }); return;

@@ -40,6 +40,7 @@ const catalog = {
   songArtist: ["歌曲／歌手", "Song / artist", "曲／アーティスト", "곡 / 아티스트", "Canción / artista", "Titre / artiste", "Песня / исполнитель"],
   duration: ["時長", "Time", "時間", "시간", "Duración", "Durée", "Время"],
   details: ["詳情", "Details", "詳細", "정보", "Detalles", "Détails", "Сведения"],
+  collapse: ["收起", "Collapse", "折りたたむ", "접기", "Contraer", "Réduire", "Свернуть"],
   releaseDetails: ["專輯與版本詳情", "Albums and versions", "アルバム・バージョンの詳細", "앨범 및 버전 정보", "Álbumes y versiones", "Albums et versions", "Альбомы и версии"],
   moreSources: ["+{count} 來源", "+{count} sources", "他{count}件", "+{count} 소스", "+{count} fuentes", "+{count} sources", "+{count} источн."],
   chooseSource: ["選擇來源", "Choose a source", "サービスを選択", "소스 선택", "Elegir fuente", "Choisir une source", "Выбрать источник"],

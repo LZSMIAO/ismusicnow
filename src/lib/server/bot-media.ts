@@ -34,8 +34,8 @@ export function musicCaption(track: Track, job: DownloadJob, language: BotLangua
     job.bytes ? `${(job.bytes / 1024 / 1024).toFixed(2)}MB` : '',
     audio?.bitrate ? `${(audio.bitrate / 1000).toFixed(2)}kbps` : '',
   ].filter(Boolean).join(' ');
-  // A short caption needs no spacer. Telegram handles expansion when real
-  // content wraps beyond its preview; technical values stay on one line.
+  // Build the full details without spacers. BotCaptionDetails supplies compact
+  // and expanded captions with explicit controls, independent of client layout.
   const details = [
     `${escapeHtml(botText(language, 'album'))}：${album}`,
     escapeHtml(technical),
@@ -130,6 +130,7 @@ export interface MusicReference {
 }
 export function musicReferencePayload(reference: MusicReference): FormData {
   const form = new FormData(), language = reference.uiLanguage || 'zh-Hant';
+  form.set('muism_caption_language', language);
   form.set('chat_id', String(reference.chatId));
   if (reference.messageThreadId !== undefined) form.set('message_thread_id', String(reference.messageThreadId));
   form.set(reference.kind, reference.fileId);
@@ -147,6 +148,7 @@ export function musicReferencePayload(reference: MusicReference): FormData {
 export function musicPayload(upload: MusicUpload, document = false, withThumbnail = true): FormData {
   const form = new FormData(), extension = extname(upload.filename).toLowerCase();
   const language = upload.uiLanguage || 'zh-Hant';
+  form.set('muism_caption_language', language);
   const mime: Record<string, string> = { '.flac': 'audio/flac', '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.ogg': 'audio/ogg', '.opus': 'audio/ogg', '.aac': 'audio/aac', '.webm': 'audio/webm' };
   form.set('chat_id', String(upload.chatId));
   if (upload.messageThreadId !== undefined) form.set('message_thread_id', String(upload.messageThreadId));

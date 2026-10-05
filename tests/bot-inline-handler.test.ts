@@ -37,7 +37,8 @@ test('real handler routes inline queries without chat IDs, deep-link onboarding 
     const promptId = nextMessage;
     await handle({ update_id: 4, callback_query: { id: 'choose', from: { id: 42 }, data: 'lang:42:original', message: { message_id: promptId, chat: { id: 42, type: 'private' } } } });
     const audio = calls.findLast(c => c.method === 'sendAudio')!;
-    assert.equal(audio.body.audio, 'existing-file-id'); assert.match(audio.body.caption, /<blockquote expandable>/);
+    assert.equal(audio.body.audio, 'existing-file-id'); assert.match(audio.body.caption, /<blockquote>/);
+    assert.doesNotMatch(audio.body.caption, /#mp3|\n\n/);
     assert.equal(audio.body.reply_parameters, undefined);
     assert.equal(audio.body.reply_markup.inline_keyboard.at(-1)[1].switch_inline_query, 'https://music.163.com/song?id=123');
     assert.ok(calls.some(c => c.method === 'deleteMessage' && c.body.message_id === promptId));
@@ -47,6 +48,18 @@ test('real handler routes inline queries without chat IDs, deep-link onboarding 
     await handle({ update_id: 6, callback_query: { id: 'insert', from: { id: 42 }, inline_message_id: 'opaque-inline-message', data: 'ix:42:n:123' } });
     assert.equal(calls.at(-1)!.method, 'editMessageMedia'); assert.equal(calls.at(-1)!.body.inline_message_id, 'opaque-inline-message');
     assert.ok(!calls.slice(before).some(c => c.method === 'deleteMessage'));
+    const details = calls.at(-1)!.body.reply_markup.inline_keyboard.flat().find((button:any) => button.callback_data?.startsWith('md:'));
+    const beforeDetails = calls.length;
+    now += 4000;
+    await handle({ update_id: 61, callback_query: { id:'expand-caption', from:{id:42}, inline_message_id:'opaque-inline-message', data:details.callback_data } });
+    const expanded = calls.at(-1)!;
+    assert.equal(expanded.method,'editMessageCaption'); assert.equal(expanded.body.inline_message_id,'opaque-inline-message');
+    assert.match(expanded.body.caption,/#mp3/);
+    const collapse = expanded.body.reply_markup.inline_keyboard.flat().find((button:any) => button.callback_data?.startsWith('md:'));
+    now += 4000;
+    await handle({ update_id: 62, callback_query: { id:'collapse-caption', from:{id:42}, data:collapse.callback_data, message:{message_id:888,chat:{id:42,type:'private'}} } });
+    assert.equal(calls.at(-1)!.body.message_id,888); assert.doesNotMatch(calls.at(-1)!.body.caption,/#mp3/);
+    assert.ok(calls.slice(beforeDetails).every(call=>['answerCallbackQuery','editMessageCaption'].includes(call.method)), 'caption toggles cannot acquire, send, delete or edit the media');
     now += 4000;
     await handle({ update_id: 7, message: { message_id: 7, chat: { id: 42, type: 'private' }, from: { id: 42 }, text: '/help' } });
     const beforeShare = calls.length;
