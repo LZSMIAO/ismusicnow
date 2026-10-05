@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { config } from '../src/lib/server/config.js';
-import { myhkRequest, searchMyhk, resolveMyhk, myhkAudio, myhkLyrics, mapMyhkTrack, validateMyhkAudioUrl } from '../src/lib/server/providers/myhk.js';
+import { myhkRequest, searchMyhk, resolveMyhk, myhkAudio, myhkLyrics, myhkTrack, mapMyhkTrack, validateMyhkAudioUrl } from '../src/lib/server/providers/myhk.js';
 import { parseMusicLink, musicSourceUrl, validateTrackId } from '../src/lib/server/links.js';
 import { inlineStart, parseInlineStart, parseInlineQuery, browseStart, parseBrowseStart, BotInline } from '../src/lib/server/bot-inline.js';
 import { savePlatformAudio } from '../src/lib/server/downloads.js';
@@ -134,6 +134,31 @@ test('native Kuwo and Kugou preserve duration; a Kugou quality hash may return r
 test('empty native QQ responses are valid lists, not failed vendor envelopes', async () => {
   await mocked(async () => { assert.deepEqual((await searchMyhk('native-empty-qq', 'qq')).tracks, []); },
     (async () => Response.json({code:0,data:{song:{list:[]}}})) as typeof fetch);
+});
+
+test('direct playback recovers exact recording metadata independently of a failed fast Inline search', async () => {
+  const id = 'AA0D45CEBDFCA21D7175644D0226C1E8', other = 'BB0D45CEBDFCA21D7175644D0226C1E8';
+  let searches = 0;
+  const deadlines: number[] = [], previousTimeout = AbortSignal.timeout;
+  AbortSignal.timeout = (ms: number) => { deadlines.push(ms); return previousTimeout(ms); };
+  try {
+    await mocked(async () => {
+      await assert.rejects(searchMyhk('metadata-recovery-regression', 'kugou'), {code:'UPSTREAM_ERROR'});
+      const track = await myhkTrack('kugou', id);
+      assert.equal(searches, 2);
+      assert.equal(track.durationMs, 180000);
+      assert.deepEqual(track.artists, ['Original Artist']);
+      assert.equal(track.album, 'Original Release');
+      assert.deepEqual(deadlines, [3500, 15000, 15000]);
+    }, (async (url) => {
+      if (String(url).endsWith('/info')) return Response.json({code:1,data:{id,name:'metadata-recovery-regression',artist:['Original Artist'],album:'Original Release'}});
+      if (++searches === 1) throw new DOMException('Timed out', 'TimeoutError');
+      return Response.json({status:1,data:{lists:[
+        {FileHash:other,SongName:'metadata-recovery-regression',SingerName:'Cover Artist',AlbumName:'Cover Release',Duration:210},
+        {FileHash:id,SongName:'metadata-recovery-regression',SingerName:'Original Artist',AlbumName:'Original Release',Duration:180}
+      ]}});
+    }) as typeof fetch);
+  } finally { AbortSignal.timeout = previousTimeout; }
 });
 
 test('original NetEase quality prefers authorized native FLAC over a primary MP3', async () => {

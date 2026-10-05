@@ -16,15 +16,15 @@ const text = (value: unknown) => typeof value === 'string' ? value.slice(0, 1000
 
 // The fixed origin and non-redirecting POST keep credentials off URLs, client
 // bundles and third-party redirect targets. Upstream messages are never public.
-export async function myhkRequest(endpoint: 'search' | 'info' | 'url' | 'lrc' | 'album' | 'list', provider: MyhkProvider, params: Record<string, string>, ttl = 120_000): Promise<unknown> {
+export async function myhkRequest(endpoint: 'search' | 'info' | 'url' | 'lrc' | 'album' | 'list', provider: MyhkProvider, params: Record<string, string>, ttl = 120_000, timeoutMs = endpoint === 'search' ? 3500 : 15_000): Promise<unknown> {
   if (!myhkConfigured()) throw new ServiceError('SOURCE_NOT_CONFIGURED', '此音樂來源尚未配置。', 503);
-  const id = JSON.stringify([endpoint, provider, params]);
+  const id = JSON.stringify([endpoint, provider, params, timeoutMs]);
   for (const [key, item] of cache) if (item.until <= Date.now()) cache.delete(key);
   const saved = cache.get(id); if (saved) return saved.value;
   const value = (async () => {
     try {
       const response = await fetch(`https://myhkw.cn/open/music/${endpoint}`, { method: 'POST', redirect: 'error',
-        body: new URLSearchParams({ ...params, type: myhkSources[provider], key: config.myhkApiKey }), signal: AbortSignal.timeout(endpoint === 'search' ? 3500 : 15_000) });
+        body: new URLSearchParams({ ...params, type: myhkSources[provider], key: config.myhkApiKey }), signal: AbortSignal.timeout(timeoutMs) });
       if (!response.ok) throw new ServiceError(response.status === 429 ? 'RATE_LIMIT' : 'UPSTREAM_ERROR', '音樂來源暫時無法回應。', 502);
       const body: unknown = await response.json();
       if (Array.isArray(body)) return body;
@@ -89,11 +89,11 @@ function rows(value: unknown): Row[] {
   }
   throw new ServiceError('UPSTREAM_ERROR', '音樂來源回傳的列表格式無效。', 502);
 }
-export async function searchMyhk(query: string, provider: MyhkProvider): Promise<Collection> {
+export async function searchMyhk(query: string, provider: MyhkProvider, timeoutMs = 3500): Promise<Collection> {
   // Native search retains recording durations and Kugou's quality-specific
   // hashes. Standardized Meting rows omit both, disabling safe source failover.
   const name = /[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(query) ? query : simplified(query);
-  const data = await myhkRequest('search', provider, { name, limit: '30', page: '1', pic: '1', ...(['qq', 'kuwo', 'kugou'].includes(provider) ? { format: '0' } : {}) });
+  const data = await myhkRequest('search', provider, { name, limit: '30', page: '1', pic: '1', ...(['qq', 'kuwo', 'kugou'].includes(provider) ? { format: '0' } : {}) }, 120_000, timeoutMs);
   const raw = rows(data).slice(0, 30);
   const tracks = raw.flatMap(row => { try { const track = mapMyhkTrack(provider, row); return track.title ? [track] : []; } catch { return []; } });
   for (const [id, entry] of catalog) if (entry.until <= Date.now()) catalog.delete(id);
@@ -122,7 +122,9 @@ export async function myhkTrack(provider: MyhkProvider, id: string): Promise<Tra
   if ((!entry || entry.until <= Date.now() || !entry.track.durationMs) && ['qq', 'kuwo', 'kugou'].includes(provider)) {
     // A direct link or a process restart has no search catalog. Recover metadata
     // only by the exact provider ID, never by taking a title's first result.
-    await searchMyhk(track.title, provider).catch(() => {});
+    // Playback metadata can wait longer than Inline keystrokes. A prior short
+    // search failure must not poison this independent completeness lookup.
+    await searchMyhk(track.title, provider, 15_000).catch(() => {});
     entry = catalog.get(`${provider}:${id}`);
   }
   return entry && entry.until > Date.now() ? { ...track, artists: entry.track.artists.length ? entry.track.artists : track.artists,
