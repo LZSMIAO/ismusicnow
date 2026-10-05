@@ -34,13 +34,17 @@ export function musicCaption(track: Track, job: DownloadJob, language: BotLangua
     job.bytes ? `${(job.bytes / 1024 / 1024).toFixed(2)}MB` : '',
     audio?.bitrate ? `${(audio.bitrate / 1000).toFixed(2)}kbps` : '',
   ].filter(Boolean).join(' ');
-  // Keep three useful preview lines, then the complete audio facts. Telegram
-  // supplies the native quote arrow; no blank spacer or extra Details button.
+  const audioDetails = [audio?.codec ? shortText(audio.codec, 80) : '',
+    audio?.sampleRate && audio.sampleRate > 0 ? `${Number((audio.sampleRate / 1000).toFixed(3))} kHz` : '',
+    audio?.bitsPerSample && audio.bitsPerSample > 0 ? `${audio.bitsPerSample}-bit` : '',
+  ].filter(Boolean).join(' · ');
+  // Preserve the user's compact hashtag row verbatim. Disclosure is handled
+  // by Telegram. Put the important facts first, with measured codec details last.
   const details = [
+    escapeHtml(technical),
     `${escapeHtml(botText(language, 'album'))}：${album}`,
-    `${escapeHtml(botText(language, 'source'))}：${escapeHtml(source)}`,
     `via @${escapeHtml(botUsername)}`,
-    escapeHtml(technical.split(' ').slice(1).join(' ')),
+    escapeHtml(audioDetails),
   ].filter(Boolean).join('\n');
   return [recipient?.id ? `<a href="tg://user?id=${recipient.id}">${escapeHtml(shortText(recipient.name || String(recipient.id), 40))}</a>` : '',
     `<b>「${title}」</b> — ${artists}`,

@@ -4,7 +4,7 @@
 
 ## 最終行為
 
-- 音樂 caption 恢復 `<blockquote expandable>`，專輯、来源、via 為三行有內容的預覽；真實格式標籤、檔案大小與碼率保留在第四行，透過 Telegram 原生引用箭頭展開／收起。沒有空白預覽行、額外 Details 按鈕，也不改動音訊。
+- 音樂 caption 使用 `<blockquote expandable>`。恢復使用者原本的 `#來源 #格式 大小 碼率`，放在第一行；第二行專輯、第三行 via，後續為實際量測的 codec／取樣率／位元深度。沒有空白預覽行、額外 Details 按鈕，也不改動音訊。Telegram 依客戶端寬度折行，不能保證一個邏輯行永遠只佔一個畫面行。
 - MP3 轉碼副本的標示在引用外，避免原生收起把它隱藏。
 - 新上傳、快取重發與 Inline 編輯都保留完整原生 quote。舊 md 按鈕第一次使用即把該舊 caption 還原成原生 quote，移除 Details 控制，保留原有專輯／歌手／來源／分享按鈕。旧持久化 token 仍能讀取。
 - 以 600 權限保存被修復舊訊息的位置，供這次原位快取卡片修復；資料不含音訊或憑證。
@@ -21,3 +21,9 @@
 涵蓋八語言、新上傳、Inline 快取答案、Inline media edit、原生引用中完整技術資訊與無空行、轉碼副本標示不被收起、舊 md 控制重啟後修復、频道與 Inline 實際 handler 路徑，保留其他按鈕。實際 Telegram 原位修復、點按、封面與發佈結果記錄於任務輸出審計。
 
 官方 thumbnail 要求參考 https://core.telegram.org/bots/api#sendaudio 。不以來源 URL、文件名或 FLAC 標籤推測實際編碼。
+
+## 一行收起的實測與限制
+
+先前「最低三行」的說法不準確。普通音樂 caption 的 expandable quote 未提供摘要行數設定；新版 Rich Message 的 details.summary 則可顯示一行。私有快取頻道已用同一原音檔實測一行摘要，Telegram Desktop 點按能展開／收起，API 也保留音訊與縮圖。
+
+移除重複歌名段落後，新 Rich 卡片仍比普通音樂卡片寬。普通 caption 不接受 HTML details；現有普通音樂不能用 editMessageText 原位轉成 Rich。此次發佈只恢復原 hashtag 文案與重要資訊順序，未啟用 Rich 卡片；其外觀及旧／第三方客戶端相容性尚未完成。

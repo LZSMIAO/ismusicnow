@@ -93,7 +93,11 @@ test('caption keeps platform and real format compact without spacer lines', () =
   const job = { id:'fixture', track, format:'original' as const, status:'completed' as const, stage:'', createdAt:'', updatedAt:'', bytes:1000, audioSource:'netease' as const, audio:{ codec:'FLAC', lossless:true } };
   const caption = musicCaption(track,job,'en');
   const quote=caption.match(/<blockquote expandable>([\s\S]*?)<\/blockquote>/)![1]!;
-  assert.deepEqual(quote.split('\n'),['Album：Album','Source：NetEase','via @muismbot','#flac 0.00MB']);
+  assert.deepEqual(quote.split('\n'),['#NetEase #flac 0.00MB','Album：Album','via @muismbot','FLAC']);
+  const measured = musicCaption(track,{...job,audio:{codec:'FLAC',lossless:true,sampleRate:44100,bitsPerSample:16}},'zh-Hant');
+  assert.match(measured,/<blockquote expandable>#網易雲音樂 #flac 0\.00MB\n專輯：Album\nvia @muismbot\nFLAC · 44\.1 kHz · 16-bit<\/blockquote>/);
+  assert.doesNotMatch(measured,/來源：|Source：|Details|\n\n/);
+  assert.match(musicCaption(track,{...job,audio:{codec:'MPEG 1 Layer 3',lossless:false,bitrate:320000,sampleRate:48000}},'en'),/#NetEase #mp3 0\.00MB 320\.00kbps[^]*MPEG 1 Layer 3 · 48 kHz/);
 });
 
 test('fallback audio points album, source and sharing actions at the actual platform recording', async () => {
@@ -104,5 +108,5 @@ test('fallback audio points album, source and sharing actions at the actual plat
   const rows = JSON.parse(String(form.get('reply_markup'))).inline_keyboard;
   assert.equal(rows[0][0].callback_data,'browse:netease:album:66');
   assert.equal(rows.at(-1).length,2); assert.equal(rows.at(-1)[0].url,actual.sourceUrl); assert.equal(rows.at(-1)[1].switch_inline_query,actual.sourceUrl);
-  assert.match(String(form.get('caption')), /來源：網易雲音樂/); assert.match(String(form.get('caption')), /#flac/);
+  assert.match(String(form.get('caption')), /#網易雲音樂 #flac/);
 });

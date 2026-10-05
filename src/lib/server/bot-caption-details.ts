@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { botText, type BotLanguage } from './bot-i18n.js';
+import type { BotLanguage } from './bot-i18n.js';
 
 type Markup = { inline_keyboard: Record<string, unknown>[][] };
 interface Saved { collapsed: string; expanded: string; markup: Markup; language: BotLanguage }
@@ -32,8 +32,7 @@ export class BotCaptionDetails {
     const lines = quote?.[1]?.split('\n');
     let caption = saved.expanded.replace('<blockquote>', '<blockquote expandable>');
     if (lines && /^#\S+ #\S+/.test(lines[1]!) && /^via @/.test(lines.at(-1)!)) {
-      const [source, ...technical] = lines[1]!.split(' ');
-      const details = [lines[0], `${botText(saved.language, 'source')}：${source!.slice(1)}`, lines.at(-1), technical.join(' ')];
+      const details = [lines[1], lines[0], lines.at(-1)];
       const notices = lines.slice(2, -1);
       caption = saved.expanded.replace(quote![0], `${notices.length ? notices.join('\n') + '\n' : ''}<blockquote expandable>${details.join('\n')}</blockquote>`);
     }

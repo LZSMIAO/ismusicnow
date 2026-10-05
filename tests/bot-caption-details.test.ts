@@ -18,7 +18,9 @@ test('new cards retain the native quote and all measured audio facts without ext
     assert.equal(form.has('muism_caption_language'),false);assert.equal(form.get('caption'),caption);
     assert.match(caption,/<blockquote expandable>/);assert.match(caption,/#flac 21.90MB 909.06kbps/);assert.doesNotMatch(caption,/\n\n/);
     const lines=caption.match(/<blockquote expandable>([^]*?)<\/blockquote>/)![1]!.split('\n');
-    assert.equal(lines.length,4);assert.equal(lines[2],'via @muismbot');assert.match(lines[1]!,new RegExp(botText(language,'source')));
+    assert.equal(lines.length,4);assert.equal(lines[2],'via @muismbot');
+    assert.match(lines[0]!,/^#\S+ #flac 21\.90MB 909\.06kbps$/);
+    assert.equal(lines[1],`${botText(language,'album')}：Album`);assert.equal(lines[3],'FLAC');
     assert.deepEqual(JSON.parse(String(form.get('reply_markup'))),markup);
     const result={type:'audio',caption,muism_caption_language:language,reply_markup:markup};
     const inline=await details.prepare('answerInlineQuery',{results:[result]}) as any;
@@ -37,7 +39,7 @@ test('legacy buttons restore full native quotes, remove their own controls and p
     const details=new BotCaptionDetails('123',root);
     for(const action of ['0','1']){
       const restored=await details.toggle(`md:${id}:${action}`);
-      assert.match(restored!.caption,/<blockquote expandable>Album：Album\nSource：NetEase\nvia @muismbot\n#mp3 6.52MB 320.00kbps<\/blockquote>/);
+      assert.match(restored!.caption,/<blockquote expandable>#NetEase #mp3 6.52MB 320.00kbps\nAlbum：Album\nvia @muismbot<\/blockquote>/);
       assert.deepEqual(restored!.reply_markup,markup);assert.doesNotMatch(restored!.caption,/\n\n/);
     }
     await details.remember(`md:${id}:1`,{chat_id:-100123,message_id:66});
