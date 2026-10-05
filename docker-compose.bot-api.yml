@@ -1,3 +1,4 @@
+# Existing Local API music cache: python3 scripts/prepare-telegram-music.py
 # Optional production override: docker compose -f docker-compose.yml -f docker-compose.bot-api.yml up -d
 services:
   telegram-api:
@@ -19,7 +20,7 @@ services:
     group_add: ["10001"]
     volumes:
       - type: bind
-        source: ./data/telegram-api/${BOT_TOKEN:?BOT_TOKEN is required}/music
+        source: ./data/telegram-music
         target: /app/telegram-music
         read_only: true
     environment:

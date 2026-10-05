@@ -10,6 +10,7 @@ VPS 讀取到使用者名稱偏好與介面偏好均為 `zh-Hant`，設定沒有
 - 顯示快取鍵包含來源 file_id 和實際顯示名稱，隔離音質、繁簡、來源原文及不同錄音。並行請求共用一次準備；失效引用只清掉對應顯示快取；準備完成／失敗均清理暫存。
 - Inline CachedAudio 沒有 title／performer 欄位；未有正確名稱快取時走原訊息準備流程，已有時直接使用該快取播放器。[Telegram CachedAudio](https://core.telegram.org/bots/api#inlinequeryresultcachedaudio)
 - Local Bot API 僅把此 bot 的 music 子目錄只讀掛載到 bot，使用既有媒體檔案群組讀取；不掛載 API 資料庫、不改檔案權限、不開公網埠。程式限制 getFile 路徑只能對應此 bot 的音樂目錄，檢查真實路徑與檔案大小。
+- 部署前執行 `python3 scripts/prepare-telegram-music.py`，建立僅指向此 bot music 子目錄的本機別名。Compose 的來源路徑因此不包含 token 的冒號，避免 Docker 將它誤解析為短格式 volume；不擴大掛載範圍。首輪部署遇到此解析問題已自動回復舊容器，修正後重新發佈。
 
 ## 驗證
 
