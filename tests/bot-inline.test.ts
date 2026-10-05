@@ -89,8 +89,8 @@ test('albums, artists and playlists have actionable inline browse results; artis
     await h.inline.answer(query(`${kind} keyword`));
     assert.equal(h.searches[0]!.kind, kind);
     const result = h.calls[0]!.body.results[0];
-    assert.equal(result.reply_markup.inline_keyboard[0][0].switch_inline_query_current_chat, entity.sourceUrl);
-    if (kind === 'artist') assert.equal(result.reply_markup.inline_keyboard[1][0].switch_inline_query_current_chat, `albums ${entity.sourceUrl}`);
+    assert.equal(result.reply_markup.inline_keyboard[0][0].url, `https://t.me/muismbot?start=browse_n_${kind}_555`);
+    if (kind === 'artist') assert.equal(result.reply_markup.inline_keyboard[0][1].url, 'https://t.me/muismbot?start=browse_n_albums_555');
   }
   const h = harness(); await h.inline.answer(query('albums https://music.163.com/artist?id=999'));
   assert.equal(h.searches.length, 0); assert.equal(h.calls[0]!.body.results[0].id, 'netease:album:555');

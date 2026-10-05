@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile, readdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { config } from '../src/lib/server/config.js';
+import { searchMyhk } from '../src/lib/server/providers/myhk.js';
 import { DownloadStore } from '../src/lib/server/downloads.js';
 import type { Track } from '../src/lib/types.js';
 
@@ -78,4 +80,62 @@ test('bot download ceilings reach the executor and fail with a size error; web d
     await normal.create('normal',[track],'original');
     assert.equal((await waitForJob(normal,'normal',root)).status,'completed');
   } finally { await rm(root,{recursive:true,force:true}); }
+});
+
+test('unavailable new sources use only the same native recording and persist its actual source', async () => {
+  const previousFetch = globalThis.fetch, previousKey = config.myhkApiKey, previousApi = config.neteaseApiUrl;
+  config.myhkApiKey = 'fixture-key'; config.neteaseApiUrl = 'https://native.test/';
+  const root = await mkdtemp(join(tmpdir(), 'muism-recording-fallback-'));
+  try {
+    for (const [index, variation] of ['match', 'artist', 'album', 'duration', 'title'].entries()) {
+      const id = `0003T91h4Wg24${index}`;
+      let audioRequests = 0;
+      globalThis.fetch = (async (url, options) => {
+        const address = String(url);
+        if (address.includes('myhkw.cn')) {
+          if (address.endsWith('/search')) return Response.json({code:0,data:{song:{list:[{songmid:id,songname:'Song',singer:[{name:'Artist'}],albumname:'Release',interval:2}]}}});
+          return Response.json({code:0,data:''});
+        }
+        if (address.includes('/cloudsearch')) return Response.json({code:200,result:{songs:[{id:987,name:variation==='title'?'Song (Live)':'Song',ar:[{id:88,name:variation==='artist'?'Cover Artist':'Artist'}],al:{id:66,name:variation==='album'?'Other release':'Release'},dt:variation==='duration'?4500:2000}]}});
+        if (address.includes('/song/url/v1')) return Response.json({code:200,data:[{url:'https://m801.music.126.net/fallback.mp3',type:'mp3'}]});
+        audioRequests++; return new Response(new Uint8Array(wav(2)));
+      }) as typeof fetch;
+      const selected = (await searchMyhk(`fallback-${variation}`, 'qq')).tracks[0]!;
+      const store = new DownloadStore('test', undefined, root);
+      await store.create(variation, [selected], 'original');
+      const job = await waitForJob(store, variation, root);
+      if (variation === 'match') {
+        assert.equal(job.status, 'completed', job.error); assert.equal(job.audioSource, 'netease');
+        assert.equal(job.track.provider, 'qq'); assert.equal(job.audioTrack?.id, '987');
+        assert.equal(job.audioTrack?.sourceUrl, 'https://music.163.com/song?id=987'); assert.equal(audioRequests, 1);
+        const restored = (await new DownloadStore('test', undefined, root).list(variation))[0]!;
+        assert.equal(restored.audioSource, 'netease'); assert.equal(restored.audioTrack?.id, '987');
+      } else { assert.equal(job.status, 'failed'); assert.equal(job.errorCode, 'NO_AUDIO'); assert.equal(audioRequests, 0); }
+    }
+  } finally {
+    globalThis.fetch = previousFetch; config.myhkApiKey = previousKey; config.neteaseApiUrl = previousApi;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('a primary 30-second preview cannot bypass missing or known full-length metadata', async () => {
+  const previousFetch = globalThis.fetch, previousKey = config.myhkApiKey, previousApi = config.neteaseApiUrl;
+  config.myhkApiKey = 'preview-fixture-key'; config.neteaseApiUrl = 'https://native.test/';
+  const root = await mkdtemp(join(tmpdir(), 'muism-preview-'));
+  try {
+    for (const verified of [true, false]) {
+      globalThis.fetch = (async url => {
+        const address = String(url);
+        if (address.includes('myhkw.cn')) return Response.json({code:1,data:'https://m801.music.126.net/preview.mp3'});
+        if (address.includes('/song/url/v1')) return Response.json({code:200,data:[{url:'https://m801.music.126.net/trial.mp3',type:'mp3',freeTrialInfo:{start:0,end:30}}]});
+        if (address.includes('/song/detail')) return Response.json({code:200,songs:verified?[{id:verified?991:992,name:'Song',dt:180000}]:[]});
+        return new Response(new Uint8Array(wav(30)));
+      }) as typeof fetch;
+      const owner = verified ? 'known-preview' : 'unverified-preview';
+      const store = new DownloadStore('test', undefined, root);
+      await store.create(owner, [{...track,id:verified?'991':'992',durationMs:0}], 'original');
+      const job = await waitForJob(store, owner, root);
+      assert.equal(job.status,'failed'); assert.equal(job.errorCode,'INCOMPLETE_AUDIO');
+    }
+  } finally { globalThis.fetch = previousFetch; config.myhkApiKey = previousKey; config.neteaseApiUrl = previousApi; await rm(root,{recursive:true,force:true}); }
 });

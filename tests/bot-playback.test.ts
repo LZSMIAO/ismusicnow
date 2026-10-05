@@ -9,10 +9,10 @@ import { musicCacheKey, telegramPlaybackKey } from '../src/lib/server/bot-cache-
 import type { DownloadJob, Track } from '../src/lib/types.js';
 const track: Track = { provider: 'spotify', id: '0123456789012345678901', title: 'Song', artists: ['Artist'], album: 'Album', cover: '', durationMs: 1000, sourceUrl: 'https://open.spotify.com/track/0123456789012345678901' };
 const mp3 = { codec: 'MPEG 1 Layer 3', bitrate: 320000, lossless: false };
-async function fixture(chat: number | undefined = -10042, song = track, nativeDocument = false) {
+async function fixture(chat: number | undefined = -10042, song = track, nativeDocument = false, audio?: DownloadJob['audio']) {
   const root = await mkdtemp(join(tmpdir(), 'muism-playback-test-')), original = join(root, 'source.ogg'), derivative = join(root, 'playback.mp3');
   await writeFile(original, 'original-vorbis-bytes'); await writeFile(derivative, 'mp3-playback-bytes');
-  const job: DownloadJob = { id: 'job', track: song, audioSource: song.provider, format: 'original', status: 'completed', stage: '', bytes: 21, audio: { codec: song.provider === 'netease' ? 'FLAC' : 'Vorbis I', bitrate: 320000, lossless: song.provider === 'netease' }, createdAt: '', updatedAt: '' };
+  const job: DownloadJob = { id: 'job', track: song, audioSource: song.provider, format: 'original', status: 'completed', stage: '', bytes: 21, audio: audio || { codec: song.provider === 'netease' ? 'FLAC' : 'Vorbis I', bitrate: 320000, lossless: song.provider === 'netease' }, createdAt: '', updatedAt: '' };
   const uploads: { method: string; form: FormData }[] = [];
   const counts = { create: 0, removed: 0, prepared: 0, released: 0 };
   const cache = new BotMusicCache('999', root);
@@ -101,4 +101,16 @@ test('a newly downloaded original falling back to document prepares playback onc
     assert.equal(f.uploads.length, 2); assert.ok(f.uploads.every(x => x.form.get('chat_id') === '-10042'));
     await f.playback.get(netease, true); assert.equal(f.uploads.length, 2);
   } finally { await rm(f.root, { recursive: true, force: true }); }
+});
+
+test('non-NetEase FLAC and M4A keep accepted original audio without an MP3 derivative', async () => {
+  for (const audio of [{ codec: 'FLAC', lossless: true }, { codec: 'AAC', lossless: false }]) {
+    const f = await fixture(-10042, track, false, audio);
+    try {
+      const a = await f.playback.get(track);
+      assert.equal(a.kind, 'audio'); assert.deepEqual(a.audio, audio); assert.equal(a.presentation, undefined);
+      assert.equal(f.counts.prepared, 0); assert.deepEqual(f.uploads.map(x => x.method), ['sendAudio']);
+      assert.deepEqual(await f.playback.get(track), a); assert.equal(f.counts.create, 1);
+    } finally { await rm(f.root, { recursive: true, force: true }); }
+  }
 });

@@ -109,7 +109,7 @@ const inline = new BotInline({
   cache: async track => {
     const key = await musicCacheKey(track);
     const original = await mediaCache.get(key);
-    return track.provider === 'netease' && original?.kind === 'audio' ? original : await mediaCache.get(telegramPlaybackKey(key)) || original;
+    return original?.kind === 'audio' ? original : await mediaCache.get(telegramPlaybackKey(key)) || original;
   }, metadata: track => metadataForDisplay(track, 250),
   acquire: track => playback.get(track), fallbackPlayback: track => playback.get(track, false), invalidate: (track, record) => playback.invalidate(track, record), chooseNames: (userId, language) => settingsStore.setNamesLanguage(userId, language),
 });
@@ -127,16 +127,15 @@ async function sendTrack(chatId: number, userId: number, track: Track, language:
     }));
   };
   if (!originalFile) {
-    const native = track.provider === 'netease';
-    const source = native ? await mediaCache.get(primaryKey) : undefined;
+    const source = await mediaCache.get(primaryKey);
     const cached = source?.kind === 'audio' ? source : await mediaCache.get(telegramPlaybackKey(primaryKey));
-    const progress = cached?.kind === 'audio' ? undefined : await send(chatId, botText(ui, native ? 'fetching' : 'preparePlayback', { title: visible.title, source: track.provider }), { message_thread_id: messageThreadId, deleteAfterMs: 7 * 60_000, reply_parameters: replyParameters(messageId) });
+    const progress = cached?.kind === 'audio' ? undefined : await send(chatId, botText(ui, 'fetching', { title: visible.title, source: track.provider }), { message_thread_id: messageThreadId, deleteAfterMs: 7 * 60_000, reply_parameters: replyParameters(messageId) });
     try {
       let record: CachedMusic | undefined;
       const candidates = selections.request(chatId, userId, messageId, messageThreadId)?.pendingSources || [track];
       for (let index = 0; index < candidates.length; index++) {
         const candidate = candidates[index]!;
-        try { record = await playback.get(candidate, candidate.provider === 'netease'); }
+        try { record = await playback.get(candidate); }
         catch (error) {
           if (index === candidates.length - 1 || !sourceFallbackAllowed(error)) throw error;
           continue;
@@ -151,7 +150,7 @@ async function sendTrack(chatId: number, userId: number, track: Track, language:
       try { await sendRecord(record); }
       catch (error) {
         if (!rejectedFileId(error)) throw error;
-        await playback.invalidate(track, record); await sendRecord(await playback.get(track, track.provider === 'netease'));
+        await playback.invalidate(track, record); await sendRecord(await playback.get(track));
       }
     }
     finally { if (progress) await removeNow(chatId, progress.message_id); }
@@ -175,7 +174,7 @@ async function sendTrack(chatId: number, userId: number, track: Track, language:
           onDelivered: (kind, result) => {
             const message = result as { audio?: { file_id?: string }; document?: { file_id?: string } } | undefined;
             const fileId = message?.[kind]?.file_id;
-            if (fileId) record = { fileId, kind, duration: presentation.duration, bytes: job.bytes!, audioSource: job.audioSource, audio: job.audio };
+            if (fileId) record = { fileId, kind, duration: presentation.duration, bytes: job.bytes!, audioSource: job.audioSource, audio: job.audio, ...(job.audioTrack ? { audioTrack: job.audioTrack } : {}) };
           },
         });
         // Telegram now holds the file. Do not keep a duplicate on this VPS.
@@ -209,7 +208,7 @@ async function prepareSelection(session: MusicSelection) {
     if (original || playable) evidence.set(trackIdentity(track), {
       availability: 'complete', lossless: measured?.lossless, codec: measured?.codec, bitrate: measured?.bitrate,
       sampleRate: measured?.sampleRate, bitsPerSample: measured?.bitsPerSample,
-      cached: track.provider === 'netease' ? original?.kind === 'audio' || playable?.kind === 'audio' : playable?.kind === 'audio' || original?.kind === 'audio' && /mp3|mpeg.*layer\s*3/i.test(original.audio?.codec || ''),
+      cached: original?.kind === 'audio' || playable?.kind === 'audio',
     });
   })); } catch (error) { selections.abort(session); throw error; }
   selections.rank(session, evidence);
@@ -455,7 +454,7 @@ async function handleUpdate(update: Update): Promise<void> {
     if (cmd === '/start' && isPrivate && args.startsWith('browse_')) {
       const selected = parseBrowseStart(args);
       if (!selected) throw new ServiceError('INVALID_INPUT', 'Invalid browse link');
-      await sendCollection(chatId, userId, await resolveMusic(selected.url, selected.provider), message.message_id); return;
+      await sendCollection(chatId, userId, selected.albums ? await artistAlbums(selected.url) : await resolveMusic(selected.url, selected.provider), message.message_id); return;
     }
     if (cmd === '/start' && isPrivate && args.startsWith('raw_')) {
       const selected = parseInlineStart(args.replace(/^raw_/, 'in_'));

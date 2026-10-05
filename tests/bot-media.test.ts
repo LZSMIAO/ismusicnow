@@ -86,11 +86,21 @@ test('new uploads, document fallback and cached file references target the reque
   }
 });
 
-test('collapsed caption ends before format and technical details', () => {
+test('caption keeps platform and real format compact without spacer lines', () => {
   const track = { id:'123', provider:'netease' as const, title:'Song', artists:['Artist'], album:'Album', cover:'', durationMs:1000, sourceUrl:'https://music.163.com/song?id=123' };
   const job = { id:'fixture', track, format:'original' as const, status:'completed' as const, stage:'', createdAt:'', updatedAt:'', bytes:1000, audioSource:'netease' as const, audio:{ codec:'FLAC', lossless:true } };
   const caption = musicCaption(track,job,'en');
   const quote=caption.match(/<blockquote expandable>([\s\S]*?)<\/blockquote>/)![1]!;
-  assert.deepEqual(quote.split('\n').slice(0,3),['Album：Album','Source：NetEase','']);
-  assert.match(quote.split('\n').slice(3).join('\n'),/Format：FLAC/);
+  assert.deepEqual(quote.split('\n'),['Album：Album','#NetEase #flac 0.00MB','via @muismbot']);
+});
+
+test('fallback audio points album, source and sharing actions at the actual platform recording', async () => {
+  const { musicReferencePayload } = await import('../src/lib/server/bot-media.js');
+  const original = {...upload.track, provider:'qq' as const, id:'0003T91h4Wg24b', sourceUrl:'https://y.qq.com/n/ryqq/songDetail/0003T91h4Wg24b'};
+  const actual = {...upload.track, albumUrl:'https://music.163.com/album?id=66', artistIds:['88']};
+  const form = musicReferencePayload({...upload, track:original, job:{...upload.job,audioTrack:actual},fileId:'cached-fallback',kind:'audio'});
+  const rows = JSON.parse(String(form.get('reply_markup'))).inline_keyboard;
+  assert.equal(rows[0][0].callback_data,'browse:netease:album:66');
+  assert.equal(rows.at(-1).length,2); assert.equal(rows.at(-1)[0].url,actual.sourceUrl); assert.equal(rows.at(-1)[1].switch_inline_query,actual.sourceUrl);
+  assert.match(String(form.get('caption')), /#網易雲音樂 #flac/);
 });

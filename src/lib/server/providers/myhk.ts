@@ -9,7 +9,7 @@ export type MyhkProvider = keyof typeof myhkSources;
 export const isMyhkProvider = (provider: Provider): provider is MyhkProvider => provider in myhkSources;
 export const myhkConfigured = () => !!config.myhkApiKey;
 const cache = new Map<string, { until: number; value: Promise<unknown> }>();
-const catalog = new Map<string, { until: number; track: Track }>();
+const catalog = new Map<string, { until: number; track: Track; audioIds: string[] }>();
 const simplified = Converter({ from: 'tw', to: 'cn' });
 type Row = Record<string, unknown>;
 const text = (value: unknown) => typeof value === 'string' ? value.slice(0, 1000) : typeof value === 'number' ? String(value) : '';
@@ -24,11 +24,14 @@ export async function myhkRequest(endpoint: 'search' | 'info' | 'url' | 'lrc' | 
   const value = (async () => {
     try {
       const response = await fetch(`https://myhkw.cn/open/music/${endpoint}`, { method: 'POST', redirect: 'error',
-        body: new URLSearchParams({ ...params, type: myhkSources[provider], key: config.myhkApiKey }), signal: AbortSignal.timeout(3500) });
+        body: new URLSearchParams({ ...params, type: myhkSources[provider], key: config.myhkApiKey }), signal: AbortSignal.timeout(endpoint === 'search' ? 3500 : 15_000) });
       if (!response.ok) throw new ServiceError(response.status === 429 ? 'RATE_LIMIT' : 'UPSTREAM_ERROR', '音樂來源暫時無法回應。', 502);
       const body: unknown = await response.json();
       if (Array.isArray(body)) return body;
       if (!body || typeof body !== 'object') throw new Error('Invalid response');
+      // format=0 returns the provider's native search response. QQ uses code=0
+      // for success; accept only its actual song list, never a failed envelope.
+      if (endpoint === 'search' && params.format === '0' && nativeRows(body) !== undefined) return body;
       const envelope = body as Row;
       if (envelope.code !== 1 && envelope.code !== 200) throw new ServiceError(endpoint === 'url' ? 'NO_AUDIO' : 'UPSTREAM_ERROR', endpoint === 'url' ? '此曲暫無可用音源。' : '音樂來源暫時無法回應。', endpoint === 'url' ? 403 : 502);
       return envelope.data;
@@ -55,19 +58,31 @@ function safeCover(value: unknown): string {
   } catch { return ''; }
 }
 export function mapMyhkTrack(provider: MyhkProvider, row: Row, explicitId?: string): Track {
-  const id = explicitId || text(row.id || row.songId || row.url_id); validateTrackId(provider, id);
-  const artists = (Array.isArray(row.artist) ? row.artist.flatMap(name => text(name).split(/[、/&]/)) : text(row.artist || row.artistName).split(/[、/&]/)).map(name => name.trim()).filter(Boolean);
-  const albumId = provider === 'qq' ? text(row.pic_id || row.picid) : text(row.album_id);
+  const id = explicitId || text(row.id || row.songmid || row.MUSICRID || row.FileHash || row.songId || row.url_id).replace(/^MUSIC_/, ''); validateTrackId(provider, id);
+  const singer = Array.isArray(row.singer) ? row.singer.map(value => text((value as Row).name)) : undefined;
+  const artists = (singer || (Array.isArray(row.artist) ? row.artist.map(text) : [text(row.artist || row.artistName || row.ARTIST || row.SingerName)]))
+    .flatMap(name => name.split(/[、/&;]/)).map(name => name.trim()).filter(Boolean);
+  const albumId = text(provider === 'qq' ? row.albummid || row.pic_id || row.picid : row.ALBUMID || row.album_id);
   let albumUrl: string | undefined;
   if (albumId && ['qq', 'kuwo', 'netease'].includes(provider)) {
     try { albumUrl = musicSourceUrl(provider, 'album', albumId); } catch { /* No guessed references. */ }
   }
-  const cover = safeCover(row.pic || row.cover) || (provider === 'qq' && /^[A-Za-z0-9]{14}$/.test(albumId) ? `https://y.gtimg.cn/music/photo_new/T002R800x800M000${albumId}.jpg` : '');
-  return { id, provider, title: text(row.name || row.songName), artists, album: text(row.album || row.albumName), albumUrl,
-    cover, durationMs: 0, sourceUrl: musicSourceUrl(provider, 'track', id) };
+  const cover = safeCover(row.pic || row.cover || row.Image || row.AlbumImage) || (provider === 'qq' && /^[A-Za-z0-9]{14}$/.test(albumId) ? `https://y.gtimg.cn/music/photo_new/T002R800x800M000${albumId}.jpg` : '');
+  const seconds = Number(row.interval || row.DURATION || row.Duration || 0);
+  return { id, provider, title: text(row.name || row.songName || row.songname || row.NAME || row.SongName).replace(/<\/?em>/gi, ''), artists,
+    album: text(row.album || row.albumName || row.albumname || row.ALBUM || row.AlbumName), albumUrl, cover,
+    durationMs: Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : 0, sourceUrl: musicSourceUrl(provider, 'track', id) };
+}
+function nativeRows(value: unknown): Row[] | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return;
+  const data = value as Row, nested = data.data as Row | undefined;
+  const song = nested?.song as Row | undefined;
+  const list = Array.isArray(data.abslist) ? data.abslist : Array.isArray(nested?.lists) && data.status === 1 ? nested.lists : data.code === 0 && Array.isArray(song?.list) ? song.list : undefined;
+  return list?.filter(row => row && typeof row === 'object') as Row[];
 }
 function rows(value: unknown): Row[] {
   if (Array.isArray(value)) return value.filter(row => row && typeof row === 'object');
+  const native = nativeRows(value); if (native) return native;
   if (value && typeof value === 'object') {
     const data = value as Row;
     if (Array.isArray(data.songId)) return data.songId.map((id, i) => ({ id, name: (data.songName as unknown[])?.[i], album: (data.albumName as unknown[])?.[i], artist: (data.artistName as unknown[])?.[i] }));
@@ -75,13 +90,26 @@ function rows(value: unknown): Row[] {
   throw new ServiceError('UPSTREAM_ERROR', '音樂來源回傳的列表格式無效。', 502);
 }
 export async function searchMyhk(query: string, provider: MyhkProvider): Promise<Collection> {
-  // Default format retains complete artist arrays and album IDs. format=1
-  // truncates some artist credits and loses those identities in this service.
+  // Native search retains recording durations and Kugou's quality-specific
+  // hashes. Standardized Meting rows omit both, disabling safe source failover.
   const name = /[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(query) ? query : simplified(query);
-  const data = await myhkRequest('search', provider, { name, limit: '30', page: '1', pic: '1' });
-  const tracks = rows(data).slice(0, 30).flatMap(row => { try { const track = mapMyhkTrack(provider, row); return track.title ? [track] : []; } catch { return []; } });
+  const data = await myhkRequest('search', provider, { name, limit: '30', page: '1', pic: '1', ...(['qq', 'kuwo', 'kugou'].includes(provider) ? { format: '0' } : {}) });
+  const raw = rows(data).slice(0, 30);
+  const tracks = raw.flatMap(row => { try { const track = mapMyhkTrack(provider, row); return track.title ? [track] : []; } catch { return []; } });
   for (const [id, entry] of catalog) if (entry.until <= Date.now()) catalog.delete(id);
-  for (const track of tracks) { if (catalog.size >= 1000) catalog.delete(catalog.keys().next().value!); catalog.set(`${provider}:${track.id}`, { track, until: Date.now() + 3600_000 }); }
+  const seen = new Set<string>();
+  for (const row of raw) {
+    try {
+      const track = mapMyhkTrack(provider, row), key = `${provider}:${track.id}`;
+      // A native list may repeat the same hash with incomplete release credits.
+      // Keep the first canonical entry instead of overwriting it with a variant.
+      if (!track.title || seen.has(key)) continue;
+      seen.add(key);
+      const audioIds = provider === 'kugou' ? [text(row.SQFileHash), text(row.HQFileHash), track.id].filter(id => /^[A-Fa-f0-9]{32}$/.test(id)) : [track.id];
+      if (catalog.size >= 1000) catalog.delete(catalog.keys().next().value!);
+      catalog.set(key, { track, audioIds: [...new Set(audioIds)], until: Date.now() + 3600_000 });
+    } catch { /* Invalid platform identity. */ }
+  }
   return { title: query, query, searchType: 'track', provider, kind: 'search', tracks, total: tracks.length, warnings: [] };
 }
 export async function myhkTrack(provider: MyhkProvider, id: string): Promise<Track> {
@@ -90,8 +118,15 @@ export async function myhkTrack(provider: MyhkProvider, id: string): Promise<Tra
   if (!data || typeof data !== 'object' || Array.isArray(data)) throw new ServiceError('NOT_FOUND', '找不到這首歌曲。', 404);
   const track = mapMyhkTrack(provider, data as Row, id);
   if (!track.title) throw new ServiceError('NOT_FOUND', '找不到這首歌曲。', 404);
-  const entry = catalog.get(`${provider}:${id}`);
-  return entry && entry.until > Date.now() ? { ...track, artists: entry.track.artists.length ? entry.track.artists : track.artists, albumUrl: track.albumUrl || entry.track.albumUrl } : track;
+  let entry = catalog.get(`${provider}:${id}`);
+  if ((!entry || entry.until <= Date.now() || !entry.track.durationMs) && ['qq', 'kuwo', 'kugou'].includes(provider)) {
+    // A direct link or a process restart has no search catalog. Recover metadata
+    // only by the exact provider ID, never by taking a title's first result.
+    await searchMyhk(track.title, provider).catch(() => {});
+    entry = catalog.get(`${provider}:${id}`);
+  }
+  return entry && entry.until > Date.now() ? { ...track, artists: entry.track.artists.length ? entry.track.artists : track.artists,
+    album: entry.track.album || track.album, cover: track.cover || entry.track.cover, durationMs: entry.track.durationMs, albumUrl: track.albumUrl || entry.track.albumUrl } : track;
 }
 export async function resolveMyhk(link: MusicLink): Promise<Collection> {
   if (!isMyhkProvider(link.provider)) throw new ServiceError('UNSUPPORTED_LINK', '不支援此來源。');
@@ -107,11 +142,22 @@ export async function resolveMyhk(link: MusicLink): Promise<Collection> {
 }
 export async function myhkAudio(provider: MyhkProvider, id: string): Promise<{ url: string; extension: string }> {
   validateTrackId(provider, id);
-  const data = await myhkRequest('url', provider, { id }, 30_000);
-  if (typeof data !== 'string' || !/^https?:\/\//.test(data)) throw new ServiceError('NO_AUDIO', '此曲暫無可用音源。', 403);
-  const url = validateMyhkAudioUrl(data, provider);
-  const extension = /\.(mp3|flac|m4a|aac|ogg|opus)$/i.exec(url.pathname)?.[1]?.toLowerCase() || 'mp3';
-  return { url: url.href, extension };
+  const entry = catalog.get(`${provider}:${id}`);
+  const ids = entry && entry.until > Date.now() ? entry.audioIds : [id];
+  let failure: unknown;
+  for (const audioId of ids) {
+    try {
+      const data = await myhkRequest('url', provider, { id: audioId }, 30_000);
+      if (typeof data !== 'string' || !/^https?:\/\//.test(data)) throw new ServiceError('NO_AUDIO', '此曲暫無可用音源。', 403);
+      const url = validateMyhkAudioUrl(data, provider);
+      const extension = /\.(mp3|flac|m4a|aac|ogg|opus)$/i.exec(url.pathname)?.[1]?.toLowerCase() || 'mp3';
+      return { url: url.href, extension };
+    } catch (error) {
+      if (!(error instanceof ServiceError) || !['NO_AUDIO', 'UPSTREAM_ERROR'].includes(error.code)) throw error;
+      failure = error;
+    }
+  }
+  throw failure || new ServiceError('NO_AUDIO', '此曲暫無可用音源。', 403);
 }
 export function validateMyhkAudioUrl(raw: string, provider: MyhkProvider): URL {
   let url: URL;

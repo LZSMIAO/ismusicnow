@@ -13,6 +13,7 @@ import { runCommand } from './process.js';
 import { ServiceError } from './errors.js';
 
 export const isMp3 = (audio: DownloadJob['audio']) => !!audio && !audio.lossless && /mp3|mpeg.*layer[ -]?3/i.test(audio.codec);
+export const nativeAudioCandidate = (audio: DownloadJob['audio']) => !!audio && (audio.lossless || isMp3(audio) || /aac|alac/i.test(audio.codec));
 interface Prepared { path: string; job: DownloadJob; release: () => Promise<void> }
 // Playback is a separate derivative. Never replace, relabel, or change the
 // original download, and never mix its Telegram file ID with this cache key.
@@ -42,8 +43,8 @@ export class BotPlayback {
     const key = await musicCacheKey(track);
     await Promise.all([this.cache.invalidate(key, record.fileId), this.cache.invalidate(telegramPlaybackKey(key), record.fileId)]);
   }
-  async get(track: Track, preferOriginalAudio = track.provider === 'netease'): Promise<CachedMusic> {
-    const native = preferOriginalAudio && track.provider === 'netease';
+  async get(track: Track, preferOriginalAudio = true): Promise<CachedMusic> {
+    const native = preferOriginalAudio;
     const primaryKey = await musicCacheKey(track), playbackKey = telegramPlaybackKey(primaryKey);
     const key = native ? primaryKey : playbackKey;
     let original = await this.cache.get(primaryKey);
@@ -51,7 +52,7 @@ export class BotPlayback {
     // action and use the independent playable cache for ordinary requests.
     if (native && original?.kind === 'audio') return original;
     if (native && original?.kind === 'document') {
-      if (original.nativeAudioRejected) return this.get(track, false);
+      if (original.nativeAudioRejected || !nativeAudioCandidate(original.audio)) return this.get(track, false);
       // Older Inline uploads were forced to document without probing FLAC.
       // Refresh that one reference; preserve unrelated music and MP3 caches.
       await this.cache.invalidate(primaryKey, original.fileId); original = undefined;
@@ -89,7 +90,7 @@ export class BotPlayback {
           }, {
             chatId, job, track, ...presentation, asDocument: document, botUsername: this.username(), uiLanguage: 'en',
             file: await botUploadFile(audioPath), filename: `${safeFilename(`${track.artists.join(' - ')} - ${track.title}`)}${extname(audioPath)}`,
-            onDelivered: (kind, message: any) => { if (message?.[kind]?.file_id) cached = { kind, fileId: message[kind].file_id, duration: presentation.duration, bytes: job.bytes!, audioSource: job.audioSource, audio: job.audio, ...(job.presentation ? { presentation: job.presentation } : {}), ...(native && kind === 'document' ? { nativeAudioRejected: true } : {}) }; },
+            onDelivered: (kind, message: any) => { if (message?.[kind]?.file_id) cached = { kind, fileId: message[kind].file_id, duration: presentation.duration, bytes: job.bytes!, audioSource: job.audioSource, audio: job.audio, ...(job.audioTrack ? { audioTrack: job.audioTrack } : {}), ...(job.presentation ? { presentation: job.presentation } : {}), ...(native && !document && kind === 'document' ? { nativeAudioRejected: true } : {}) }; },
           });
           if (!cached) throw new ServiceError('TELEGRAM_ERROR', 'No Telegram file reference');
           return cached;
@@ -103,7 +104,7 @@ export class BotPlayback {
         if (native) {
           // Probe the original in the private cache channel first. Recipients
           // never receive a document followed by a replacement audio message.
-          const record = await upload(path, ready, false);
+          const record = await upload(path, ready, !nativeAudioCandidate(ready.audio));
           if (record.kind === 'audio') { result = record; return record; }
           await this.cache.put(primaryKey, record);
           await this.cache.deliver(playbackKey, async cached => { result = cached; }, async () => {

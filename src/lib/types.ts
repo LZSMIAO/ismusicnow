@@ -52,6 +52,7 @@ export interface DownloadJob {
   error?: string;
   errorCode?: string;
   audioSource: Provider;
+  audioTrack?: Track; // Canonical platform reference when the same recording uses a fallback.
   presentation?: 'original' | 'telegram-playback';
   audio?: { codec: string; bitrate?: number; sampleRate?: number; bitsPerSample?: number; lossless: boolean };
 }

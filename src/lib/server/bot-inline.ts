@@ -3,7 +3,7 @@ import type { Collection, DownloadJob, MusicEntity, MusicSearchKind, Provider, T
 import type { CachedMusic } from './bot-cache.js';
 import { rejectedFileId } from './bot-cache.js';
 import { botError, botText, type BotLanguage } from './bot-i18n.js';
-import { coverUrl, musicCaption, TelegramRequestError } from './bot-media.js';
+import { coverUrl, musicCaption, musicTrack, TelegramRequestError } from './bot-media.js';
 import { displayTrack, type AlbumLanguage } from './bot-settings.js';
 import { escapeHtml, shortText } from './bot-selection.js';
 import { parseMusicLink, validateTrackId, musicSourceUrl } from './links.js';
@@ -68,19 +68,19 @@ export function parseInlineQuery(value: string) {
   if (link) provider = link.provider;
   return { input, provider, kind, albums: albums && link?.kind === 'artist' };
 }
-export function browseStart(provider: Provider, kind: 'album' | 'artist', id: string): string {
+export function browseStart(provider: Provider, kind: 'album' | 'artist' | 'playlist' | 'albums', id: string): string {
   validateTrackId(provider, id);
   const code = codes[provider];
   if (!code) throw new ServiceError('UNSUPPORTED_LINK', 'Unsupported browse source');
   return `browse_${code}_${kind}_${id}`;
 }
-export function parseBrowseStart(value: string): { provider: Provider; kind: 'album' | 'artist'; id: string; url: string } | undefined {
-  const match = /^browse_([nsqw])_(album|artist)_([a-zA-Z0-9]{1,22})$/.exec(value);
+export function parseBrowseStart(value: string): { provider: Provider; kind: 'album' | 'artist' | 'playlist'; id: string; url: string; albums?: boolean } | undefined {
+  const match = /^browse_([nsqwg])_(album|artist|playlist|albums)_([a-zA-Z0-9]{1,32})$/.exec(value);
   if (!match) return;
-  const provider = codeProviders[match[1]!]!, kind = match[2] as 'album' | 'artist', id = match[3]!;
+  const provider = codeProviders[match[1]!]!, kind = (match[2] === 'albums' ? 'artist' : match[2]) as 'album' | 'artist' | 'playlist', id = match[3]!;
   validateTrackId(provider, id);
   if (kind === 'artist' && !['netease', 'spotify'].includes(provider)) return;
-  return { provider, kind, id, url: musicSourceUrl(provider, kind, id) };
+  return { provider, kind, id, url: musicSourceUrl(provider, kind, id), ...(match[2] === 'albums' ? { albums: true } : {}) };
 }
 function thumbnail(raw: string): Record<string, string> {
   try {
@@ -136,9 +136,9 @@ export class BotInline {
     } catch { /* Untrusted upstream reference. */ }
     const artist = track.artistIds?.[0];
     if (artist && (track.provider === 'netease' ? /^\d{1,16}$/ : /^[a-zA-Z0-9]{22}$/).test(artist) && ['netease', 'spotify'].includes(track.provider)) row.push({ text: shortText(track.artists[0] || botText(ui, 'artist'), 20), url: `https://t.me/${this.deps.username()}?start=${browseStart(track.provider, 'artist', artist)}` });
-    row.push({ text: `${botText(ui, 'source')} ↗`, url: track.sourceUrl });
-    rows.push(row);
-    rows.push([...(playback ? [{ text: botText(ui, 'originalFile'), url: `https://t.me/${this.deps.username()}?start=${inlineStart(track).replace(/^in_/, 'raw_')}` }] : []), { text: botText(ui, 'share'), switch_inline_query: track.sourceUrl }]);
+    if (playback) row.push({ text: botText(ui, 'originalFile'), url: `https://t.me/${this.deps.username()}?start=${inlineStart(track).replace(/^in_/, 'raw_')}` });
+    if (row.length) rows.push(row);
+    rows.push([{ text: `${botText(ui, 'source')} ↗`, url: track.sourceUrl }, { text: botText(ui, 'share'), switch_inline_query: track.sourceUrl }]);
     return { inline_keyboard: rows };
   }
   private article(track: Track, visible: Track, ui: BotLanguage, userId: number, record?: CachedMusic, privateOnly = false) {
@@ -153,15 +153,15 @@ export class BotInline {
     const privateOnly = record?.kind !== 'audio' || !cachedInlineAudio(record);
     const fallback = this.article(track, visible, ui, userId, firstNames ? undefined : record, privateOnly);
     if (!record || firstNames || privateOnly) return { result: fallback, fallback };
-    const shared = { id: `${fallback.id}:audio`, caption: musicCaption(visible, job(record, track), ui, this.deps.username()), parse_mode: 'HTML', reply_markup: this.keyboard(visible, ui, undefined, record.presentation === 'telegram-playback') };
+    const shared = { id: `${fallback.id}:audio`, caption: musicCaption(visible, job(record, track), ui, this.deps.username()), parse_mode: 'HTML', reply_markup: this.keyboard(musicTrack(visible, record), ui, undefined, record.presentation === 'telegram-playback') };
     return { result: { type: 'audio', audio_file_id: record.fileId, ...shared }, fallback };
   }
   private entity(entity: MusicEntity, ui: BotLanguage) {
     const description = [botText(ui, label(entity.kind)), entity.artists.join(' / '), entity.year, entity.count !== undefined ? botText(ui, 'tracksCount', { count: entity.count }) : '', source(entity.provider)].filter(Boolean).join(' · ');
-    const rows = [[{ text: botText(ui, 'browseInline'), switch_inline_query_current_chat: entity.sourceUrl }]];
-    if (entity.kind === 'artist') rows.push([{ text: botText(ui, 'album'), switch_inline_query_current_chat: `albums ${entity.sourceUrl}` }]);
+    const row = [{ text: botText(ui, 'browseInline'), url: `https://t.me/${this.deps.username()}?start=${browseStart(entity.provider, entity.kind, entity.id)}` }];
+    if (entity.kind === 'artist') row.push({ text: botText(ui, 'album'), url: `https://t.me/${this.deps.username()}?start=${browseStart(entity.provider, 'albums', entity.id)}` });
     return { type: 'article', id: `${entity.provider}:${entity.kind}:${entity.id}`, title: shortText(entity.title, 100), description: shortText(description, 250), ...thumbnail(entity.cover),
-      input_message_content: content(`<b>${escapeHtml(shortText(entity.title, 100))}</b>\n${escapeHtml(description)}\n<blockquote expandable>${source(entity.provider)}</blockquote>`), reply_markup: { inline_keyboard: [...rows, [{ text: `${botText(ui, 'source')} ↗`, url: entity.sourceUrl }]] } };
+      input_message_content: content(`<b>${escapeHtml(shortText(entity.title, 100))}</b>\n${escapeHtml(description)}`), reply_markup: { inline_keyboard: [row, [{ text: `${botText(ui, 'source')} ↗`, url: entity.sourceUrl }, { text: botText(ui, 'share'), switch_inline_query: entity.sourceUrl }]] } };
   }
   private choices(input: string, provider: BotSource, ui: BotLanguage, text?: string) {
     const sourceButtons = (['all', ...searchableProviders('track').map(provider => provider.id)] as BotSource[]).map(value => ({ text: value === 'all' ? botText(ui, 'allSources') : source(value), switch_inline_query_current_chat: `${value} ${input}`.trim() }));
@@ -257,13 +257,13 @@ export class BotInline {
       if (!acquire) throw new ServiceError('INLINE_CACHE_SETUP', 'Playback acquisition unavailable');
       const edit = async (record: CachedMusic) => this.deps.telegram('editMessageMedia', { inline_message_id: inlineId,
         media: { type: 'audio', media: record.fileId, caption: musicCaption(visible, job(record, track), ui, this.deps.username()), parse_mode: 'HTML', title: visible.title, performer: visible.artists.join(' / '), duration: record.duration },
-        reply_markup: forInlineChat([{ reply_markup: this.keyboard(visible, ui, undefined, record.presentation === 'telegram-playback') }], 'channel')[0]!.reply_markup });
+        reply_markup: forInlineChat([{ reply_markup: this.keyboard(musicTrack(visible, record), ui, undefined, record.presentation === 'telegram-playback') }], 'channel')[0]!.reply_markup });
       let record = await acquire(track);
       try { await edit(record); }
       catch (error) {
         if (rejectedFileId(error) && this.deps.invalidate) {
           await this.deps.invalidate(track, record); record = await acquire(track); await edit(record);
-        } else if (track.provider === 'netease' && record.audio?.lossless && this.deps.fallbackPlayback && error instanceof TelegramRequestError && error.errorCode === 400 && /audio|file type|wrong file|MEDIA_INVALID/i.test(error.description)) {
+        } else if (record.audio && !cachedInlineAudio(record) && this.deps.fallbackPlayback && error instanceof TelegramRequestError && error.errorCode === 400 && /audio|file type|wrong file|MEDIA_INVALID/i.test(error.description)) {
           record = await this.deps.fallbackPlayback(track); await edit(record);
         } else throw error;
       }

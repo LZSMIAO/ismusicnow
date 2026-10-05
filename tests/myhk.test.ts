@@ -38,12 +38,12 @@ test('search uses POST, coalesces concurrent requests, preserves artist credits 
     const results = await Promise.all([searchMyhk('test-concurrent', 'qq'), searchMyhk('test-concurrent', 'qq')]);
     assert.equal(calls.length, 1); assert.equal(calls[0]!.url, 'https://myhkw.cn/open/music/search');
     assert.equal(calls[0]!.body.get('key'), 'test-private-key'); assert.equal(calls[0]!.body.get('type'), 'qq');
-    assert.equal(calls[0]!.body.get('format'), null);
+    assert.equal(calls[0]!.body.get('format'), '0');
     assert.deepEqual(results[0]!.tracks[0]!.artists, ['Spylent']);
-    assert.equal(results[0]!.tracks[0]!.durationMs, 0);
+    assert.equal(results[0]!.tracks[0]!.durationMs, 180000);
     assert.equal(results[0]!.tracks[0]!.albumUrl, 'https://y.qq.com/n/ryqq/albumDetail/002qie5W24bm86');
     assert.doesNotMatch(JSON.stringify(results), /test-private-key|url_id/);
-  }, (async (url, options) => { assert.equal(options?.redirect, 'error'); calls.push({url: String(url), body: options!.body as URLSearchParams}); return Response.json([row(samples.qq)]); }) as typeof fetch);
+  }, (async (url, options) => { assert.equal(options?.redirect, 'error'); calls.push({url: String(url), body: options!.body as URLSearchParams}); return Response.json({code:0,data:{song:{list:[{songmid:samples.qq,songname:'春雨',singer:[{name:'Spylent'}],albumname:'把他的蜡笔拿走!',albummid:'002qie5W24bm86',interval:180}]}}}); }) as typeof fetch);
 });
 
 test('album/list formats normalize their envelope, retain order and reject unsupported capabilities', async () => {
@@ -113,4 +113,37 @@ test('Kugou chosen results and 32-character callback IDs replace the same Inline
   calls.length=0;
   await inline.callback({id:'cb',from:{id:42},inline_message_id:'same-message',data:`ip:42:g:${samples.kugou}`});
   assert.equal(calls[0]!.method,'answerCallbackQuery'); assert.ok(calls.some(call=>call.method==='editMessageMedia'));
+});
+
+test('native Kuwo and Kugou preserve duration; a Kugou quality hash may return real FLAC', async () => {
+  const sq = '489190A9A84F2A27FC0BE704A12DF3B5';
+  await mocked(async () => {
+    const kuwo = await searchMyhk('native-kuwo-duration', 'kuwo');
+    assert.equal(kuwo.tracks[0]!.id, '251977041'); assert.equal(kuwo.tracks[0]!.durationMs, 180000);
+    const kg = await searchMyhk('native-kugou-quality', 'kugou');
+    assert.equal(kg.tracks[0]!.title, 'Song'); assert.equal(kg.tracks[0]!.durationMs, 180000);
+    assert.equal((await myhkAudio('kugou', samples.kugou)).extension, 'flac');
+  }, (async (url, options) => {
+    const params = options!.body as URLSearchParams;
+    if (String(url).endsWith('/url')) { assert.equal(params.get('id'), sq); return Response.json({code:1,data:'https://fs.kugou.com/audio.flac'}); }
+    if (params.get('type') === 'kw') return Response.json({abslist:[{MUSICRID:'MUSIC_251977041',NAME:'Song',ARTIST:'Artist',ALBUM:'Release',ALBUMID:'12',DURATION:'180'}]});
+    return Response.json({status:1,data:{lists:[{FileHash:samples.kugou,SQFileHash:sq,SongName:'<em>Song</em>',SingerName:'Artist',AlbumName:'Release',Duration:180}]}});
+  }) as typeof fetch);
+});
+
+test('empty native QQ responses are valid lists, not failed vendor envelopes', async () => {
+  await mocked(async () => { assert.deepEqual((await searchMyhk('native-empty-qq', 'qq')).tracks, []); },
+    (async () => Response.json({code:0,data:{song:{list:[]}}})) as typeof fetch);
+});
+
+test('original NetEase quality prefers authorized native FLAC over a primary MP3', async () => {
+  let primary = 0;
+  await mocked(async () => {
+    config.neteaseApiUrl = 'https://native.test/';
+    assert.equal((await neteaseAudio('quality-native-first','original')).extension, 'flac');
+    assert.equal(primary, 0);
+  }, (async url => {
+    if (String(url).includes('myhkw.cn')) { primary++; return Response.json({code:1,data:'https://m801.music.126.net/mp3.mp3'}); }
+    return Response.json({code:200,data:[{url:'https://m801.music.126.net/native.flac',type:'flac'}]});
+  }) as typeof fetch);
 });

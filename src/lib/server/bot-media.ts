@@ -16,26 +16,39 @@ export class TelegramRequestError extends ServiceError {
 }
 
 const sourceNames = { netease: '網易雲音樂', qq: 'QQ Music', kuwo: 'Kuwo', kugou: 'Kugou', migu: 'Migu', qianqian: 'Qianqian', spotify: 'Spotify', ytm: 'YouTube Music', soundcloud: 'SoundCloud', bandcamp: 'Bandcamp', bilibili: 'Bilibili' };
+function audioTag(codec: string): string {
+  if (/mp3|mpeg.*layer[ -]?3/i.test(codec)) return 'mp3';
+  if (/flac/i.test(codec)) return 'flac';
+  if (/alac/i.test(codec)) return 'alac';
+  if (/aac/i.test(codec)) return 'aac';
+  if (/vorbis/i.test(codec)) return 'ogg';
+  return codec.toLowerCase().replace(/[^\p{L}\p{N}_]/gu, '');
+}
 export function musicCaption(track: Track, job: DownloadJob, language: BotLanguage = 'zh-Hant', botUsername = 'muismbot', recipient?: { id?: number; name?: string }): string {
   const audio = job.audio;
   const source = job.audioSource === 'netease' ? language === 'zh-Hans' ? '网易云音乐' : language === 'zh-Hant' ? '網易雲音樂' : 'NetEase' : sourceNames[job.audioSource];
   const title = escapeHtml(shortText(track.title, 100)), artists = escapeHtml(shortText(track.artists.join(' / ') || botText(language, 'unknownArtist'), 120));
   const album = escapeHtml(shortText(track.album || botText(language, 'unknownAlbum'), 120));
-  // Telegram previews up to three quote lines. Separate real metadata fields
-  // so even a short title/album leaves details behind the native expand control.
+  const technical = [`#${source.replace(/[^\p{L}\p{N}_]/gu, '')}`,
+    audio?.codec ? `#${audioTag(audio.codec)}` : '',
+    job.bytes ? `${(job.bytes / 1024 / 1024).toFixed(2)}MB` : '',
+    audio?.bitrate ? `${(audio.bitrate / 1000).toFixed(2)}kbps` : '',
+  ].filter(Boolean).join(' ');
+  // A short caption needs no spacer. Telegram handles expansion when real
+  // content wraps beyond its preview; technical values stay on one line.
   const details = [
     `${escapeHtml(botText(language, 'album'))}：${album}`,
-    `${escapeHtml(botText(language, 'source'))}：${escapeHtml(source)}`,
-    '', // The three-line collapsed preview ends before technical metadata.
-    `${escapeHtml(botText(language, 'audioFormat'))}：${escapeHtml(audio?.codec || botText(language, 'originalAudio'))}`,
-    job.bytes ? `${escapeHtml(botText(language, 'fileSize'))}：${(job.bytes / 1024 / 1024).toFixed(2)} MB` : '',
-    audio?.bitrate ? `${escapeHtml(botText(language, 'bitrate'))}：${Math.round(audio.bitrate / 1000)} kbps` : '',
+    escapeHtml(technical),
     job.presentation === 'telegram-playback' ? escapeHtml(botText(language, 'playbackVersion')) : '',
-    `via @${escapeHtml(botUsername)} · 音樂主義`,
-  ].filter((value, index) => value || index === 2).join('\n');
+    `via @${escapeHtml(botUsername)}`,
+  ].filter(Boolean).join('\n');
   return [recipient?.id ? `<a href="tg://user?id=${recipient.id}">${escapeHtml(shortText(recipient.name || String(recipient.id), 40))}</a>` : '',
     `<b>「${title}」</b> — ${artists}`,
     `<blockquote expandable>${details}</blockquote>`].filter(Boolean).join('\n');
+}
+export function musicTrack(track: Track, job: Pick<DownloadJob, 'audioTrack'>): Track {
+  const actual = job.audioTrack;
+  return actual ? { ...track, provider: actual.provider, id: actual.id, sourceUrl: actual.sourceUrl, albumUrl: actual.albumUrl, artistIds: actual.artistIds } : track;
 }
 function musicButtons(track: Track, language: BotLanguage, playback = false) {
   const row: { text: string; url?: string; callback_data?: string }[] = [];
@@ -45,8 +58,9 @@ function musicButtons(track: Track, language: BotLanguage, playback = false) {
   } catch { /* Skip malformed upstream album references. */ }
   const id = track.artistIds?.[0];
   if (id && (track.provider === 'netease' ? /^\d{1,16}$/ : /^[a-zA-Z0-9]{22}$/).test(id) && ['netease', 'spotify'].includes(track.provider)) row.push({ text: shortText(track.artists[0] || botText(language, 'artist'), 20), callback_data: `browse:${track.provider}:artist:${id}` });
-  row.push({ text: `${botText(language, 'source')} ↗`, url: track.sourceUrl });
-  return { inline_keyboard: [row, [...(playback ? [{ text: botText(language, 'originalFile'), callback_data: `raw:${track.provider}:${track.id}` }] : []), { text: botText(language, 'share'), switch_inline_query: track.sourceUrl }]] };
+  if (playback) row.push({ text: botText(language, 'originalFile'), callback_data: `raw:${track.provider}:${track.id}` });
+  return { inline_keyboard: [...(row.length ? [row] : []), [
+    { text: `${botText(language, 'source')} ↗`, url: track.sourceUrl }, { text: botText(language, 'share'), switch_inline_query: track.sourceUrl }]] };
 }
 
 // Cover URLs originate upstream. Limit them to platform CDNs, including redirects.
@@ -122,7 +136,7 @@ export function musicReferencePayload(reference: MusicReference): FormData {
   form.set('caption', musicCaption(reference.track, reference.job, language, reference.botUsername, { id: reference.recipientId, name: reference.recipientName }));
   form.set('parse_mode', 'HTML');
   if (reference.replyTo !== undefined) form.set('reply_parameters', JSON.stringify({ message_id: reference.replyTo, allow_sending_without_reply: true }));
-  form.set('reply_markup', JSON.stringify(musicButtons(reference.track, language, reference.job.presentation === 'telegram-playback')));
+  form.set('reply_markup', JSON.stringify(musicButtons(musicTrack(reference.track, reference.job), language, reference.job.presentation === 'telegram-playback')));
   if (reference.kind === 'audio') {
     form.set('title', reference.track.title.slice(0, 256));
     form.set('performer', reference.track.artists.join(' / ').slice(0, 256));
@@ -142,7 +156,7 @@ export function musicPayload(upload: MusicUpload, document = false, withThumbnai
   form.set('caption', musicCaption(upload.track, upload.job, language, upload.botUsername, { id: upload.recipientId, name: upload.recipientName }));
   form.set('parse_mode', 'HTML');
   if (upload.replyTo !== undefined) form.set('reply_parameters', JSON.stringify({ message_id: upload.replyTo, allow_sending_without_reply: true }));
-  form.set('reply_markup', JSON.stringify(musicButtons(upload.track, language, upload.job.presentation === 'telegram-playback')));
+  form.set('reply_markup', JSON.stringify(musicButtons(musicTrack(upload.track, upload.job), language, upload.job.presentation === 'telegram-playback')));
   if (!document) {
     form.set('title', upload.track.title.slice(0, 256));
     form.set('performer', upload.track.artists.join(' / ').slice(0, 256));
@@ -152,7 +166,8 @@ export function musicPayload(upload: MusicUpload, document = false, withThumbnai
   return form;
 }
 export async function sendMusic(telegram: Telegram, upload: MusicUpload): Promise<'audio' | 'document'> {
-  // NetEase FLAC remains native audio. Playback derivatives are prepared
+  // Compatible original audio, including FLAC, is tried before a derivative.
+  // Playback derivatives are prepared
   // separately by BotPlayback and explicitly labelled in their caption.
   const delivered = (result: unknown, fallback: 'audio' | 'document' = 'audio') => {
     const kind = result && typeof result === 'object' && 'document' in result && !('audio' in result) ? 'document' as const : fallback;

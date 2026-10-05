@@ -39,7 +39,7 @@ test('real handler routes inline queries without chat IDs, deep-link onboarding 
     const audio = calls.findLast(c => c.method === 'sendAudio')!;
     assert.equal(audio.body.audio, 'existing-file-id'); assert.match(audio.body.caption, /<blockquote expandable>/);
     assert.equal(audio.body.reply_parameters, undefined);
-    assert.equal(audio.body.reply_markup.inline_keyboard.at(-1)[0].switch_inline_query, 'https://music.163.com/song?id=123');
+    assert.equal(audio.body.reply_markup.inline_keyboard.at(-1)[1].switch_inline_query, 'https://music.163.com/song?id=123');
     assert.ok(calls.some(c => c.method === 'deleteMessage' && c.body.message_id === promptId));
     await handle({ update_id: 5, inline_query: { id: 'ready', from: { id: 42, language_code: 'ja' }, query: '床', offset: '' } });
     assert.equal(calls.at(-1)!.body.results[0].audio_file_id, 'existing-file-id'); assert.match(calls.at(-1)!.body.results[0].caption, /アルバム/);

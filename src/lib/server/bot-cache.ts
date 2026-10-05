@@ -10,6 +10,8 @@ export interface MusicCacheKey { provider: Provider; id: string; quality: string
 const recordSchema = z.object({
   fileId: z.string().min(1), kind: z.enum(['audio', 'document']), duration: z.number().nonnegative(),
   bytes: z.number().int().positive(), audioSource: z.enum(providerIds),
+  audioTrack: z.object({ id: z.string(), provider: z.enum(providerIds), title: z.string(), artists: z.array(z.string()), album: z.string(),
+    albumUrl: z.string().optional(), cover: z.string(), durationMs: z.number(), sourceUrl: z.string(), artistIds: z.array(z.string()).optional(), isrc: z.string().optional() }).optional(),
   presentation: z.enum(['original', 'telegram-playback']).optional(), nativeAudioRejected: z.boolean().optional(),
   audio: z.object({ codec: z.string(), bitrate: z.number().optional(), sampleRate: z.number().optional(),
     bitsPerSample: z.number().optional(), lossless: z.boolean() }).optional(),

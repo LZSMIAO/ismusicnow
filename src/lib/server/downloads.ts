@@ -9,8 +9,9 @@ import type { DownloadFormat, DownloadJob, Track, Provider } from '../types.js';
 import { config } from './config.js';
 import { publicError, ServiceError } from './errors.js';
 import { safeFilename } from './links.js';
-import { legacyNeteaseAudio, neteaseAudio } from './providers/netease.js';
-import { isMyhkProvider, myhkAudio, validateMyhkAudioUrl } from './providers/myhk.js';
+import { legacyNeteaseAudio, neteaseAudio, neteaseRequest, mapNetease, neteaseTracks } from './providers/netease.js';
+import { isMyhkProvider, myhkAudio, myhkConfigured, myhkTrack, validateMyhkAudioUrl } from './providers/myhk.js';
+import { sameRecording, sourceFallbackAllowed } from './bot-recordings.js';
 import { downloadSpotify } from './providers/spotify.js';
 import { downloadPublic } from './providers/public-audio.js';
 import { downloadYtm } from './providers/ytm.js';
@@ -68,22 +69,50 @@ export async function executeDownload(job: DownloadJob, directory: string, maxFi
   if (isMyhkProvider(job.track.provider)) {
     const provider = job.track.provider;
     if (provider !== 'netease' && job.format !== 'original') throw new ServiceError('ORIGINAL_ONLY', '此來源保留平台可用音源，不提供轉碼。');
-    const save = async (audio: { url: string; extension: string }) => {
-      const path = join(directory, `audio.${audio.extension}`);
+    const save = async (audio: { url: string; extension: string }, source: Track = job.track) => {
+      // Sniff the bytes: signed CDN paths often omit an extension, and a URL
+      // that looks like MP3 can actually contain native FLAC.
+      const path = join(directory, 'audio.bin');
       try {
-        await savePlatformAudio(audio.url, path, maxFileBytes, provider);
+        await savePlatformAudio(audio.url, path, maxFileBytes, source.provider);
         const { format } = await parseFile(path, { duration: true });
         if (!format.codec || !format.duration) throw new ServiceError('INVALID_AUDIO', '平台未提供有效音訊。', 502);
-        if (job.track.durationMs > 0 && format.duration * 1000 < job.track.durationMs * 0.9) throw new ServiceError('INCOMPLETE_AUDIO', '平台只提供音訊片段。', 403);
-        return path;
+        let expected = source.durationMs;
+        if (!(expected > 0)) {
+          const detail = source.provider === 'netease' ? (await neteaseTracks([source.id]).catch(() => []))[0] :
+            isMyhkProvider(source.provider) ? await myhkTrack(source.provider, source.id).catch(() => undefined) : undefined;
+          expected = detail?.durationMs || 0;
+        }
+        if (!(expected > 0)) throw new ServiceError('INCOMPLETE_AUDIO', '無法確認平台音源是否為完整歌曲。', 403);
+        if (expected > 0 && format.duration * 1000 < expected * 0.9) throw new ServiceError('INCOMPLETE_AUDIO', '平台只提供音訊片段。', 403);
+        job.audioSource = source.provider;
+        if (source.provider !== provider) job.audioTrack = source;
+        const extension = /flac/i.test(format.codec) ? 'flac' : /mp3|mpeg.*layer[ -]?3/i.test(format.codec) ? 'mp3' :
+          /M4A|MP4/i.test(format.container || '') ? 'm4a' : /WAVE/i.test(format.container || '') ? 'wav' :
+          /Ogg/i.test(format.container || '') ? 'ogg' : audio.extension;
+        const output = join(directory, `audio.${extension}`);
+        await rename(path, output); return output;
       } catch (error) { await rm(path, { force: true }); throw error; }
     };
     try { return await save(provider === 'netease' ? await neteaseAudio(job.track.id, job.format) : await myhkAudio(provider, job.track.id)); }
     catch (error) {
-      // Failover also covers expired URLs, rejected CDN redirects and partial
-      // files. Limits remain terminal; retrying cannot make a big file smaller.
-      if (provider !== 'netease' || error instanceof ServiceError && error.code === 'FILE_TOO_LARGE') throw error;
-      return save(await legacyNeteaseAudio(job.track.id, job.format));
+      // Size limits are terminal; every candidate uses its own CDN validator.
+      // Native failover requires the complete recording identity.
+      if (error instanceof ServiceError && error.code === 'FILE_TOO_LARGE') throw error;
+      if (provider === 'netease') {
+        if (job.format === 'original' && myhkConfigured()) return save(await myhkAudio('netease', job.track.id));
+        return save(await legacyNeteaseAudio(job.track.id, job.format));
+      }
+      if (!sourceFallbackAllowed(error)) throw error;
+      const selected = job.track.durationMs > 0 ? job.track : await myhkTrack(provider, job.track.id).catch(() => job.track);
+      if (!(selected.durationMs > 0) || !selected.album || !selected.artists.length) throw error;
+      const body = await neteaseRequest('cloudsearch', { keywords: selected.title, type: 1, limit: 30 }).catch(() => undefined);
+      const candidates = (body?.result?.songs || []).map(mapNetease).filter(track => sameRecording(selected, track));
+      for (const candidate of candidates) {
+        try { return await save(await neteaseAudio(candidate.id, 'original'), candidate); }
+        catch (fallbackError) { if (!sourceFallbackAllowed(fallbackError)) throw fallbackError; }
+      }
+      throw error;
     }
   }
   if (job.format !== 'original') throw new ServiceError('ORIGINAL_ONLY', '此來源只保留平台可用音源，不提供音質轉換。');
@@ -172,7 +201,9 @@ export class DownloadStore {
         try {
           await mkdir(directory, { recursive: true, mode: 0o700 });
           job.status = 'downloading'; job.stage = '正在獲取原始音源'; await this.persist(job);
-          const output = await this.executor(this.publicJob(job), directory, this.maxFileBytes);
+          const execution = this.publicJob(job);
+          const output = await this.executor(execution, directory, this.maxFileBytes);
+          job.audioSource = execution.audioSource; job.audioTrack = execution.audioTrack;
           const size = (await stat(output)).size;
           if (!size) throw new ServiceError('INVALID_FILE', '音訊檔案為空。', 502);
           if (size > this.maxFileBytes) throw new ServiceError('FILE_TOO_LARGE', '音訊檔案超過下載大小限制。', 413);

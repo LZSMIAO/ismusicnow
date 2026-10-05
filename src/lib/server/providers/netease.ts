@@ -118,6 +118,10 @@ export async function neteaseArtistAlbums(id: string): Promise<Collection> {
 }
 
 export async function neteaseAudio(id: string, format: DownloadFormat): Promise<{ url: string; extension: string }> {
+  if (format === 'original') {
+    // Request the best authorized native quality before the MP3-only primary.
+    try { return await legacyNeteaseAudio(id, format); } catch (error) { if (!myhkConfigured()) throw error; }
+  }
   if (myhkConfigured() && format !== 'flac') {
     try { return await myhkAudio('netease', id); } catch { /* Native fallback below. */ }
   }
