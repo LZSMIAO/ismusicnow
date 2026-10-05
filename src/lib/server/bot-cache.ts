@@ -15,6 +15,7 @@ const recordSchema = z.object({
   presentation: z.enum(['original', 'telegram-playback']).optional(), nativeAudioRejected: z.boolean().optional(),
   audio: z.object({ codec: z.string(), bitrate: z.number().optional(), sampleRate: z.number().optional(),
     bitsPerSample: z.number().optional(), lossless: z.boolean() }).optional(),
+  names: z.object({ key: z.string().max(128), title: z.string(), performer: z.string() }).optional(),
 });
 export type CachedMusic = z.infer<typeof recordSchema>;
 

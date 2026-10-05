@@ -22,10 +22,10 @@ interface Dependencies {
   resolve: (input: string, provider: BotSource, kind: MusicSearchKind) => Promise<Collection>;
   albums: (url: string) => Promise<Collection>;
   getTrack: (provider: Provider, id: string) => Promise<Track>;
-  cache: (track: Track) => Promise<CachedMusic | undefined>;
+  cache: (track: Track, visible?: Track) => Promise<CachedMusic | undefined>;
   metadata: (track: Track) => Promise<Track>;
-  acquire?: (track: Track) => Promise<CachedMusic>;
-  fallbackPlayback?: (track: Track) => Promise<CachedMusic>;
+  acquire?: (track: Track, visible?: Track) => Promise<CachedMusic>;
+  fallbackPlayback?: (track: Track, visible?: Track) => Promise<CachedMusic>;
   invalidate?: (track: Track, record: CachedMusic) => Promise<void>;
   chooseNames?: (userId: number, language: AlbumLanguage) => Promise<void>;
 }
@@ -148,11 +148,16 @@ export class BotInline {
       reply_markup: this.keyboard(visible, ui, { callback_data: `ip:${userId}:${codes[track.provider]}:${track.id}` }) };
   }
   private async trackResult(track: Track, ui: BotLanguage, names: AlbumLanguage | undefined, userId: number) {
-    const [visible, record] = await Promise.all([this.visible(track, names), this.deps.cache(track)]);
+    const visible = await this.visible(track, names);
+    const record = await this.deps.cache(track, visible);
     const firstNames = track.provider === 'netease' && !names;
     const privateOnly = record?.kind !== 'audio' || !cachedInlineAudio(record);
     const fallback = this.article(track, visible, ui, userId, firstNames ? undefined : record, privateOnly);
-    if (!record || firstNames || privateOnly) return { result: fallback, fallback };
+    // CachedAudio has no title/performer overrides. Until a named file exists,
+    // prepare it in the same message using the original cached audio streams.
+    const renamed = visible.title !== track.title || visible.artists.some((name, i) => name !== track.artists[i]);
+    const named = record?.names?.title === visible.title.slice(0, 256) && record.names.performer === visible.artists.join(' / ').slice(0, 256);
+    if (!record || firstNames || privateOnly || renamed && !named) return { result: fallback, fallback };
     const shared = { id: `${fallback.id}:audio`, caption: musicCaption(visible, job(record, track), ui, this.deps.username(), undefined, record.duration), muism_caption_language: ui, parse_mode: 'HTML', reply_markup: this.keyboard(musicTrack(visible, record), ui, undefined, record.presentation === 'telegram-playback') };
     return { result: { type: 'audio', audio_file_id: record.fileId, ...shared }, fallback };
   }
@@ -258,13 +263,13 @@ export class BotInline {
       const edit = async (record: CachedMusic) => this.deps.telegram('editMessageMedia', { inline_message_id: inlineId,
         media: { type: 'audio', media: record.fileId, caption: musicCaption(visible, job(record, track), ui, this.deps.username(), undefined, record.duration), muism_caption_language: ui, parse_mode: 'HTML', title: visible.title, performer: visible.artists.join(' / '), duration: record.duration },
         reply_markup: forInlineChat([{ reply_markup: this.keyboard(musicTrack(visible, record), ui, undefined, record.presentation === 'telegram-playback') }], 'channel')[0]!.reply_markup });
-      let record = await acquire(track);
+      let record = await acquire(track, visible);
       try { await edit(record); }
       catch (error) {
         if (rejectedFileId(error) && this.deps.invalidate) {
-          await this.deps.invalidate(track, record); record = await acquire(track); await edit(record);
+          await this.deps.invalidate(track, record); record = await acquire(track, visible); await edit(record);
         } else if (record.audio && !cachedInlineAudio(record) && this.deps.fallbackPlayback && error instanceof TelegramRequestError && error.errorCode === 400 && /audio|file type|wrong file|MEDIA_INVALID/i.test(error.description)) {
-          record = await this.deps.fallbackPlayback(track); await edit(record);
+          record = await this.deps.fallbackPlayback(track, visible); await edit(record);
         } else throw error;
       }
     } catch (error) {
@@ -312,7 +317,8 @@ export class BotInline {
     }
     try {
       const track = await this.deps.getTrack(codeProviders[match[2]!]!, match[3]!);
-      const [record, visible] = await Promise.all([this.deps.cache(track), this.visible(track, names)]);
+      const visible = await this.visible(track, names);
+      const record = await this.deps.cache(track, visible);
       if (!record) {
         await this.deps.telegram('editMessageText', { inline_message_id: callback.inline_message_id, text: `${escapeHtml(visible.title)}\n${escapeHtml(botText(ui, 'inlinePrivate'))}`, parse_mode: 'HTML', reply_markup: markup(visible, { url: this.privateUrl(track) }) }); return;
       }

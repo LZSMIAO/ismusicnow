@@ -26,7 +26,7 @@ export type PendingTrack = z.infer<typeof pendingSchema>;
 const pendingLifetime = 30 * 60_000;
 
 export function displayTrack(track: Track, language: AlbumLanguage): Track {
-  if (track.provider !== 'netease' || language === 'original') return { ...track, artists: [...track.artists] };
+  if (language === 'original') return { ...track, artists: [...track.artists] };
   const convert = converters[language] ||= Converter(language === 'zh-Hant' ? { from: 'cn', to: 'tw' } : { from: 'tw', to: 'cn' });
   const languages = track.metadataLanguages;
   const nativeContext = track.artists.some((name, i) => /[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(name) || /^(ja|ko)(-|$)/i.test(languages?.artists?.[i] || ''));
@@ -174,7 +174,10 @@ export class BotLanguageSettings {
   }
   async request(chatId: number, userId: number, track: Track, messageId: number, messageThreadId?: number, keepRequest = false, inlineMode = false): Promise<void> {
     const thread: [number?, boolean?, boolean?] = inlineMode ? [messageThreadId, keepRequest, true] : keepRequest ? [messageThreadId, true] : messageThreadId === undefined ? [] : [messageThreadId];
-    if (track.provider !== 'netease') return this.acquire(chatId, userId, track, 'original', messageId, ...thread);
+    if (track.provider !== 'netease') {
+      const names = (await this.store.get(userId)).language || 'original';
+      return this.acquire(chatId, userId, track, names, messageId, ...thread);
+    }
     const language = await this.store.stage(userId, { chatId, messageId, messageThreadId, keepRequest: keepRequest || undefined, inlineMode: inlineMode || undefined, track });
     if (!language) return this.showNames(chatId, userId, true, messageId);
     await this.acquire(chatId, userId, track, language, messageId, ...thread);
@@ -211,7 +214,7 @@ export class BotLanguageSettings {
     if (pending) {
       await dismiss?.();
       const context: [number?, boolean?, boolean?] = pending.inlineMode ? [pending.messageThreadId, !!pending.keepRequest, true] : pending.keepRequest ? [pending.messageThreadId, true] : pending.messageThreadId === undefined ? [] : [pending.messageThreadId];
-      await this.acquire(pending.chatId, userId, pending.track, pending.track.provider === 'netease' ? language : 'original', pending.messageId, ...context);
+      await this.acquire(pending.chatId, userId, pending.track, language, pending.messageId, ...context);
     } else await this.showNames(chatId, userId);
     return true;
   }

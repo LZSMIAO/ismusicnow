@@ -20,6 +20,7 @@ import { BotCaptionDetails } from '../src/lib/server/bot-caption-details.js';
 import { BotMusicCache, rejectedFileId, type CachedMusic } from '../src/lib/server/bot-cache.js';
 import { BotDispatch } from '../src/lib/server/bot-dispatch.js';
 import { BotPlayback } from '../src/lib/server/bot-playback.js';
+import { BotAudioNames } from '../src/lib/server/bot-audio-names.js';
 import { BotInline, parseInlineStart, parseBrowseStart, type InlineQuery } from '../src/lib/server/bot-inline.js';
 import { musicCacheKey, telegramPlaybackKey } from '../src/lib/server/bot-cache-key.js';
 import { BotMessageCleanup } from '../src/lib/server/bot-cleanup.js';
@@ -102,19 +103,33 @@ async function sendSettings(chatId: number, text: string, extra: Record<string, 
 const settingsStore = new BotSettingsStore();
 const selectionDelivery = new BotSelectionDelivery(telegram);
 const preferences = new BotLanguageSettings(settingsStore, sendSettings, sendTrack, updateCommands);
-const playback = new BotPlayback(store, mediaCache, telegram, () => {
+const cacheChat = () => {
   const value = process.env.BOT_CACHE_CHAT_ID;
   return value && /^-?\d+$/.test(value) && Number.isSafeInteger(Number(value)) ? Number(value) : undefined;
-}, () => botUsername, undefined, undefined, () => stopping);
+};
+const playback = new BotPlayback(store, mediaCache, telegram, cacheChat, () => botUsername, undefined, undefined, () => stopping);
+const audioNames = new BotAudioNames(mediaCache, telegram, cacheChat, () => botUsername);
+async function namedPlayback(track: Track, visible = track, preferOriginal = true): Promise<CachedMusic> {
+  const record = await playback.get(track, preferOriginal);
+  try { return await audioNames.get(track, visible, record); }
+  catch (error) {
+    if (!rejectedFileId(error)) throw error;
+    await playback.invalidate(track, record);
+    return audioNames.get(track, visible, await playback.get(track, preferOriginal));
+  }
+}
 const inline = new BotInline({
   telegram, username: () => botUsername, resolve: resolveBotMusic, albums: artistAlbums, getTrack,
   preferences: async userId => ({ ui: await preferences.locale(userId), names: (await settingsStore.get(userId)).language }),
-  cache: async track => {
+  cache: async (track, visible) => {
     const key = await musicCacheKey(track);
     const original = await mediaCache.get(key);
-    return original?.kind === 'audio' ? original : await mediaCache.get(telegramPlaybackKey(key)) || original;
+    const record = original?.kind === 'audio' ? original : await mediaCache.get(telegramPlaybackKey(key)) || original;
+    return record && visible ? await audioNames.peek(track, visible, record) || record : record;
   }, metadata: track => metadataForDisplay(track, 250),
-  acquire: track => playback.get(track), fallbackPlayback: track => playback.get(track, false), invalidate: (track, record) => playback.invalidate(track, record), chooseNames: (userId, language) => settingsStore.setNamesLanguage(userId, language),
+  acquire: (track, visible) => namedPlayback(track, visible), fallbackPlayback: (track, visible) => namedPlayback(track, visible, false),
+  invalidate: async (track, record) => { await audioNames.invalidate(track, record); await playback.invalidate(track, record); },
+  chooseNames: (userId, language) => settingsStore.setNamesLanguage(userId, language),
 });
 
 async function sendTrack(chatId: number, userId: number, track: Track, language: AlbumLanguage, messageId: number, messageThreadId?: number, keepRequest = false, inlineMode = false, originalFile = false): Promise<void> {
@@ -150,10 +165,15 @@ async function sendTrack(chatId: number, userId: number, track: Track, language:
         break;
       }
       if (!record) throw new ServiceError('NO_AUDIO', 'No complete source');
+      try { record = await audioNames.get(track, visible, record); }
+      catch (error) {
+        if (!rejectedFileId(error)) throw error;
+        await playback.invalidate(track, record); record = await namedPlayback(track, visible);
+      }
       try { await sendRecord(record); }
       catch (error) {
         if (!rejectedFileId(error)) throw error;
-        await playback.invalidate(track, record); await sendRecord(await playback.get(track));
+        await audioNames.invalidate(track, record); await playback.invalidate(track, record); await sendRecord(await namedPlayback(track, visible));
       }
     }
     finally { if (progress) await removeNow(chatId, progress.message_id); }

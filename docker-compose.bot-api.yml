@@ -15,9 +15,17 @@ services:
     mem_limit: 1g
     cpus: 1.0
   bot:
+    # Read only this bot's music cache, without exposing the API database.
+    group_add: ["10001"]
+    volumes:
+      - type: bind
+        source: ./data/telegram-api/${BOT_TOKEN:?BOT_TOKEN is required}/music
+        target: /app/telegram-music
+        read_only: true
     environment:
       BOT_API_BASE_URL: http://telegram-api:8081
       BOT_API_LOCAL: "1"
+      BOT_API_MUSIC_DIR: /app/telegram-music
     depends_on:
       telegram-api:
         condition: service_started

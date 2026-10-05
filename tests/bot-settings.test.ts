@@ -4,21 +4,22 @@ import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BotLanguageSettings, BotSettingsStore, displayTrack } from '../src/lib/server/bot-settings.js';
-import type { Track } from '../src/lib/types.js';
+import { providerIds, type Track } from '../src/lib/types.js';
 
 const track: Track = { id: '123', provider: 'netease', title: '人是猫', artists: ['张卡斯', '洛天依'], album: '人是猫', durationMs: 136000, cover: '', sourceUrl: 'https://music.163.com/song?id=123' };
 
-test('NetEase Chinese preferences convert metadata; other providers always preserve source names', () => {
+test('Chinese preferences convert all provider metadata without changing source identity', () => {
   assert.deepEqual(displayTrack(track, 'original'), track);
   const traditional = displayTrack(track, 'zh-Hant');
   assert.equal(traditional.title, '人是貓'); assert.equal(traditional.album, '人是貓'); assert.deepEqual(traditional.artists, ['張卡斯', '洛天依']);
   assert.equal(traditional.id, track.id); assert.equal(traditional.sourceUrl, track.sourceUrl);
   assert.deepEqual(displayTrack(traditional, 'zh-Hans'), track);
   assert.equal(track.title, '人是猫');
-  for (const provider of ['spotify', 'ytm'] as const) {
+  for (const provider of providerIds) {
     const other = { ...track, provider };
-    assert.deepEqual(displayTrack(other, 'zh-Hant'), other);
-    assert.deepEqual(displayTrack({ ...traditional, provider }, 'zh-Hans'), { ...traditional, provider });
+    assert.deepEqual(displayTrack(other, 'zh-Hant'), { ...traditional, provider });
+    assert.deepEqual(displayTrack({ ...traditional, provider }, 'zh-Hans'), other);
+    assert.deepEqual(displayTrack(other, 'original'), other);
   }
 });
 
@@ -35,6 +36,12 @@ test('TC and SC normalize Chinese parts while native English, Japanese and Korea
   assert.deepEqual(displayTrack(korean, 'zh-Hans'), korean);
   const duet = { ...chinese, artists: ['张卡斯', '宇多田ヒカル'], metadataLanguages: { title: 'zh', album: 'zh', artists: ['zh', 'ja'] } };
   assert.deepEqual(displayTrack(duet, 'zh-Hant').artists, ['張卡斯', '宇多田ヒカル']);
+  for (const provider of providerIds) {
+    for (const choice of ['zh-Hant', 'zh-Hans'] as const) {
+      assert.deepEqual(displayTrack({ ...kanjiOnly, provider }, choice), { ...kanjiOnly, provider });
+      assert.deepEqual(displayTrack({ ...korean, provider }, choice), { ...korean, provider });
+    }
+  }
 });
 
 test('first NetEase acquisition pauses, offers choices and resumes exactly once after a restart', async () => {
@@ -60,7 +67,7 @@ test('first NetEase acquisition pauses, offers choices and resumes exactly once 
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test('Spotify and YTM bypass Chinese settings without consuming a pending NetEase request', async () => {
+test('other sources apply saved Chinese settings without consuming a pending NetEase request', async () => {
   const root = await mkdtemp(join(tmpdir(), 'ismusicnow-settings-'));
   try {
     const store = new BotSettingsStore(root), acquisitions: unknown[][] = [], messages: string[] = [];
@@ -73,7 +80,10 @@ test('Spotify and YTM bypass Chinese settings without consuming a pending NetEas
     await flow.callback(7, 42, 'lang:42:zh-Hant');
     assert.deepEqual(acquisitions.map((a) => [a[2], a[3]]), [[{ ...track, provider: 'spotify' }, 'original'], [{ ...track, provider: 'ytm' }, 'original'], [track, 'zh-Hant']]);
     await flow.request(7, 42, { ...track, provider: 'spotify' }, 92);
-    assert.equal(acquisitions.at(-1)?.[3], 'original');
+    assert.equal(acquisitions.at(-1)?.[3], 'zh-Hant');
+    const restored = new BotLanguageSettings(new BotSettingsStore(root), async () => {}, async (...args) => { acquisitions.push(args); });
+    await restored.request(7, 42, { ...track, provider: 'qq' }, 93);
+    assert.equal(acquisitions.at(-1)?.[3], 'zh-Hant');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

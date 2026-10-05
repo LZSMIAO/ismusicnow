@@ -46,14 +46,15 @@ test('inline prefixes preserve words, auto-detect platform URLs and validate pri
   assert.equal(parseInlineStart('in_x_123'), undefined); assert.throws(() => parseInlineStart('in_s_123'));
   assert.throws(() => parseInlineQuery('https://127.0.0.1/private'));
 });
-test('one-character searches return cached native audio and per-user Chinese captions without upload or chat cleanup', async () => {
+test('one-character searches honor Chinese captions and use media edits for renamed cached audio', async () => {
   const h = harness({ names: 'zh-Hant', record: audio });
   await h.inline.answer(query());
   assert.equal(h.searches[0]!.input, '床');
   const body = h.calls[0]!.body, result = body.results[0];
   assert.equal(body.cache_time, 0); assert.equal(body.is_personal, true);
-  assert.equal(result.type, 'audio'); assert.equal(result.audio_file_id, audio.fileId);
-  assert.match(result.caption, /人是貓.*張卡斯/); assert.match(result.caption, /<blockquote expandable>/); assert.doesNotMatch(result.caption, /tg-spoiler/);
+  assert.equal(result.type, 'article');
+  assert.match(result.input_message_content.message_text, /人是貓.*張卡斯/);
+  assert.equal(result.reply_markup.inline_keyboard[0][0].callback_data, 'ip:42:n:123');
   assert.ok(result.reply_markup.inline_keyboard.flat().some((b: any) => b.url === 'https://t.me/muismbot?start=browse_n_album_555'));
   assert.ok(result.reply_markup.inline_keyboard.flat().some((b: any) => b.url === 'https://t.me/muismbot?start=browse_n_artist_999'));
   assert.deepEqual(h.calls.map(c => c.method), ['answerInlineQuery']);
@@ -70,6 +71,39 @@ test('uncached and first-time NetEase results prepare same-message playback with
     assert.equal(result.reply_markup.inline_keyboard[0][0].callback_data, 'ip:42:n:123');
     assert.match(result.description, /Play/);
     assert.match(result.input_message_content.message_text, /Preparing playback/);
+  }
+});
+test('saved spelling changes Spotify player metadata on cached and uncached inline paths without changing acquisition identity', async () => {
+  const gold: Track = { ...track, provider: 'spotify', id: '0SHrmvOJ3Sn10j1oHxFepC', title: '金银', artists: ['卦者灵风'], album: '金银',
+    sourceUrl: 'https://open.spotify.com/track/0SHrmvOJ3Sn10j1oHxFepC', albumUrl: undefined, artistIds: undefined };
+  const record = { ...audio, audioSource: 'spotify' as const };
+  for (const cached of [undefined, record]) {
+    const h = harness({ names: 'zh-Hant', record: cached, resolve: async () => ({ ...collection, provider: 'spotify', tracks: [gold] }) });
+    const acquired: Track[] = [];
+    const inline = new BotInline({ ...h.deps, getTrack: async () => gold, acquire: async value => { acquired.push(value); return record; } });
+    await inline.answer(query('金銀'));
+    const result = h.calls.at(-1)!.body.results[0];
+    assert.equal(result.type, 'article');
+    assert.equal(result.title, '金銀');
+    await inline.chosen({ result_id: result.id, from: { id: 42 }, inline_message_id: 'gold-card', query: '金銀' });
+    const edit = h.calls.at(-1)!.body;
+    assert.equal(edit.media.media, record.fileId);
+    assert.equal(edit.media.title, '金銀');
+    assert.equal(edit.media.performer, '卦者靈風');
+    assert.match(edit.media.caption, /金銀.*卦者靈風/);
+    assert.deepEqual(acquired, [gold]);
+    h.setPreferences({ ui: 'en', names: 'original' });
+    await inline.answer(query('金銀', '', 'original-gold'));
+    const original = h.calls.at(-1)!.body.results[0];
+    if (cached) assert.equal(original.type, 'audio');
+    else assert.equal(original.title, '金银');
+    h.setPreferences({ ui: 'en', names: 'zh-Hant' });
+    const ready = new BotInline({ ...h.deps, cache: async () => ({ ...record, fileId: 'traditional-player',
+      names: { key: 'names-v1:ready', title: '金銀', performer: '卦者靈風' } }) });
+    await ready.answer(query('金銀', '', 'ready-gold'));
+    const reusable = h.calls.at(-1)!.body.results[0];
+    assert.equal(reusable.type, 'audio'); assert.equal(reusable.audio_file_id, 'traditional-player');
+    assert.match(reusable.caption, /金銀.*卦者靈風/);
   }
 });
 test('original documents never become unplayable Inline documents in any UI language', async () => {
