@@ -247,3 +247,10 @@ html.telegram-app{height:var(--imn-height,100dvh);overflow:hidden}
 .source-more-options{transition:opacity 150ms var(--ease-out),transform 150ms var(--ease-out),display 150ms allow-discrete;transform:translateY(0)}
 @starting-style{.source-more-options:not([hidden]){opacity:0;transform:translateY(-4px)}}
 @media(prefers-reduced-motion:reduce){.source-more-options{transition:none}}
+
+/* Playback controls share a filled, optically centered glyph. */
+.big-play{padding:0;border:0;line-height:1}
+.big-play svg,.transport .player-play svg{display:block;flex-shrink:0}
+.big-play:focus-visible{outline:2px solid var(--silver);outline-offset:4px}
+.big-play:hover:not(:disabled){background:var(--ink)}
+.big-play:disabled{background:var(--silver);opacity:.4}

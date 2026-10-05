@@ -9,6 +9,7 @@
   import SearchBar from './SearchBar.svelte';
   import DownloadQueue from './QueueList.svelte';
   import PlayerLyrics from './PlayerLyrics.svelte';
+  import PlaybackGlyph from './PlaybackGlyph.svelte';
   import { createDownloadState } from '#lib/download-state.svelte.js';
   import { createPreviewState } from '#lib/preview-state.svelte.js';
   import { api, duration, providerNames } from '#lib/ui.js';
@@ -36,6 +37,9 @@
   const active = $derived(player.track || first || null);
   const current = $derived(player.track ? `${player.track.provider}:${player.track.id}` : '');
   const isPlaying = $derived(player.status === 'playing');
+  const collectionTrack = $derived(collection?.tracks.find((track) => `${track.provider}:${track.id}` === current));
+  const collectionPlaying = $derived(!!collectionTrack && isPlaying);
+  const collectionLoading = $derived(!!collectionTrack && player.status === 'loading');
   const nextTrack = $derived.by(() => { const tracks = collection?.tracks || []; const index = tracks.findIndex((t) => `${t.provider}:${t.id}` === current); return tracks[Math.max(0, index) + 1] || null; });
   const allowFormats = $derived(!!collection && collection.tracks.filter((t) => selected.includes(`${t.provider}:${t.id}`)).every((t) => t.provider === 'netease'));
   const formatOptions = $derived(allowFormats ? [{ value: 'original', label: '原始格式' }, { value: 'mp3', label: 'MP3' }, { value: 'flac', label: '原生 FLAC' }] : [{ value: 'original', label: '原始格式' }]);
@@ -213,6 +217,10 @@
     if (current === `${track.provider}:${track.id}` && (isPlaying || player.status === 'loading')) player.pause();
     else void player.play(track, queue.jobs);
   }
+  function playCollection() {
+    const track = collectionTrack || first;
+    if (track) preview(track, true);
+  }
   function adjacent(offset: number, wrap = true) {
     const tracks = collection?.tracks || []; const index = tracks.findIndex((track) => `${track.provider}:${track.id}` === current);
     if (!tracks.length || (!wrap && index + offset >= tracks.length)) { continuous = false; return; }
@@ -256,7 +264,7 @@
         </section>
       {:else}<header class="search-heading"><h1>{collection.kind === 'search' ? `「${collection.title}」` : collection.title}</h1><span>{collection.entities?.length ? `專輯 · ${collection.entities.length} 張` : `歌曲 · ${collection.tracks.length} 首已載入${collection.total > collection.tracks.length ? ` / ${collection.total} 首` : ''}`}</span></header>{/if}
       {#if collection.tracks.length}<div class="album-tools">
-        <div class="preview-actions"><button class="big-play" aria-label={isPlaying && continuous ? '暫停專輯播放' : '播放全部曲目'} disabled={!first} onclick={() => first && preview(continuous && player.track ? player.track : first, true)}>{#if player.status === 'loading'}<LoaderCircle size={24} class="loading-icon" />{:else if isPlaying && continuous}<Pause size={24} fill="currentColor" />{:else}<Play size={24} fill="currentColor" />{/if}</button><div class="source-origin">{(collection.providers?.length || 0) > 1 ? '多個來源' : providerNames[collection.provider]}{#if first && collection.kind !== 'search'}<a href={collection.kind === 'album' ? first.albumUrl || first.sourceUrl : first.sourceUrl} target="_blank" rel="noreferrer">查看原頁 ↗</a>{/if}</div></div>
+        <div class="preview-actions"><button class="big-play" aria-label={collectionLoading ? '取消載入' : collectionPlaying ? '暫停播放' : '播放全部曲目'} aria-busy={collectionLoading} disabled={!first} onclick={playCollection}>{#if collectionLoading}<LoaderCircle size={24} class="loading-icon" />{:else}<PlaybackGlyph paused={collectionPlaying} />{/if}</button><div class="source-origin">{(collection.providers?.length || 0) > 1 ? '多個來源' : providerNames[collection.provider]}{#if first && collection.kind !== 'search'}<a href={collection.kind === 'album' ? first.albumUrl || first.sourceUrl : first.sourceUrl} target="_blank" rel="noreferrer">查看原頁 ↗</a>{/if}</div></div>
         <div class="download-controls"><span class="selected-count" aria-live="polite">已選 {selected.length} 首</span><SelectMenu id="format-menu" bind:value={format} options={formatOptions} label="下載音質" disabled={adding} compact /><button class="download-button" disabled={adding || !selected.length} onclick={download}>{#if adding}<LoaderCircle size={18} class="loading-icon" />{:else}<Download size={18} />{/if}<span>{adding ? '正在加入' : selected.length ? `下載 ${selected.length} 首` : '下載'}</span></button></div>
       </div>
       {/if}
@@ -292,7 +300,7 @@
 <PlayerLyrics track={player.track} elapsed={player.elapsed} ready={player.ready} playing={isPlaying} length={player.length} gettime={() => player.currentTime} bind:pageOpen={lyricsPage} onseek={(time) => player.seek(time)} />
 <section class="player" bind:this={playerElement} aria-label="音樂播放器">
   <div class="now-playing"><span class="player-cover">{#if active?.cover}<img src={active.cover} alt="" width="56" height="56" referrerpolicy="no-referrer" onerror={(e) => (e.currentTarget as HTMLImageElement).hidden = true} />{:else}<Music2 size={24} />{/if}</span><span><strong>{active?.title || '尚未播放'}</strong><small>{#if active}<span class="player-source">{providerNames[active.provider]} · </span>{/if}{active?.artists.join(' / ') || 'MUISM · 音樂主義'}</small></span></div>
-  <div class="player-center"><div class="transport"><button aria-label="上一首" disabled={!collection?.tracks.length} onclick={() => { continuous = false; void adjacent(-1); }}><SkipBack size={18} fill="currentColor" /></button><button class="player-play" aria-label={isPlaying ? '暫停播放' : player.error ? '重試播放' : '播放音樂'} disabled={!active} onclick={() => active && preview(active)}>{#if player.status === 'loading'}<LoaderCircle size={18} class="loading-icon" />{:else if isPlaying}<Pause size={18} fill="currentColor" />{:else if player.error}<RotateCcw size={18} />{:else}<Play size={18} fill="currentColor" />{/if}</button><button aria-label="下一首" disabled={!collection?.tracks.length} onclick={() => { continuous = false; void adjacent(1); }}><SkipForward size={18} fill="currentColor" /></button></div><div class="seek-line"><span>{player.elapsed ? duration(player.elapsed * 1000) : '0:00'}</span><input type="range" min="0" max={player.length} step=".1" value={player.elapsed} disabled={!player.ready} aria-label="播放進度" style={`--played:${player.length ? player.elapsed / player.length * 100 : 0}%`} oninput={(e) => player.seek(Number(e.currentTarget.value))} /><span>{player.ready ? duration(player.length * 1000) : '—'}</span></div></div>
+  <div class="player-center"><div class="transport"><button aria-label="上一首" disabled={!collection?.tracks.length} onclick={() => { continuous = false; void adjacent(-1); }}><SkipBack size={18} fill="currentColor" /></button><button class="player-play" aria-label={isPlaying ? '暫停播放' : player.error ? '重試播放' : '播放音樂'} disabled={!active} onclick={() => active && preview(active)}>{#if player.status === 'loading'}<LoaderCircle size={18} class="loading-icon" />{:else if isPlaying}<PlaybackGlyph size={18} paused />{:else if player.error}<RotateCcw size={18} />{:else}<PlaybackGlyph size={18} />{/if}</button><button aria-label="下一首" disabled={!collection?.tracks.length} onclick={() => { continuous = false; void adjacent(1); }}><SkipForward size={18} fill="currentColor" /></button></div><div class="seek-line"><span>{player.elapsed ? duration(player.elapsed * 1000) : '0:00'}</span><input type="range" min="0" max={player.length} step=".1" value={player.elapsed} disabled={!player.ready} aria-label="播放進度" style={`--played:${player.length ? player.elapsed / player.length * 100 : 0}%`} oninput={(e) => player.seek(Number(e.currentTarget.value))} /><span>{player.ready ? duration(player.length * 1000) : '—'}</span></div></div>
   <div class="player-right"><button class="icon-button" aria-label="下載佇列" aria-expanded={queueOpen} onclick={openQueue}><Download size={18} /></button><Volume2 size={18} /><input type="range" min="0" max="1" step=".01" value={player.volume} aria-label="音量" oninput={(e) => player.setVolume(Number(e.currentTarget.value))} /><button class="icon-button" aria-label="切換預覽面板" aria-pressed={previewVisible} onclick={() => previewVisible = !previewVisible}><PanelRight size={18} /></button></div>
   {#if player.track?.provider === 'spotify' && player.remaining !== undefined}<p class="playback-budget">今日剩餘 {player.remaining} / 5 首 · 00:00 重置</p>{/if}
   {#if player.error || player.preparing}<div class="playback-status" class:preview-collapsed={!previewVisible} role="status"><p>{player.error || player.preparing}</p><div class="playback-status-actions">{#if player.error && player.track && player.canDownload}<button class="text-button" disabled={adding} onclick={() => player.track && void downloadForPlayback(player.track)}><Download size={16} />{adding ? '正在加入' : '下載後播放'}</button>{/if}{#if player.error && player.track}<a class="text-button" href={player.track.sourceUrl} target="_blank" rel="noreferrer">在 {providerNames[player.track.provider]} 播放 <ExternalLink size={14} /></a>{/if}</div></div>{/if}
