@@ -18,9 +18,11 @@ test('new cards retain the native quote and all measured audio facts without ext
     assert.equal(form.has('muism_caption_language'),false);assert.equal(form.get('caption'),caption);
     assert.match(caption,/<blockquote expandable>/);assert.match(caption,/#flac 21.90MB 909.06kbps/);assert.doesNotMatch(caption,/\n\n/);
     const lines=caption.match(/<blockquote expandable>([^]*?)<\/blockquote>/)![1]!.split('\n');
-    assert.equal(lines.length,4);assert.equal(lines[2],'via @muismbot');
-    assert.match(lines[0]!,/^#\S+ #flac 21\.90MB 909\.06kbps$/);
-    assert.equal(lines[1],`${botText(language,'album')}：Album`);assert.equal(lines[3],'FLAC');
+    assert.equal(lines.length,6);assert.equal(lines[5],'via @muismbot');
+    assert.match(lines[3]!,/^#\S+ #flac 21\.90MB 909\.06kbps$/);
+    assert.equal(lines[0],`${botText(language,'album')}：Album`);assert.equal(lines[4],'FLAC');
+    assert.equal(lines[2],`${botText(language,'duration')}：0:01`);
+    assert.doesNotMatch(lines.slice(0,3).join('\n'),/#|via @|FLAC|kbps/);
     assert.deepEqual(JSON.parse(String(form.get('reply_markup'))),markup);
     const result={type:'audio',caption,muism_caption_language:language,reply_markup:markup};
     const inline=await details.prepare('answerInlineQuery',{results:[result]}) as any;
@@ -28,19 +30,19 @@ test('new cards retain the native quote and all measured audio facts without ext
     const edit=await details.prepare('editMessageMedia',{media:result,reply_markup:markup}) as any;
     assert.equal(edit.media.muism_caption_language,undefined);assert.equal(edit.media.caption,caption);assert.deepEqual(edit.reply_markup,markup);
     const converted=musicCaption(track,{...job,presentation:'telegram-playback'},language);
-    assert.ok(converted.indexOf(botText(language,'playbackVersion'))<converted.indexOf('<blockquote expandable>'));
+    assert.ok(!converted.includes(botText(language,'playbackVersion')));
   }}finally{await rm(root,{recursive:true,force:true});}
 });
 test('legacy buttons restore full native quotes, remove their own controls and preserve album, artist, source and share actions after restart',async()=>{
   const root=await mkdtemp(join(tmpdir(),'muism-legacy-caption-'));
   try {
     const id='a'.repeat(32),path=join(root,'caption-details','123');await mkdir(path,{recursive:true});
-    await writeFile(join(path,id+'.json'),JSON.stringify({collapsed:'missing facts',expanded:'<b>Song</b>\n<blockquote>Album：Album\n#NetEase #mp3 6.52MB 320.00kbps\nvia @muismbot</blockquote>',markup,language:'en'}));
+    await writeFile(join(path,id+'.json'),JSON.stringify({collapsed:'missing facts',expanded:'<b>Song</b>\nTelegram playback copy (MP3 conversion)\n<blockquote>Album：Album\n#NetEase #mp3 6.52MB 320.00kbps\nvia @muismbot</blockquote>',markup,language:'en'}));
     const details=new BotCaptionDetails('123',root);
     for(const action of ['0','1']){
-      const restored=await details.toggle(`md:${id}:${action}`);
-      assert.match(restored!.caption,/<blockquote expandable>#NetEase #mp3 6.52MB 320.00kbps\nAlbum：Album\nvia @muismbot<\/blockquote>/);
-      assert.deepEqual(restored!.reply_markup,markup);assert.doesNotMatch(restored!.caption,/\n\n/);
+      const restored=await details.toggle(`md:${id}:${action}`,171);
+      assert.match(restored!.caption,/<blockquote expandable>Album：Album\nSource：NetEase\nTime：2:51\n#NetEase #mp3 6.52MB 320.00kbps\nvia @muismbot<\/blockquote>/);
+      assert.deepEqual(restored!.reply_markup,markup);assert.doesNotMatch(restored!.caption,/\n\n|playback copy/);
     }
     await details.remember(`md:${id}:1`,{chat_id:-100123,message_id:66});
     const files=await readdir(join(path,'deliveries'));

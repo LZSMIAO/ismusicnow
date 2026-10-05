@@ -24,7 +24,7 @@ function audioTag(codec: string): string {
   if (/vorbis/i.test(codec)) return 'ogg';
   return codec.toLowerCase().replace(/[^\p{L}\p{N}_]/gu, '');
 }
-export function musicCaption(track: Track, job: DownloadJob, language: BotLanguage = 'zh-Hant', botUsername = 'muismbot', recipient?: { id?: number; name?: string }): string {
+export function musicCaption(track: Track, job: DownloadJob, language: BotLanguage = 'zh-Hant', botUsername = 'muismbot', recipient?: { id?: number; name?: string }, durationSeconds = track.durationMs / 1000): string {
   const audio = job.audio;
   const source = job.audioSource === 'netease' ? language === 'zh-Hans' ? '网易云音乐' : language === 'zh-Hant' ? '網易雲音樂' : 'NetEase' : sourceNames[job.audioSource];
   const title = escapeHtml(shortText(track.title, 100)), artists = escapeHtml(shortText(track.artists.join(' / ') || botText(language, 'unknownArtist'), 120));
@@ -38,17 +38,20 @@ export function musicCaption(track: Track, job: DownloadJob, language: BotLangua
     audio?.sampleRate && audio.sampleRate > 0 ? `${Number((audio.sampleRate / 1000).toFixed(3))} kHz` : '',
     audio?.bitsPerSample && audio.bitsPerSample > 0 ? `${audio.bitsPerSample}-bit` : '',
   ].filter(Boolean).join(' · ');
-  // Preserve the user's compact hashtag row verbatim. Disclosure is handled
-  // by Telegram. Put the important facts first, with measured codec details last.
+  const seconds = Math.round(Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds : track.durationMs / 1000);
+  const elapsed = Number.isFinite(seconds) && seconds > 0 ? `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}` : '—';
+  // Telegram previews at most three rendered quote lines. Keep every technical
+  // fact and attribution after the three useful summary rows, with no spacers.
   const details = [
-    escapeHtml(technical),
     `${escapeHtml(botText(language, 'album'))}：${album}`,
-    `via @${escapeHtml(botUsername)}`,
+    `${escapeHtml(botText(language, 'source'))}：${escapeHtml(source)}`,
+    `${escapeHtml(botText(language, 'duration'))}：${elapsed}`,
+    escapeHtml(technical),
     escapeHtml(audioDetails),
+    `via @${escapeHtml(botUsername)}`,
   ].filter(Boolean).join('\n');
   return [recipient?.id ? `<a href="tg://user?id=${recipient.id}">${escapeHtml(shortText(recipient.name || String(recipient.id), 40))}</a>` : '',
     `<b>「${title}」</b> — ${artists}`,
-    job.presentation === 'telegram-playback' ? escapeHtml(botText(language, 'playbackVersion')) : '',
     `<blockquote expandable>${details}</blockquote>`].filter(Boolean).join('\n');
 }
 export function musicTrack(track: Track, job: Pick<DownloadJob, 'audioTrack'>): Track {
@@ -163,7 +166,7 @@ export function musicReferencePayload(reference: MusicReference): FormData {
   form.set('chat_id', String(reference.chatId));
   if (reference.messageThreadId !== undefined) form.set('message_thread_id', String(reference.messageThreadId));
   form.set(reference.kind, reference.fileId);
-  form.set('caption', musicCaption(reference.track, reference.job, language, reference.botUsername, { id: reference.recipientId, name: reference.recipientName }));
+  form.set('caption', musicCaption(reference.track, reference.job, language, reference.botUsername, { id: reference.recipientId, name: reference.recipientName }, reference.duration));
   form.set('parse_mode', 'HTML');
   if (reference.replyTo !== undefined) form.set('reply_parameters', JSON.stringify({ message_id: reference.replyTo, allow_sending_without_reply: true }));
   form.set('reply_markup', JSON.stringify(musicButtons(musicTrack(reference.track, reference.job), language, reference.job.presentation === 'telegram-playback')));
@@ -184,7 +187,7 @@ export function musicPayload(upload: MusicUpload, document = false, withThumbnai
   if (!upload.file && !upload.bytes) throw new ServiceError('INVALID_FILE', 'No audio file');
   form.set(document ? 'document' : 'audio', upload.file || new Blob([new Uint8Array(upload.bytes!)], { type: mime[extension] || 'application/octet-stream' }), upload.filename);
   if (document) form.set('disable_content_type_detection', 'true');
-  form.set('caption', musicCaption(upload.track, upload.job, language, upload.botUsername, { id: upload.recipientId, name: upload.recipientName }));
+  form.set('caption', musicCaption(upload.track, upload.job, language, upload.botUsername, { id: upload.recipientId, name: upload.recipientName }, upload.duration));
   form.set('parse_mode', 'HTML');
   if (upload.replyTo !== undefined) form.set('reply_parameters', JSON.stringify({ message_id: upload.replyTo, allow_sending_without_reply: true }));
   form.set('reply_markup', JSON.stringify(musicButtons(musicTrack(upload.track, upload.job), language, upload.job.presentation === 'telegram-playback')));
@@ -198,8 +201,8 @@ export function musicPayload(upload: MusicUpload, document = false, withThumbnai
 }
 export async function sendMusic(telegram: Telegram, upload: MusicUpload): Promise<'audio' | 'document'> {
   // Compatible original audio, including FLAC, is tried before a derivative.
-  // Playback derivatives are prepared
-  // separately by BotPlayback and explicitly labelled in their caption.
+  // Playback derivatives are prepared separately by BotPlayback; their measured
+  // codec remains in the expanded caption and the original-file action remains.
   const delivered = (result: unknown, fallback: 'audio' | 'document' = 'audio') => {
     const kind = result && typeof result === 'object' && 'document' in result && !('audio' in result) ? 'document' as const : fallback;
     upload.onDelivered?.(kind, result);

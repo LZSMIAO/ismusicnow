@@ -48,7 +48,7 @@ let botUsername = 'muismbot';
 const statePath = resolve(process.env.DATA_DIR || '.data', 'bot-offset', `${token.split(':')[0]}.json`);
 
 interface User { id: number; language_code?: string; is_bot?: boolean; first_name?: string }
-interface Message { message_id: number; message_thread_id?: number; sender_chat?: { id: number }; via_bot?: { id: number; is_bot?: boolean }; chat: { id: number; type?: string }; from?: User; text?: string; entities?: { type: string; offset: number; url?: string; user?: { id: number } }[]; reply_to_message?: { message_id: number; from?: { username?: string } } }
+interface Message { message_id: number; message_thread_id?: number; sender_chat?: { id: number }; via_bot?: { id: number; is_bot?: boolean }; chat: { id: number; type?: string }; audio?: { duration: number }; from?: User; text?: string; entities?: { type: string; offset: number; url?: string; user?: { id: number } }[]; reply_to_message?: { message_id: number; from?: { username?: string } } }
 interface Update { update_id: number; message?: Message; callback_query?: { id: string; from: User; data?: string; message?: Message; inline_message_id?: string }; inline_query?: InlineQuery; chosen_inline_result?: { result_id: string; from: User; inline_message_id?: string; query: string } }
 
 const captionDetails = new BotCaptionDetails(token.split(':')[0]!);
@@ -304,7 +304,7 @@ async function handleUpdate(update: Update): Promise<void> {
   if (update.callback_query?.data?.startsWith('md:')) {
     const callback = update.callback_query;
     await telegram('answerCallbackQuery', { callback_query_id: callback.id });
-    const payload = await captionDetails.toggle(callback.data!);
+    const payload = await captionDetails.toggle(callback.data!, callback.message?.audio?.duration);
     if (payload) {
       const address = callback.inline_message_id ? { inline_message_id: callback.inline_message_id } : callback.message ? { chat_id: callback.message.chat.id, message_id: callback.message.message_id } : undefined;
       if (address) {

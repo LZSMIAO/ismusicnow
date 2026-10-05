@@ -93,11 +93,25 @@ test('caption keeps platform and real format compact without spacer lines', () =
   const job = { id:'fixture', track, format:'original' as const, status:'completed' as const, stage:'', createdAt:'', updatedAt:'', bytes:1000, audioSource:'netease' as const, audio:{ codec:'FLAC', lossless:true } };
   const caption = musicCaption(track,job,'en');
   const quote=caption.match(/<blockquote expandable>([\s\S]*?)<\/blockquote>/)![1]!;
-  assert.deepEqual(quote.split('\n'),['#NetEase #flac 0.00MB','Album：Album','via @muismbot','FLAC']);
+  assert.deepEqual(quote.split('\n'),['Album：Album','Source：NetEase','Time：0:01','#NetEase #flac 0.00MB','FLAC','via @muismbot']);
   const measured = musicCaption(track,{...job,audio:{codec:'FLAC',lossless:true,sampleRate:44100,bitsPerSample:16}},'zh-Hant');
-  assert.match(measured,/<blockquote expandable>#網易雲音樂 #flac 0\.00MB\n專輯：Album\nvia @muismbot\nFLAC · 44\.1 kHz · 16-bit<\/blockquote>/);
-  assert.doesNotMatch(measured,/來源：|Source：|Details|\n\n/);
+  assert.match(measured,/<blockquote expandable>專輯：Album\n來源：網易雲音樂\n時長：0:01\n#網易雲音樂 #flac 0\.00MB\nFLAC · 44\.1 kHz · 16-bit\nvia @muismbot<\/blockquote>/);
+  assert.doesNotMatch(measured,/Details|\n\n/);
   assert.match(musicCaption(track,{...job,audio:{codec:'MPEG 1 Layer 3',lossless:false,bitrate:320000,sampleRate:48000}},'en'),/#NetEase #mp3 0\.00MB 320\.00kbps[^]*MPEG 1 Layer 3 · 48 kHz/);
+});
+
+test('caption uses measured cached duration even with missing catalog length and hides all technical rows after the summary', async () => {
+  const { musicReferencePayload } = await import('../src/lib/server/bot-media.js');
+  const track = { ...upload.track, durationMs: 0 };
+  const form = musicReferencePayload({ ...upload, track, fileId:'cached-player', kind:'audio', duration:200, job:{...upload.job,presentation:'telegram-playback'} });
+  const caption = String(form.get('caption'));
+  const lines = caption.match(/<blockquote expandable>([^]*?)<\/blockquote>/)![1]!.split('\n');
+  assert.deepEqual(lines.slice(0,3),['專輯：人是貓','來源：網易雲音樂','時長：3:20']);
+  assert.doesNotMatch(lines.slice(0,3).join('\n'),/#|via @|FLAC|kbps/);
+  assert.match(lines.slice(3).join('\n'),/#網易雲音樂 #flac[^]*FLAC · 48 kHz · 16-bit[^]*via @muismbot/);
+  assert.doesNotMatch(caption,/播放版|MP3 轉碼|playback copy|\n\n/);
+  assert.match(musicCaption(track,upload.job,'en'),/Time：—/);
+  assert.match(musicCaption(track,upload.job,'en',undefined,undefined,NaN),/Time：—/);
 });
 
 test('fallback audio points album, source and sharing actions at the actual platform recording', async () => {

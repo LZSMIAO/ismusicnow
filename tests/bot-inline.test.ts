@@ -24,6 +24,16 @@ function harness(options: { names?: AlbumLanguage; record?: CachedMusic; resolve
 }
 const query = (value = '床', offset = '', id = 'query-1') => ({ id, from: { id: 42 }, query: value, offset });
 
+test('cached inline cards show actual audio length and keep format and attribution beyond the summary', async () => {
+  const h = harness({names:'original',record:{...audio,duration:200}});
+  await h.inline.answer(query());
+  const caption = h.calls[0]!.body.results[0].caption as string;
+  const lines = caption.match(/<blockquote expandable>([^]*?)<\/blockquote>/)![1]!.split('\n');
+  assert.deepEqual(lines.slice(0,3),['Album：音乐','Source：NetEase','Time：3:20']);
+  assert.doesNotMatch(lines.slice(0,3).join('\n'),/#|MPEG|via @/);
+  assert.match(lines.slice(3).join('\n'),/#NetEase #mp3[^]*MPEG 1 Layer 3[^]*via @muismbot/);
+});
+
 test('inline prefixes preserve words, auto-detect platform URLs and validate private deep links', () => {
   assert.equal(parseInlineQuery('床').input, '床');
   assert.equal(parseInlineQuery('床').provider, 'all');
@@ -179,7 +189,7 @@ test('selecting an uncached song edits only the selected inline message into a n
   await inline.chosen({ result_id: 'netease:123', from: { id: 42 }, inline_message_id: 'same-inline-card', query: '床' });
   assert.equal(acquisitions, 1);
   const edit = h.calls.at(-1)!; assert.equal(edit.method, 'editMessageMedia'); assert.equal(edit.body.inline_message_id, 'same-inline-card'); assert.equal(edit.body.media.type, 'audio'); assert.equal(edit.body.media.media, playable.fileId);
-  assert.match(edit.body.media.caption, /人是貓.*張卡斯/); assert.match(edit.body.media.caption, /MP3 conversion/);
+  assert.match(edit.body.media.caption, /人是貓.*張卡斯/); assert.doesNotMatch(edit.body.media.caption, /MP3 conversion/); assert.match(edit.body.media.caption, /#mp3/);
   const buttons = edit.body.reply_markup.inline_keyboard.flat(); assert.ok(buttons.some((b: any) => /start=raw_n_123$/.test(b.url || '')));
   assert.ok(!buttons.some((b: any) => b.switch_inline_query_current_chat), 'finished cards also work in channels');
   assert.ok(!h.calls.some(c => ['sendMessage', 'sendAudio', 'sendDocument', 'deleteMessage'].includes(c.method)));
@@ -244,6 +254,6 @@ test('Inline inserts cached native FLAC without conversion; only a definitive fo
     await h.inline.chosen({ result_id:'netease:123', from:{id:42}, inline_message_id:'native-flac-inline',query:'Fixture' });
     assert.equal(conversions,rejection===true?1:0);
     if(!rejection) { assert.equal(h.calls.at(-1)!.method,'editMessageMedia'); assert.doesNotMatch(h.calls.at(-1)!.body.media.caption,/MP3 conversion/); }
-    if(rejection===true) assert.match(h.calls.at(-1)!.body.media.caption,/MP3 conversion/);
+    if(rejection===true) { assert.doesNotMatch(h.calls.at(-1)!.body.media.caption,/MP3 conversion/); assert.match(h.calls.at(-1)!.body.media.caption,/#mp3/); }
   }
 });

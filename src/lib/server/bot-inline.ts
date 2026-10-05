@@ -153,7 +153,7 @@ export class BotInline {
     const privateOnly = record?.kind !== 'audio' || !cachedInlineAudio(record);
     const fallback = this.article(track, visible, ui, userId, firstNames ? undefined : record, privateOnly);
     if (!record || firstNames || privateOnly) return { result: fallback, fallback };
-    const shared = { id: `${fallback.id}:audio`, caption: musicCaption(visible, job(record, track), ui, this.deps.username()), muism_caption_language: ui, parse_mode: 'HTML', reply_markup: this.keyboard(musicTrack(visible, record), ui, undefined, record.presentation === 'telegram-playback') };
+    const shared = { id: `${fallback.id}:audio`, caption: musicCaption(visible, job(record, track), ui, this.deps.username(), undefined, record.duration), muism_caption_language: ui, parse_mode: 'HTML', reply_markup: this.keyboard(musicTrack(visible, record), ui, undefined, record.presentation === 'telegram-playback') };
     return { result: { type: 'audio', audio_file_id: record.fileId, ...shared }, fallback };
   }
   private entity(entity: MusicEntity, ui: BotLanguage) {
@@ -256,7 +256,7 @@ export class BotInline {
       const acquire = this.deps.acquire;
       if (!acquire) throw new ServiceError('INLINE_CACHE_SETUP', 'Playback acquisition unavailable');
       const edit = async (record: CachedMusic) => this.deps.telegram('editMessageMedia', { inline_message_id: inlineId,
-        media: { type: 'audio', media: record.fileId, caption: musicCaption(visible, job(record, track), ui, this.deps.username()), muism_caption_language: ui, parse_mode: 'HTML', title: visible.title, performer: visible.artists.join(' / '), duration: record.duration },
+        media: { type: 'audio', media: record.fileId, caption: musicCaption(visible, job(record, track), ui, this.deps.username(), undefined, record.duration), muism_caption_language: ui, parse_mode: 'HTML', title: visible.title, performer: visible.artists.join(' / '), duration: record.duration },
         reply_markup: forInlineChat([{ reply_markup: this.keyboard(musicTrack(visible, record), ui, undefined, record.presentation === 'telegram-playback') }], 'channel')[0]!.reply_markup });
       let record = await acquire(track);
       try { await edit(record); }
@@ -317,7 +317,7 @@ export class BotInline {
         await this.deps.telegram('editMessageText', { inline_message_id: callback.inline_message_id, text: `${escapeHtml(visible.title)}\n${escapeHtml(botText(ui, 'inlinePrivate'))}`, parse_mode: 'HTML', reply_markup: markup(visible, { url: this.privateUrl(track) }) }); return;
       }
       await this.deps.telegram('editMessageMedia', { inline_message_id: callback.inline_message_id,
-        media: { type: record.kind, media: record.fileId, caption: musicCaption(visible, job(record, track), ui, this.deps.username()), muism_caption_language: ui, parse_mode: 'HTML', ...(record.kind === 'audio' ? { title: visible.title, performer: visible.artists.join(' / '), duration: record.duration } : {}) }, reply_markup: markup(visible) });
+        media: { type: record.kind, media: record.fileId, caption: musicCaption(visible, job(record, track), ui, this.deps.username(), undefined, record.duration), muism_caption_language: ui, parse_mode: 'HTML', ...(record.kind === 'audio' ? { title: visible.title, performer: visible.artists.join(' / '), duration: record.duration } : {}) }, reply_markup: markup(visible) });
     } catch (error) {
       if (error instanceof TelegramRequestError && /message is not modified/i.test(error.description)) return;
       await this.deps.telegram('editMessageText', { inline_message_id: callback.inline_message_id, text: botError(ui, publicError(error).code), reply_markup: { inline_keyboard: [[{ text: botText(ui, 'acquire'), url: `https://t.me/${this.deps.username()}?start=in_${match[2]}_${match[3]}` }]] } }).catch(() => {});

@@ -35,7 +35,8 @@ test('concurrent playback requests upload once, preserve source bytes and keep o
     assert.equal((f.uploads[0]!.form.get('document') as Blob).type, 'audio/ogg');
     assert.equal((f.uploads[1]!.form.get('audio') as Blob).type, 'audio/mpeg');
     assert.doesNotMatch(String(f.uploads[0]!.form.get('caption')), /MP3 conversion/);
-    assert.match(String(f.uploads[1]!.form.get('caption')), /MP3 conversion/);
+    assert.doesNotMatch(String(f.uploads[1]!.form.get('caption')), /MP3 conversion/);
+    assert.match(String(f.uploads[1]!.form.get('caption')), /#Spotify #mp3/);
     const key = await musicCacheKey(track), source = await f.cache.get(key), playback = await f.cache.get(telegramPlaybackKey(key));
     assert.equal(source?.kind, 'document'); assert.equal(source?.audio?.codec, 'Vorbis I'); assert.notEqual(source?.fileId, playback?.fileId);
     await f.playback.get(track); assert.equal(f.uploads.length, 2, 'cache hits perform neither source download nor Telegram upload');
