@@ -163,7 +163,7 @@ export function botText(language: BotLanguage, key: BotTextKey, values: Record<s
   return translated.replace(/\{(\w+)\}/g, (match, name: string) => Object.hasOwn(values, name) ? String(values[name]) : match);
 }
 const errors: Record<string, BotTextKey> = {
-  SELECTION_EXPIRED: 'selectionExpired', SELECTION_OWNER: 'selectionOwner', SELECTION_NUMBER: 'selectionNumber',
+  SELECTION_EXPIRED: 'selectionExpired', SELECTION_TARGET: 'selectionExpired', SELECTION_OWNER: 'selectionOwner', SELECTION_NUMBER: 'selectionNumber',
   SPOTIFY_COOKIES: 'spotifyCookies', SPOTIFY_SETUP: 'spotifySetup', NOT_FOUND: 'notFound', WRONG_PROVIDER: 'wrongProvider',
   NO_AUDIO: 'unavailableAudio', PREVIEW_ONLY: 'unavailableAudio', INCOMPLETE_AUDIO: 'unavailableAudio', LOSSLESS_UNAVAILABLE: 'unavailableAudio',
   ADAPTER_FAILED: 'adapterFailed', NO_OUTPUT: 'adapterFailed', TOOL_MISSING: 'adapterFailed', INVALID_QUALITY: 'adapterFailed',

@@ -15,6 +15,7 @@ test('signed close survives missing search/topic metadata and stays bound to act
   const data = selectionCloseData(target, 'secret');
   const message = { from: { id: 999 }, chat: { id: target.chatId, type: 'supergroup' }, message_thread_id: 8 };
   assert.ok(canCloseSelection(message, 42, data, 999, 'secret'));
+  assert.ok(!canCloseSelection(message, 42, data, 999, 'secret', true), 'new group close buttons require their persisted menu binding');
   assert.ok(!canCloseSelection(message, 43, data, 999, 'secret'));
   assert.ok(!canCloseSelection({ ...message, chat: { id: -100124 } }, 42, data, 999, 'secret'));
   assert.ok(canCloseSelection({ ...message, message_thread_id: undefined }, 42, data, 999, 'secret'));

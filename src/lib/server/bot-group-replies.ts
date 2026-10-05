@@ -165,4 +165,10 @@ export class BotGroupReplies {
       await this.disclose(message.chat.id, message.message_id, request);
     });
   }
+  async selectionCloseOwner(chat: number, message: number, user: number, data: string): Promise<boolean | undefined> {
+    await this.ready;
+    const saved = await this.load(chat, message); if (!saved) return;
+    const markup = saved.content.reply_markup as { inline_keyboard?: { callback_data?: string }[][] } | undefined;
+    return saved.reply.userId === user && !!markup?.inline_keyboard?.flat().some(button => button.callback_data === data);
+  }
 }

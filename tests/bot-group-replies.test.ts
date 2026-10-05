@@ -21,6 +21,16 @@ async function fixture(work: (group: BotGroupReplies, calls: { method: string; b
 }
 const sendBody = (chat = peer) => withGroupReply({ chat_id: chat, audio: 'cached-file', caption, parse_mode: 'HTML', reply_markup: keyboard, message_thread_id: 7 }, reply);
 
+test('expired group close checks the durable menu owner and its exact button after restart', () => fixture(async (group, calls, request, root) => {
+  const data = 'close:1234567890abcdef:42:0123456789abcdef';
+  await group.run('sendMessage', withGroupReply({ chat_id: peer, text: 'menu', reply_markup: { inline_keyboard: [[{ text: 'Close', callback_data: data }]] } }, reply), request);
+  const restarted = new BotGroupReplies('999', root);
+  assert.equal(await restarted.selectionCloseOwner(peer, 20, 42, data), true);
+  assert.equal(await restarted.selectionCloseOwner(peer, 20, 43, data), false);
+  assert.equal(await restarted.selectionCloseOwner(peer, 20, 42, data + '0'), false);
+  assert.equal(await restarted.selectionCloseOwner(peer, 21, 42, data), undefined);
+}));
+
 test('group audio replies to the request without a top mention; missing reply retries only a definitive rejection', () => fixture(async (group, calls, request) => {
   await group.run('sendAudio', sendBody(), request);
   assert.deepEqual(calls[0]!.body.reply_parameters, { message_id: 10, allow_sending_without_reply: false });

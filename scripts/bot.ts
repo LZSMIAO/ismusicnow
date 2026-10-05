@@ -402,7 +402,8 @@ async function handleUpdate(update: Update): Promise<void> {
       try { session = selections.callback(chatId, userId, close[1]!, message.message_id); }
       catch (error) {
         if (!(error instanceof ServiceError && error.code === 'SELECTION_EXPIRED')) throw error;
-        if (!canCloseSelection(message, userId, update.callback_query!.data!, Number(token!.split(':')[0]), token!)) throw new ServiceError('SELECTION_OWNER', 'Wrong close owner', 403);
+        const knownOwner = chatId < 0 ? await groupReplies.selectionCloseOwner(chatId, message.message_id, userId, update.callback_query!.data!) : undefined;
+        if (knownOwner === false || !canCloseSelection(message, userId, update.callback_query!.data!, Number(token!.split(':')[0]), token!, chatId < 0 && knownOwner === undefined)) throw new ServiceError('SELECTION_OWNER', 'Wrong close owner', 403);
       }
       if (session) selections.close(session);
       await removeNow(chatId, message.message_id); return;

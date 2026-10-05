@@ -21,7 +21,7 @@ test('selection numbers are scoped to user/chat, absolute across pages, and expi
   assert.throws(() => choices.number(7, 43, '1', 91), { code: 'SELECTION_OWNER' });
   assert.throws(() => choices.get(7, 43, session.id, 91), { code: 'SELECTION_OWNER' });
   assert.throws(() => choices.number(7, 42, '11'), { code: 'SELECTION_NUMBER' });
-  assert.throws(() => choices.get(7, 42, session.id, 92), { code: 'SELECTION_EXPIRED' });
+  assert.throws(() => choices.get(7, 42, session.id, 92), { code: 'SELECTION_TARGET' });
   assert.equal(choices.number(7, 42, '10000'), undefined);
   session.page = 1;
   const page = selectionMessage(session, 'en');
@@ -93,8 +93,8 @@ test('forum selection numbers and callbacks cannot cross topics, even for the sa
   assert.equal(choices.number(-100, 42, '1', undefined, 10)?.session.id, a.id);
   assert.equal(choices.number(-100, 42, '2', undefined, 20)?.session.id, b.id);
   assert.equal(choices.number(-100, 42, '1'), undefined);
-  assert.throws(() => choices.number(-100, 42, '1', 91, 20), { code: 'SELECTION_EXPIRED' });
-  assert.throws(() => choices.get(-100, 42, a.id, 91, 20), { code: 'SELECTION_EXPIRED' });
+  assert.throws(() => choices.number(-100, 42, '1', 91, 20), { code: 'SELECTION_TARGET' });
+  assert.throws(() => choices.get(-100, 42, a.id, 91, 20), { code: 'SELECTION_TARGET' });
   assert.equal(choices.get(-100, 42, a.id, 91, 10), a);
   assert.doesNotMatch(selectionMessage(a, 'en').text, /tg:\/\/user/);
   choices.delivered(-100, 90);

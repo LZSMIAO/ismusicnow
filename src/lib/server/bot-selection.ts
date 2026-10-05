@@ -48,9 +48,9 @@ export class BotSelections {
     this.prune();
     const session = this.sessions.get(id);
     if (!session) throw new ServiceError('SELECTION_EXPIRED', '選曲列表已過期，請重新搜尋。');
-    if (session.chatId !== chatId || (menuId !== undefined && session.menuId !== menuId)) throw new ServiceError('SELECTION_EXPIRED', 'Selection message does not match');
+    if (session.chatId !== chatId || (menuId !== undefined && session.menuId !== menuId)) throw new ServiceError('SELECTION_TARGET', 'Selection message does not match');
     if (session.userId !== userId) throw new ServiceError('SELECTION_OWNER', '請開啟自己的選曲列表。', 403);
-    if (session.messageThreadId !== messageThreadId) throw new ServiceError('SELECTION_EXPIRED', 'Selection topic does not match');
+    if (session.messageThreadId !== messageThreadId) throw new ServiceError('SELECTION_TARGET', 'Selection topic does not match');
     return session;
   }
   callback(chatId: number, userId: number, id: string, menuId: number): MusicSelection {

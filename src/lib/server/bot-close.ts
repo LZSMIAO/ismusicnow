@@ -15,13 +15,13 @@ export function selectionCloseData(target: Target, secret = process.env.BOT_TOKE
 }
 // Closing does not depend on search state or optional callback topic metadata.
 // The signed button's actor/chat and the actual bot-authored menu are checked.
-export function canCloseSelection(message: CloseMessage, userId: number, data: string, botId: number, secret: string): boolean {
+export function canCloseSelection(message: CloseMessage, userId: number, data: string, botId: number, secret: string, legacyOnly = false): boolean {
   if (message.from?.id !== botId) return false;
   const signed = /^close:([a-f0-9]{16}):(\d{1,16}):([a-f0-9]{16})$/.exec(data);
   if (signed) {
     if (Number(signed[2]) !== userId || !secret) return false;
     const target = { id: signed[1]!, chatId: message.chat.id, userId, messageThreadId: message.message_thread_id };
-    const expected = [signature(target, secret), signature(target, secret, true)];
+    const expected = [signature(target, secret, true), ...(legacyOnly ? [] : [signature(target, secret)])];
     // Old ordinary-group menus signed an empty forum topic, even if Telegram
     // later reports their reply chain as message_thread_id.
     if (!message.is_topic_message) expected.push(signature({ ...target, messageThreadId: undefined }, secret, true));
