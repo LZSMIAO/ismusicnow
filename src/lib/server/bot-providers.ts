@@ -4,6 +4,7 @@ import type { MusicSearchKind, Provider } from '../types.js';
 // Link-only adapters must not appear in the keyword-search source filter.
 export const botProviders: readonly { id: Provider; name: string; search: readonly MusicSearchKind[] }[] = [
   { id: 'netease', name: 'NetEase', search: ['track', 'album', 'artist', 'playlist'] },
+  ...(process.env.MYHK_API_KEY ? (['qq', 'kuwo', 'kugou', 'migu', 'qianqian'] as const).map(id => ({ id, name: { qq: 'QQ Music', kuwo: 'Kuwo', kugou: 'Kugou', migu: 'Migu', qianqian: 'Qianqian' }[id], search: ['track'] as const })) : []),
   { id: 'spotify', name: 'Spotify', search: ['track', 'album', 'artist', 'playlist'] },
   { id: 'ytm', name: 'YTM', search: [] },
 ];

@@ -1,6 +1,6 @@
 import { telegramHeaders } from './telegram.js';
 import type { Provider, DownloadJob } from './types';
-export const providerNames: Record<Provider, string> = { netease: '網易雲音樂', spotify: 'Spotify', ytm: 'YouTube Music', soundcloud: 'SoundCloud', bandcamp: 'Bandcamp', bilibili: 'Bilibili' };
+export const providerNames: Record<Provider, string> = { netease: '網易雲音樂', qq: 'QQ 音樂', kuwo: '酷我音樂', kugou: '酷狗音樂', migu: '咪咕音樂', qianqian: '千千音樂', spotify: 'Spotify', ytm: 'YouTube Music', soundcloud: 'SoundCloud', bandcamp: 'Bandcamp', bilibili: 'Bilibili' };
 export function duration(ms: number): string { return ms ? `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}` : '—'; }
 export function audioLabel(job: DownloadJob): string {
   if (!job.audio) return job.format === 'original' ? '原始音源' : job.format.toUpperCase();

@@ -154,7 +154,7 @@ export function selectionMessage(session: MusicSelection, ui: BotLanguage, names
   if (start + visible.length < items.length) navigation.push({ text: `${botText(ui, 'nextPage')} ›`, callback_data: `page:${session.id}:${page + 1}` });
   const layout: Button = { text: botText(ui, session.rich === false ? 'richLayout' : 'compatLayout'), callback_data: `layout:${session.id}:${session.rich === false ? 'rich' : 'buttons'}` };
   const footer = search && collection.total > collection.tracks.length + (collection.entities?.length || 0) ? botText(ui, 'partialResults') : '';
-  const tabs: Button[] = search && collection.provider !== 'ytm' ? (['track', 'album', 'artist', 'playlist'] as const).map(type => ({
+  const tabs: Button[] = search && collection.provider !== 'ytm' ? (['track', 'album', 'artist', 'playlist'] as const).filter(type => scope === 'all' || searchableProviders(type).some(provider => provider.id === scope)).map(type => ({
     text: `${(collection.searchType || 'track') === type ? '✓ ' : ''}${botText(ui, type === 'track' ? 'single' : type)}`, callback_data: `type:${session.id}:${type}`,
   })) : collection.kind === 'artist' && collection.provider === 'netease' ? [
     { text: `${!collection.entities ? '✓ ' : ''}${botText(ui, 'hotTracks')}`, callback_data: `view:${session.id}:track` },

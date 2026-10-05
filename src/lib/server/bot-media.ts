@@ -15,7 +15,7 @@ export class TelegramRequestError extends ServiceError {
   }
 }
 
-const sourceNames = { netease: '網易雲音樂', spotify: 'Spotify', ytm: 'YouTube Music', soundcloud: 'SoundCloud', bandcamp: 'Bandcamp', bilibili: 'Bilibili' };
+const sourceNames = { netease: '網易雲音樂', qq: 'QQ Music', kuwo: 'Kuwo', kugou: 'Kugou', migu: 'Migu', qianqian: 'Qianqian', spotify: 'Spotify', ytm: 'YouTube Music', soundcloud: 'SoundCloud', bandcamp: 'Bandcamp', bilibili: 'Bilibili' };
 export function musicCaption(track: Track, job: DownloadJob, language: BotLanguage = 'zh-Hant', botUsername = 'muismbot', recipient?: { id?: number; name?: string }): string {
   const audio = job.audio;
   const source = job.audioSource === 'netease' ? language === 'zh-Hans' ? '网易云音乐' : language === 'zh-Hant' ? '網易雲音樂' : 'NetEase' : sourceNames[job.audioSource];
@@ -44,7 +44,7 @@ function musicButtons(track: Track, language: BotLanguage, playback = false) {
     if (album?.kind === 'album' && album.provider === track.provider) row.push({ text: botText(language, 'album'), callback_data: `browse:${album.provider}:album:${album.id}` });
   } catch { /* Skip malformed upstream album references. */ }
   const id = track.artistIds?.[0];
-  if (id && (track.provider === 'netease' ? /^\d{1,16}$/ : /^[a-zA-Z0-9]{22}$/).test(id) && track.provider !== 'ytm') row.push({ text: shortText(track.artists[0] || botText(language, 'artist'), 20), callback_data: `browse:${track.provider}:artist:${id}` });
+  if (id && (track.provider === 'netease' ? /^\d{1,16}$/ : /^[a-zA-Z0-9]{22}$/).test(id) && ['netease', 'spotify'].includes(track.provider)) row.push({ text: shortText(track.artists[0] || botText(language, 'artist'), 20), callback_data: `browse:${track.provider}:artist:${id}` });
   row.push({ text: `${botText(language, 'source')} ↗`, url: track.sourceUrl });
   return { inline_keyboard: [row, [...(playback ? [{ text: botText(language, 'originalFile'), callback_data: `raw:${track.provider}:${track.id}` }] : []), { text: botText(language, 'share'), switch_inline_query: track.sourceUrl }]] };
 }
@@ -52,7 +52,7 @@ function musicButtons(track: Track, language: BotLanguage, playback = false) {
 // Cover URLs originate upstream. Limit them to platform CDNs, including redirects.
 export function coverUrl(raw: string): URL {
   const url = new URL(raw);
-  const hosts = ['music.126.net', 'scdn.co', 'ytimg.com', 'googleusercontent.com', 'ggpht.com'];
+  const hosts = ['music.126.net', 'scdn.co', 'ytimg.com', 'googleusercontent.com', 'ggpht.com', 'gtimg.cn', 'kuwo.cn', 'kugou.com', 'migu.cn', 'migufun.com', 'dmhmusic.com'];
   if (url.protocol !== 'https:' || url.port || url.username || url.password || !hosts.some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`))) {
     throw new Error('Untrusted cover URL');
   }

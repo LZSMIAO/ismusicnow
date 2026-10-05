@@ -1,5 +1,6 @@
 import { parseLrc, type Lyrics } from '../lyrics.js';
 import type { Provider } from '../types.js';
+import { isMyhkProvider, myhkLyrics } from './providers/myhk.js';
 import { neteaseLyrics } from './providers/netease.js';
 import { ServiceError } from './errors.js';
 import { fetchJson } from './http.js';
@@ -8,9 +9,9 @@ export async function trackLyrics(track: { provider: Provider; id: string; title
   const key = JSON.stringify(track), saved = cache.get(key);
   if (saved && saved.until > Date.now()) return saved.value;
   let value: Lyrics;
-  if (track.provider === 'netease') {
-    const text = await neteaseLyrics(track.id);
-    value = { source: 'netease', lines: parseLrc(text), plain: text.replace(/\[[^\]]*\]/g, '').trim() };
+  if (isMyhkProvider(track.provider)) {
+    const text = track.provider === 'netease' ? await neteaseLyrics(track.id) : await myhkLyrics(track.provider, track.id);
+    value = { source: track.provider, lines: parseLrc(text), plain: text.replace(/\[[^\]]*\]/g, '').trim() };
   } else {
     const query = new URLSearchParams({ track_name: track.title, artist_name: track.artists[0] || '' });
     if (track.album) query.set('album_name', track.album);

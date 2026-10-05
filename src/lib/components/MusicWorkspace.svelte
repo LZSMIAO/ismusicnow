@@ -54,7 +54,7 @@
     resizePlayer.observe(playerElement);
     const media = matchMedia('(prefers-reduced-motion: reduce)'); reduced = media.matches;
     const motion = () => reduced = media.matches; media.addEventListener('change', motion);
-    try { const saved: unknown = JSON.parse(localStorage.getItem('ismusicnow-recent') || '[]'); if (Array.isArray(saved)) recent = saved.filter((item) => item && typeof item.input === 'string' && typeof item.title === 'string' && typeof item.artist === 'string' && typeof item.cover === 'string' && ['track', 'album', 'playlist', 'search', 'artist'].includes(item.kind) && ['all', 'netease', 'spotify', 'ytm', 'soundcloud', 'bandcamp', 'bilibili'].includes(item.provider)).slice(0, 8); } catch { /* Browsing works without local storage. */ }
+    try { const saved: unknown = JSON.parse(localStorage.getItem('ismusicnow-recent') || '[]'); if (Array.isArray(saved)) recent = saved.filter((item) => item && typeof item.input === 'string' && typeof item.title === 'string' && typeof item.artist === 'string' && typeof item.cover === 'string' && ['track', 'album', 'playlist', 'search', 'artist'].includes(item.kind) && ['all', 'netease', 'qq', 'kuwo', 'kugou', 'migu', 'qianqian', 'spotify', 'ytm', 'soundcloud', 'bandcamp', 'bilibili'].includes(item.provider)).slice(0, 8); } catch { /* Browsing works without local storage. */ }
     return () => { document.documentElement.classList.remove('queue-open', 'queue-moving'); queueRevision++; queueAnimations.forEach(animation => animation.cancel()); resizePlayer.disconnect(); document.documentElement.style.removeProperty('--player-height'); searchRequest?.abort(); clearTimeout(noticeTimer); stopQueue(); stopPlayer(); media.removeEventListener('change', motion); };
   });
   $effect(() => {

@@ -6,7 +6,7 @@ import { botError, botText, type BotLanguage } from './bot-i18n.js';
 import { coverUrl, musicCaption, TelegramRequestError } from './bot-media.js';
 import { displayTrack, type AlbumLanguage } from './bot-settings.js';
 import { escapeHtml, shortText } from './bot-selection.js';
-import { parseMusicLink, validateTrackId } from './links.js';
+import { parseMusicLink, validateTrackId, musicSourceUrl } from './links.js';
 import { publicError, ServiceError } from './errors.js';
 import { searchText, type BotSource } from './bot-search.js';
 import { botProviders, searchableProviders, botProviderName } from './bot-providers.js';
@@ -34,17 +34,17 @@ export function cachedInlineAudio(record: CachedMusic): boolean {
   // here, and one unsupported result rejects the entire inline response.
   return /mp3|mpeg.*layer[ -]?3/i.test(record.audio?.codec || '') && !record.audio?.lossless;
 }
-const providers = botProviders.map(provider => provider.id);
+const providers: Provider[] = ['netease', 'spotify', 'ytm', 'qq', 'kuwo', 'kugou', 'migu', 'qianqian'];
 const kinds: MusicSearchKind[] = ['track', 'album', 'artist', 'playlist'];
-const codes: Partial<Record<Provider, string>> = { netease: 'n', spotify: 's', ytm: 'y' };
-const codeProviders: Record<string, Provider> = { n: 'netease', s: 'spotify', y: 'ytm' };
+const codes: Partial<Record<Provider, string>> = { netease: 'n', spotify: 's', ytm: 'y', qq: 'q', kuwo: 'w', kugou: 'g', migu: 'm', qianqian: 't' };
+const codeProviders: Record<string, Provider> = { n: 'netease', s: 'spotify', y: 'ytm', q: 'qq', w: 'kuwo', g: 'kugou', m: 'migu', t: 'qianqian' };
 export function inlineStart(track: Pick<Track, 'provider' | 'id'>): string {
   validateTrackId(track.provider, track.id);
   if (!codes[track.provider]) throw new ServiceError('UNSUPPORTED_LINK', '此來源請使用網頁播放器。');
   return `in_${codes[track.provider]}_${track.id}`;
 }
 export function parseInlineStart(value: string): Pick<Track, 'provider' | 'id'> | undefined {
-  const match = /^in_([nsy])_([a-zA-Z0-9_-]{1,22})$/.exec(value);
+  const match = /^in_([nsyqwgmt])_([a-zA-Z0-9_-]{1,32})$/.exec(value);
   if (!match) return;
   const provider = codeProviders[match[1]!]!;
   validateTrackId(provider, match[2]!);
@@ -54,7 +54,7 @@ export function parseInlineQuery(value: string) {
   let input = value.trim(), provider: BotSource = 'all', kind: MusicSearchKind = 'track', albums = false;
   let hasProvider = false, hasKind = false;
   for (let i = 0; i < 2; i++) {
-    const match = /^(all|netease|spotify|ytm|track|song|album|albums|artist|playlist)(?:\s+|$)/i.exec(input);
+    const match = /^(all|netease|spotify|ytm|qq|kuwo|kugou|migu|qianqian|track|song|album|albums|artist|playlist)(?:\s+|$)/i.exec(input);
     if (!match) break;
     const word = match[1]!.toLowerCase();
     const isProvider = word === 'all' || providers.includes(word as Provider);
@@ -75,11 +75,12 @@ export function browseStart(provider: Provider, kind: 'album' | 'artist', id: st
   return `browse_${code}_${kind}_${id}`;
 }
 export function parseBrowseStart(value: string): { provider: Provider; kind: 'album' | 'artist'; id: string; url: string } | undefined {
-  const match = /^browse_([ns])_(album|artist)_([a-zA-Z0-9]{1,22})$/.exec(value);
+  const match = /^browse_([nsqw])_(album|artist)_([a-zA-Z0-9]{1,22})$/.exec(value);
   if (!match) return;
   const provider = codeProviders[match[1]!]!, kind = match[2] as 'album' | 'artist', id = match[3]!;
   validateTrackId(provider, id);
-  return { provider, kind, id, url: provider === 'netease' ? `https://music.163.com/${kind}?id=${id}` : `https://open.spotify.com/${kind}/${id}` };
+  if (kind === 'artist' && !['netease', 'spotify'].includes(provider)) return;
+  return { provider, kind, id, url: musicSourceUrl(provider, kind, id) };
 }
 function thumbnail(raw: string): Record<string, string> {
   try {
@@ -134,7 +135,7 @@ export class BotInline {
       if (album?.kind === 'album' && album.provider === track.provider) row.push({ text: botText(ui, 'album'), url: `https://t.me/${this.deps.username()}?start=${browseStart(album.provider, 'album', album.id)}` });
     } catch { /* Untrusted upstream reference. */ }
     const artist = track.artistIds?.[0];
-    if (artist && (track.provider === 'netease' ? /^\d{1,16}$/ : /^[a-zA-Z0-9]{22}$/).test(artist) && track.provider !== 'ytm') row.push({ text: shortText(track.artists[0] || botText(ui, 'artist'), 20), url: `https://t.me/${this.deps.username()}?start=${browseStart(track.provider, 'artist', artist)}` });
+    if (artist && (track.provider === 'netease' ? /^\d{1,16}$/ : /^[a-zA-Z0-9]{22}$/).test(artist) && ['netease', 'spotify'].includes(track.provider)) row.push({ text: shortText(track.artists[0] || botText(ui, 'artist'), 20), url: `https://t.me/${this.deps.username()}?start=${browseStart(track.provider, 'artist', artist)}` });
     row.push({ text: `${botText(ui, 'source')} ↗`, url: track.sourceUrl });
     rows.push(row);
     rows.push([...(playback ? [{ text: botText(ui, 'originalFile'), url: `https://t.me/${this.deps.username()}?start=${inlineStart(track).replace(/^in_/, 'raw_')}` }] : []), { text: botText(ui, 'share'), switch_inline_query: track.sourceUrl }]);
@@ -163,8 +164,10 @@ export class BotInline {
       input_message_content: content(`<b>${escapeHtml(shortText(entity.title, 100))}</b>\n${escapeHtml(description)}\n<blockquote expandable>${source(entity.provider)}</blockquote>`), reply_markup: { inline_keyboard: [...rows, [{ text: `${botText(ui, 'source')} ↗`, url: entity.sourceUrl }]] } };
   }
   private choices(input: string, provider: BotSource, ui: BotLanguage, text?: string) {
-    const keyboard = { inline_keyboard: [kinds.map(kind => ({ text: botText(ui, label(kind)), switch_inline_query_current_chat: `${provider} ${kind} ${input}`.trim() })),
-      (['all', ...searchableProviders('track').map(provider => provider.id)] as BotSource[]).map(value => ({ text: value === 'all' ? botText(ui, 'allSources') : source(value), switch_inline_query_current_chat: `${value} ${input}`.trim() }))] };
+    const sourceButtons = (['all', ...searchableProviders('track').map(provider => provider.id)] as BotSource[]).map(value => ({ text: value === 'all' ? botText(ui, 'allSources') : source(value), switch_inline_query_current_chat: `${value} ${input}`.trim() }));
+    const availableKinds = provider === 'all' ? kinds : botProviders.find(item => item.id === provider)?.search || [];
+    const keyboard = { inline_keyboard: [availableKinds.map(kind => ({ text: botText(ui, label(kind)), switch_inline_query_current_chat: `${provider} ${kind} ${input}`.trim() })),
+      ...Array.from({ length: Math.ceil(sourceButtons.length / 3) }, (_, i) => sourceButtons.slice(i * 3, i * 3 + 3))].filter(row => row.length) };
     return [{ type: 'article', id: 'inline-search', title: text || botText(ui, 'inlineSearch'), description: botText(ui, 'inlineHint'),
       input_message_content: content(escapeHtml(text || botText(ui, 'inlineHint'))), reply_markup: keyboard }];
   }
@@ -271,7 +274,7 @@ export class BotInline {
   }
   async chosen(result: ChosenInline): Promise<void> {
     if (!result.inline_message_id) return;
-    const match = /^(netease|spotify|ytm):([a-zA-Z0-9_-]{1,22})(:audio)?$/.exec(result.result_id);
+    const match = /^(netease|spotify|ytm|qq|kuwo|kugou|migu|qianqian):([a-zA-Z0-9_-]{1,32})(:audio)?$/.exec(result.result_id);
     if (!match || match[3]) return; // Telegram already inserted a cached native player.
     await this.startPlayback(match[1] as Provider, match[2]!, result.from.id, result.inline_message_id);
   }
@@ -295,9 +298,9 @@ export class BotInline {
     const { ui, names } = await this.deps.preferences(callback.from.id);
     const type = callback.data?.startsWith('ic:') ? 'channel' : undefined;
     const markup = (track: Track, acquire?: Record<string, string>) => forInlineChat([{ reply_markup: this.keyboard(track, ui, acquire) }], type)[0]!.reply_markup;
-    const playback = /^ip:(\d+):([nsy]):([a-zA-Z0-9_-]{1,22})$/.exec(callback.data || '');
+    const playback = /^ip:(\d+):([nsyqwgmt]):([a-zA-Z0-9_-]{1,32})$/.exec(callback.data || '');
     const language = /^inlang:(\d+):([nsy]):([a-zA-Z0-9_-]{1,22}):(original|zh-Hant|zh-Hans)$/.exec(callback.data || '');
-    const match = playback || language || /^ix:(\d+):([nsy]):([a-zA-Z0-9_-]{1,22})$/.exec((callback.data || '').replace(/^ic:/, 'ix:'));
+    const match = playback || language || /^ix:(\d+):([nsyqwgmt]):([a-zA-Z0-9_-]{1,32})$/.exec((callback.data || '').replace(/^ic:/, 'ix:'));
     if (!match || Number(match[1]) !== callback.from.id) {
       await this.deps.telegram('answerCallbackQuery', { callback_query_id: callback.id, text: botText(ui, 'wrongOwner'), show_alert: true }); return;
     }

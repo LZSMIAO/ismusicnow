@@ -61,4 +61,4 @@ export function rankedSources(group: RecordingGroup, evidence: ReadonlyMap<strin
   });
 }
 export const sourceFallbackAllowed = (error: unknown): boolean => !!error && typeof error === 'object' &&
-  'code' in error && ['NO_AUDIO', 'PREVIEW_ONLY', 'INCOMPLETE_AUDIO', 'LOSSLESS_UNAVAILABLE', 'SPOTIFY_COOKIES', 'ACCOUNT_REQUIRED', 'TOOL_MISSING'].includes(String(error.code));
+  'code' in error && ['NO_AUDIO', 'PREVIEW_ONLY', 'INCOMPLETE_AUDIO', 'LOSSLESS_UNAVAILABLE', 'SPOTIFY_COOKIES', 'ACCOUNT_REQUIRED', 'TOOL_MISSING', 'UPSTREAM_ERROR', 'AUDIO_UNAVAILABLE', 'INVALID_AUDIO', 'INVALID_AUDIO_HOST'].includes(String(error.code));

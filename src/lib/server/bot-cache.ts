@@ -1,3 +1,4 @@
+import { providerIds } from '../types.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -8,7 +9,7 @@ import { TelegramRequestError } from './bot-media.js';
 export interface MusicCacheKey { provider: Provider; id: string; quality: string }
 const recordSchema = z.object({
   fileId: z.string().min(1), kind: z.enum(['audio', 'document']), duration: z.number().nonnegative(),
-  bytes: z.number().int().positive(), audioSource: z.enum(['netease', 'spotify', 'ytm', 'soundcloud', 'bandcamp', 'bilibili']),
+  bytes: z.number().int().positive(), audioSource: z.enum(providerIds),
   presentation: z.enum(['original', 'telegram-playback']).optional(), nativeAudioRejected: z.boolean().optional(),
   audio: z.object({ codec: z.string(), bitrate: z.number().optional(), sampleRate: z.number().optional(),
     bitsPerSample: z.number().optional(), lossless: z.boolean() }).optional(),

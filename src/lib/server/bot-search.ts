@@ -4,12 +4,13 @@ import { ServiceError } from './errors.js';
 import { parseMusicLink } from './links.js';
 import { resolveMusic } from './music.js';
 import { combineSearches } from './search.js';
+import { isMyhkProvider } from './providers/myhk.js';
 import { botProviders, searchableProviders } from './bot-providers.js';
 
 export type BotSource = Provider | 'all';
 const toSimplified = Converter({ from: 'tw', to: 'cn' });
 export function searchText(input: string, provider: Provider): string {
-  return provider === 'netease' && !/[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(input) ? toSimplified(input) : input;
+  return isMyhkProvider(provider) && !/[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(input) ? toSimplified(input) : input;
 }
 async function bounded<T>(value: Promise<T>, timeout: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;

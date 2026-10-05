@@ -4,6 +4,7 @@ import { config } from '../config.js';
 import { ServiceError } from '../errors.js';
 import { fetchJson } from '../http.js';
 import type { MusicLink } from '../links.js';
+import { myhkConfigured, myhkAudio, myhkLyrics, myhkTrack, resolveMyhk, searchMyhk } from './myhk.js';
 
 type Song = { id: number; name: string; ar?: { id?: number; name: string }[]; artists?: { id?: number; name: string }[]; al?: { id?: number; name: string; picUrl?: string }; album?: { id?: number; name: string; picUrl?: string }; dt?: number; duration?: number };
 type NeteaseEntity = { id: number; name: string; artist?: { name: string }; artists?: { name: string }[]; creator?: { nickname: string }; publishTime?: number; picUrl?: string; coverImgUrl?: string; img1v1Url?: string; size?: number; trackCount?: number; musicSize?: number; albumSize?: number };
@@ -64,6 +65,12 @@ function mapEntity(entity: NeteaseEntity, kind: MusicEntity['kind']): MusicEntit
     count: kind === 'artist' ? entity.musicSize : kind === 'playlist' ? entity.trackCount : entity.size };
 }
 export async function searchNetease(query: string, searchType: MusicSearchKind = 'track'): Promise<Collection> {
+  if (myhkConfigured() && searchType === 'track') {
+    try {
+      const value = await searchMyhk(query, 'netease');
+      if (value.tracks.length) return { ...value, tracks: await enrichNetease(value.tracks) };
+    } catch { /* Existing NetEase adapter is the fallback. */ }
+  }
   const body = await neteaseRequest('cloudsearch', { keywords: query, type: { track: 1, album: 10, artist: 100, playlist: 1000 }[searchType], limit: 30 });
   const result = body.result;
   const entities = searchType === 'track' ? undefined : (result?.[searchType === 'album' ? 'albums' : searchType === 'artist' ? 'artists' : 'playlists'] || []).map(e => mapEntity(e, searchType));
@@ -77,6 +84,10 @@ export async function neteaseTracks(ids: string[]): Promise<Track[]> {
 }
 
 export async function resolveNetease(link: MusicLink): Promise<Collection> {
+  if (myhkConfigured() && link.kind !== 'artist') {
+    try { const value = await resolveMyhk(link); return { ...value, tracks: await enrichNetease(value.tracks) }; }
+    catch { /* Preserve native NetEase collections when the primary is unavailable. */ }
+  }
   let title = '', tracks: Track[], total: number;
   if (link.kind === 'track') {
     tracks = await neteaseTracks([link.id]); title = tracks[0]?.title || ''; total = tracks.length;
@@ -107,6 +118,12 @@ export async function neteaseArtistAlbums(id: string): Promise<Collection> {
 }
 
 export async function neteaseAudio(id: string, format: DownloadFormat): Promise<{ url: string; extension: string }> {
+  if (myhkConfigured() && format !== 'flac') {
+    try { return await myhkAudio('netease', id); } catch { /* Native fallback below. */ }
+  }
+  return legacyNeteaseAudio(id, format);
+}
+export async function legacyNeteaseAudio(id: string, format: DownloadFormat): Promise<{ url: string; extension: string }> {
   // The SDK's xeapi default needs a separately bootstrapped key cache. The
   // supported eapi transport works when the SDK is embedded without its server.
   const body = await neteaseRequest('song_url_v1', { id, crypto: 'eapi', level: format === 'flac' ? 'lossless' : format === 'mp3' ? 'exhigh' : 'lossless' });
@@ -120,13 +137,33 @@ export async function neteaseAudio(id: string, format: DownloadFormat): Promise<
 }
 
 export async function neteaseLyrics(id: string): Promise<string> {
+  if (myhkConfigured()) { try { const value = await myhkLyrics('netease', id); if (value.trim()) return value; } catch { /* Native fallback. */ } }
   const body = await neteaseRequest('lyric', { id });
   return body.lrc?.lyric || '';
 }
 
 export async function neteasePreview(id: string): Promise<{ url: string; limited: boolean } | null> {
+  if (myhkConfigured()) { try { const audio = await myhkAudio('netease', id); return { url: audio.url, limited: false }; } catch { /* Native fallback. */ } }
   const body = await neteaseRequest('song_url_v1', { id, crypto: 'eapi', level: 'standard' });
   // Preserve the platform's access level; the player does not impose a time cap.
   const audio = body.data?.[0];
   return audio?.url ? { url: audio.url, limited: !!audio.freeTrialInfo } : null;
+}
+
+// MyHK lacks duration and entity identities. Preserve its selected recording
+// IDs and use the native batch detail endpoint only to fill missing metadata.
+async function enrichNetease(tracks: Track[]): Promise<Track[]> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let details: Track[];
+  try { details = await Promise.race([neteaseTracks(tracks.map(track => track.id)).catch(() => []), new Promise<Track[]>(resolve => { timer = setTimeout(() => resolve([]), 700); })]); }
+  finally { if (timer) clearTimeout(timer); }
+  const byId = new Map(details.map(track => [track.id, track]));
+  return tracks.map(track => { const detail = byId.get(track.id); return detail ? { ...track, artists: detail.artists.length ? detail.artists : track.artists,
+    cover: track.cover || detail.cover, durationMs: detail.durationMs, albumUrl: detail.albumUrl, artistIds: detail.artistIds } : track; });
+}
+export async function primaryNeteaseTrack(id: string): Promise<Track> {
+  if (myhkConfigured()) { try { return (await enrichNetease([await myhkTrack('netease', id)]))[0]!; } catch { /* Native fallback. */ } }
+  const track = (await neteaseTracks([id]))[0];
+  if (!track) throw new ServiceError('NOT_FOUND', '找不到這首歌曲。', 404);
+  return track;
 }

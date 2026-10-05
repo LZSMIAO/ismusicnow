@@ -3,6 +3,23 @@ import { ServiceError } from './errors.js';
 
 export interface MusicLink { provider: Provider; kind: 'track' | 'album' | 'playlist' | 'artist'; id: string; url: string }
 
+export function musicSourceUrl(provider: Provider, kind: MusicLink['kind'], id: string): string {
+  if (provider === 'netease') { validateTrackId(provider, id); return `https://music.163.com/${kind === 'track' ? 'song' : kind}?id=${id}`; }
+  if (provider === 'spotify') { validateTrackId(provider, id); return `https://open.spotify.com/${kind}/${id}`; }
+  if (provider === 'qq') {
+    if (kind === 'playlist' ? !/^\d{1,16}$/.test(id) : !/^[A-Za-z0-9]{14}$/.test(id)) throw new ServiceError('INVALID_TRACK', 'QQ 音樂識別碼無效。');
+    return `https://y.qq.com/n/ryqq/${kind === 'track' ? 'songDetail' : kind === 'album' ? 'albumDetail' : kind === 'playlist' ? 'playlist' : 'singer'}/${id}`;
+  }
+  if (provider === 'kuwo') { validateTrackId(provider, id); return `https://www.kuwo.cn/${kind === 'track' ? 'play_detail' : kind === 'album' ? 'album_detail' : 'playlist_detail'}/${id}`; }
+  if (provider === 'kugou') {
+    if (kind === 'playlist') { if (!/^\d{1,16}$/.test(id)) throw new ServiceError('INVALID_TRACK', '酷狗歌單識別碼無效。'); return `https://www.kugou.com/yy/special/single/${id}.html`; }
+    validateTrackId(provider, id); return `https://www.kugou.com/song/#hash=${id}`;
+  }
+  if (provider === 'migu') { validateTrackId(provider, id); return `https://music.migu.cn/v3/music/song/${id}`; }
+  if (provider === 'qianqian') { validateTrackId(provider, id); return `https://music.91q.com/song/${id}`; }
+  throw new ServiceError('UNSUPPORTED_LINK', '此來源不支援這類連結。');
+}
+
 export function parseMusicLink(input: string): MusicLink | null {
   const value = input.trim();
   const uri = /^spotify:(track|album|playlist|artist):([a-zA-Z0-9]{22})$/.exec(value);
@@ -15,6 +32,27 @@ export function parseMusicLink(input: string): MusicLink | null {
   let url: URL;
   try { url = new URL(raw); } catch { throw new ServiceError('INVALID_URL', '這個連結格式不完整。'); }
   if (url.username || url.password || url.port) throw new ServiceError('INVALID_URL', '請使用平台的原始分享連結。');
+  let chinese: { provider: Provider; kind: MusicLink['kind']; id: string } | undefined;
+  if (url.hostname === 'y.qq.com') {
+    const path = /^\/n\/ryqq\/(songDetail|albumDetail|playlist)\/([A-Za-z0-9]+)\/?$/.exec(url.pathname);
+    const old = /^\/n\/yqq\/(song|album)\/([A-Za-z0-9]+)\.html$/.exec(url.pathname);
+    if (path) chinese = { provider: 'qq', kind: path[1] === 'songDetail' ? 'track' : path[1] === 'albumDetail' ? 'album' : 'playlist', id: path[2]! };
+    else if (old) chinese = { provider: 'qq', kind: old[1] === 'song' ? 'track' : 'album', id: old[2]! };
+    else if (url.searchParams.get('songmid')) chinese = { provider: 'qq', kind: 'track', id: url.searchParams.get('songmid')! };
+  }
+  if (['www.kuwo.cn', 'kuwo.cn'].includes(url.hostname)) {
+    const match = /^\/(play_detail|album_detail|playlist_detail)\/(\d{1,16})\/?$/.exec(url.pathname);
+    if (match) chinese = { provider: 'kuwo', kind: match[1] === 'play_detail' ? 'track' : match[1] === 'album_detail' ? 'album' : 'playlist', id: match[2]! };
+  }
+  if (['www.kugou.com', 'kugou.com'].includes(url.hostname)) {
+    const hash = url.searchParams.get('hash') || new URLSearchParams(url.hash.replace(/^#/, '')).get('hash');
+    const list = /^\/yy\/special\/single\/(\d{1,16})\.html$/.exec(url.pathname);
+    if (hash) chinese = { provider: 'kugou', kind: 'track', id: hash };
+    else if (list) chinese = { provider: 'kugou', kind: 'playlist', id: list[1]! };
+  }
+  if (url.hostname === 'music.migu.cn') { const match = /^\/v3\/music\/song\/([A-Za-z0-9]{1,32})\/?$/.exec(url.pathname); if (match) chinese = { provider: 'migu', kind: 'track', id: match[1]! }; }
+  if (['music.91q.com', 'music.taihe.com'].includes(url.hostname)) { const match = /^\/song\/(T?\d{1,20})\/?$/.exec(url.pathname); if (match) chinese = { provider: 'qianqian', kind: 'track', id: match[1]! }; }
+  if (chinese) return { ...chinese, url: musicSourceUrl(chinese.provider, chinese.kind, chinese.id) };
   if (url.hostname === 'open.spotify.com') {
     const match = /^\/(?:intl-[a-z]{2}\/)?(track|album|playlist|artist)\/([a-zA-Z0-9]{22})\/?$/.exec(url.pathname);
     if (!match) throw new ServiceError('UNSUPPORTED_LINK', 'Spotify 支援歌曲、專輯、藝術家及公開歌單連結。');
@@ -59,11 +97,11 @@ export function parseMusicLink(input: string): MusicLink | null {
     return { provider: 'bandcamp', kind: match[1] === 'track' ? 'track' : 'album', id: `${bandcampHost[1]}~${match[2]}`, url: `https://${url.hostname}/${match[1]}/${match[2]}` };
   }
   if (['spotify.link', '163cn.tv'].includes(url.hostname)) throw new ServiceError('SHORT_LINK', '請在平台打開短連結，再複製完整的歌曲、專輯或歌單網址。');
-  throw new ServiceError('UNSUPPORTED_HOST', '支援網易雲、Spotify、YouTube Music、SoundCloud、Bandcamp 與 Bilibili 完整連結。');
+  throw new ServiceError('UNSUPPORTED_HOST', '請使用已支援音樂平台的完整歌曲、專輯或歌單連結。');
 }
 
 export function validateTrackId(provider: Provider, id: string): void {
-  const pattern = provider === 'spotify' ? /^[a-zA-Z0-9]{22}$/ : provider === 'ytm' ? /^[a-zA-Z0-9_-]{11}$/ : provider === 'bilibili' ? /^BV[a-zA-Z0-9]{10}$/ : provider === 'bandcamp' ? /^[a-z0-9][a-z0-9-]{0,62}~[a-z0-9][a-z0-9-]{0,160}$/ : /^\d{1,16}$/;
+  const pattern = provider === 'qq' ? /^[A-Za-z0-9]{14}$/ : provider === 'kugou' ? /^[A-Fa-f0-9]{32}$/ : provider === 'migu' ? /^[A-Za-z0-9]{1,32}$/ : provider === 'qianqian' ? /^T?\d{1,20}$/ : provider === 'spotify' ? /^[a-zA-Z0-9]{22}$/ : provider === 'ytm' ? /^[a-zA-Z0-9_-]{11}$/ : provider === 'bilibili' ? /^BV[a-zA-Z0-9]{10}$/ : provider === 'bandcamp' ? /^[a-z0-9][a-z0-9-]{0,62}~[a-z0-9][a-z0-9-]{0,160}$/ : /^\d{1,16}$/;
   if (!pattern.test(id)) {
     throw new ServiceError('INVALID_TRACK', '曲目識別碼無效，請重新解析連結。');
   }

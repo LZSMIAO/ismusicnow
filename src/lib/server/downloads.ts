@@ -5,11 +5,12 @@ import { basename, extname, join, resolve } from 'node:path';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { parseFile } from 'music-metadata';
-import type { DownloadFormat, DownloadJob, Track } from '../types.js';
+import type { DownloadFormat, DownloadJob, Track, Provider } from '../types.js';
 import { config } from './config.js';
 import { publicError, ServiceError } from './errors.js';
 import { safeFilename } from './links.js';
-import { neteaseAudio } from './providers/netease.js';
+import { legacyNeteaseAudio, neteaseAudio } from './providers/netease.js';
+import { isMyhkProvider, myhkAudio, validateMyhkAudioUrl } from './providers/myhk.js';
 import { downloadSpotify } from './providers/spotify.js';
 import { downloadPublic } from './providers/public-audio.js';
 import { downloadYtm } from './providers/ytm.js';
@@ -26,15 +27,16 @@ export function validateAudioUrl(raw: string): URL {
   return url;
 }
 
-async function saveNeteaseAudio(url: string, path: string, maxFileBytes: number): Promise<void> {
-  let current = validateAudioUrl(url);
+export async function savePlatformAudio(url: string, path: string, maxFileBytes: number, provider: Provider = 'netease'): Promise<void> {
+  const validate = (raw: string) => isMyhkProvider(provider) ? validateMyhkAudioUrl(raw, provider) : validateAudioUrl(raw);
+  let current = validate(url);
   for (let i = 0; i < 4; i++) {
     const response = await fetch(current, { redirect: 'manual', signal: AbortSignal.timeout(120_000) });
     if ([301, 302, 303, 307, 308].includes(response.status)) {
       const location = response.headers.get('location');
       await response.body?.cancel();
       if (!location) break;
-      current = validateAudioUrl(new URL(location, current).href);
+      current = validate(new URL(location, current).href);
       continue;
     }
     if (!response.ok || !response.body) throw new ServiceError('AUDIO_UNAVAILABLE', '平台音源暫時無法下載。', 502);
@@ -63,11 +65,26 @@ async function findAudio(directory: string): Promise<string[]> {
 }
 
 export async function executeDownload(job: DownloadJob, directory: string, maxFileBytes = config.maxFileBytes): Promise<string> {
-  if (job.track.provider === 'netease') {
-    const audio = await neteaseAudio(job.track.id, job.format);
-    const path = join(directory, `audio.${audio.extension}`);
-    await saveNeteaseAudio(audio.url, path, maxFileBytes);
-    return path;
+  if (isMyhkProvider(job.track.provider)) {
+    const provider = job.track.provider;
+    if (provider !== 'netease' && job.format !== 'original') throw new ServiceError('ORIGINAL_ONLY', '此來源保留平台可用音源，不提供轉碼。');
+    const save = async (audio: { url: string; extension: string }) => {
+      const path = join(directory, `audio.${audio.extension}`);
+      try {
+        await savePlatformAudio(audio.url, path, maxFileBytes, provider);
+        const { format } = await parseFile(path, { duration: true });
+        if (!format.codec || !format.duration) throw new ServiceError('INVALID_AUDIO', '平台未提供有效音訊。', 502);
+        if (job.track.durationMs > 0 && format.duration * 1000 < job.track.durationMs * 0.9) throw new ServiceError('INCOMPLETE_AUDIO', '平台只提供音訊片段。', 403);
+        return path;
+      } catch (error) { await rm(path, { force: true }); throw error; }
+    };
+    try { return await save(provider === 'netease' ? await neteaseAudio(job.track.id, job.format) : await myhkAudio(provider, job.track.id)); }
+    catch (error) {
+      // Failover also covers expired URLs, rejected CDN redirects and partial
+      // files. Limits remain terminal; retrying cannot make a big file smaller.
+      if (provider !== 'netease' || error instanceof ServiceError && error.code === 'FILE_TOO_LARGE') throw error;
+      return save(await legacyNeteaseAudio(job.track.id, job.format));
+    }
   }
   if (job.format !== 'original') throw new ServiceError('ORIGINAL_ONLY', '此來源只保留平台可用音源，不提供音質轉換。');
   if (job.track.provider === 'spotify') await downloadSpotify(job.track, directory);

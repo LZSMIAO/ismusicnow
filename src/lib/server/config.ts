@@ -4,6 +4,7 @@ const executable = (value: string) => value.includes('/') ? resolve(value) : val
 
 export const config = {
   dataDir: resolve(process.env.DATA_DIR || '.data'),
+  myhkApiKey: process.env.MYHK_API_KEY || '',
   neteaseApiUrl: process.env.NETEASE_API_URL || '',
   neteaseCookie: process.env.NETEASE_COOKIE || (process.env.MUSIC_U ? `MUSIC_U=${process.env.MUSIC_U};` : ''),
   spotifyClientId: process.env.SPOTIFY_CLIENT_ID || '',

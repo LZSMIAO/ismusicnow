@@ -1,4 +1,5 @@
-export type Provider = 'netease' | 'spotify' | 'ytm' | 'soundcloud' | 'bandcamp' | 'bilibili';
+export const providerIds = ['netease', 'qq', 'kuwo', 'kugou', 'migu', 'qianqian', 'spotify', 'ytm', 'soundcloud', 'bandcamp', 'bilibili'] as const;
+export type Provider = typeof providerIds[number];
 export type SearchSource = Provider | 'all';
 export type DownloadFormat = 'original' | 'mp3' | 'flac';
 export type MusicSearchKind = 'track' | 'album' | 'artist' | 'playlist';
@@ -56,6 +57,11 @@ export interface DownloadJob {
 }
 
 export interface ServiceStatus {
+  qq: { downloaderReady: boolean };
+  kuwo: { downloaderReady: boolean };
+  kugou: { downloaderReady: boolean };
+  migu: { downloaderReady: boolean };
+  qianqian: { downloaderReady: boolean };
   soundcloud: { downloaderReady: boolean };
   bandcamp: { downloaderReady: boolean };
   bilibili: { downloaderReady: boolean };

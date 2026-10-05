@@ -1,3 +1,4 @@
+import { providerIds } from '../types.js';
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -13,7 +14,7 @@ export const languageNames: Record<AlbumLanguage, string> = {
 };
 const pendingSchema = z.object({
   chatId: z.number().int(), messageId: z.number().int().positive(), messageThreadId: z.number().int().positive().optional(), keepRequest: z.boolean().optional(), inlineMode: z.boolean().optional(), createdAt: z.number(),
-  track: z.object({ id: z.string(), provider: z.enum(['netease', 'spotify', 'ytm', 'soundcloud', 'bandcamp', 'bilibili']), title: z.string(),
+  track: z.object({ id: z.string(), provider: z.enum(providerIds), title: z.string(),
     artists: z.array(z.string()), album: z.string(), cover: z.string(), durationMs: z.number(), sourceUrl: z.string(),
     artistIds: z.array(z.string()).optional(), albumUrl: z.string().optional(),
     metadataLanguages: z.object({ title: z.string().optional(), album: z.string().optional(), artists: z.array(z.string()).optional() }).optional() }),

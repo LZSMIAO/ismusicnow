@@ -10,6 +10,7 @@
   } = $props();
   const catalogue = [
     { value: 'all', label: '所有來源' }, { value: 'netease', label: '網易雲' },
+    { value: 'qq', label: 'QQ 音樂' }, { value: 'kuwo', label: '酷我' }, { value: 'kugou', label: '酷狗' }, { value: 'migu', label: '咪咕' }, { value: 'qianqian', label: '千千' },
     { value: 'spotify', label: 'Spotify' }, { value: 'ytm', label: 'YouTube Music' },
     { value: 'soundcloud', label: 'SoundCloud' }, { value: 'bandcamp', label: 'Bandcamp' }, { value: 'bilibili', label: 'Bilibili' },
   ];

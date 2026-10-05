@@ -10,6 +10,8 @@ import { publicError, ServiceError } from '../src/lib/server/errors.js';
 import { artistAlbums, resolveMusic, getTrack } from '../src/lib/server/music.js';
 import { resolveBotMusic, type BotSource } from '../src/lib/server/bot-search.js';
 import { neteaseLyrics } from '../src/lib/server/providers/netease.js';
+import { isMyhkProvider, myhkLyrics } from '../src/lib/server/providers/myhk.js';
+import { musicSourceUrl } from '../src/lib/server/links.js';
 import { safeFilename } from '../src/lib/server/links.js';
 import { resolveNeteaseCommand } from '../src/lib/server/bot-input.js';
 import { BotLanguageSettings, BotSettingsStore, displayTrack, type AlbumLanguage } from '../src/lib/server/bot-settings.js';
@@ -323,7 +325,7 @@ async function handleUpdate(update: Update): Promise<void> {
     }
     await updateCommands(chatId, ui, userId).catch(() => {});
     if (update.callback_query?.data === 'open-settings') { await preferences.show(chatId, userId); return; }
-    const original = update.callback_query?.data?.match(/^raw:(netease|spotify|ytm):([a-zA-Z0-9_-]{1,22})$/);
+    const original = update.callback_query?.data?.match(/^raw:(netease|spotify|ytm|qq|kuwo|kugou|migu|qianqian):([a-zA-Z0-9_-]{1,32})$/);
     if (original) {
       const track = await getTrack(original[1] as Provider, original[2]!);
       await sendTrack(chatId, userId, track, (await settingsStore.get(userId)).language || 'original', message.message_id, message.message_thread_id, true, false, true); return;
@@ -334,9 +336,9 @@ async function handleUpdate(update: Update): Promise<void> {
       return;
     }
     if (!update.callback_query && (cmd === '/settings' || cmd === '/setting')) { await preferences.show(chatId, userId); return; }
-    const browse = update.callback_query?.data?.match(/^browse:(netease|spotify):(album|artist):([a-zA-Z0-9]{1,22})$/);
+    const browse = update.callback_query?.data?.match(/^browse:(netease|spotify|qq|kuwo):(album|artist):([a-zA-Z0-9]{1,22})$/);
     if (browse) {
-      const url = browse[1] === 'netease' ? `https://music.163.com/${browse[2]}?id=${browse[3]}` : `https://open.spotify.com/${browse[2]}/${browse[3]}`;
+      const url = musicSourceUrl(browse[1] as Provider, browse[2] as 'album' | 'artist', browse[3]!);
       await sendCollection(chatId, userId, await resolveMusic(url, browse[1] as Provider), message.message_id, true);
       return;
     }
@@ -479,9 +481,10 @@ async function handleUpdate(update: Update): Promise<void> {
       await send(chatId, botHelp(ui, !isPrivate, botUsername), { parse_mode: 'HTML', reply_parameters: replyParameters(message.message_id) });
     } else if (cmd === '/lyric') {
       if (!args) { await notice(chatId, botText(ui, 'lyricInput'), message.message_id); return; }
-      const collection = await resolveNeteaseCommand(args);
-      const track = collection.tracks[0]!;
-      const lyric = await neteaseLyrics(track.id);
+      const collection = await resolveBotMusic(args);
+      const track = collection.tracks[0];
+      if (!track || !isMyhkProvider(track.provider)) { await notice(chatId, botText(ui, 'noLyric'), message.message_id); return; }
+      const lyric = track.provider === 'netease' ? await neteaseLyrics(track.id) : await myhkLyrics(track.provider, track.id);
       if (!lyric) { await notice(chatId, botText(ui, 'noLyric'), message.message_id); return; }
       const form = new FormData(); form.set('chat_id', String(chatId)); form.set('document', new Blob([lyric], { type: 'text/plain' }), `${safeFilename(`${track.artists.join(' - ')} - ${track.title}`)}.lrc`);
       if (message.message_thread_id !== undefined) form.set('message_thread_id', String(message.message_thread_id));

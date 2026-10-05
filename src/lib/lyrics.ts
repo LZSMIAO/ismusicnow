@@ -1,5 +1,5 @@
 export interface LyricLine { time: number; text: string }
-export interface Lyrics { lines: LyricLine[]; plain: string; source: 'netease' | 'lrclib'; instrumental?: boolean }
+export interface Lyrics { lines: LyricLine[]; plain: string; source: 'netease' | 'lrclib' | 'qq' | 'kuwo' | 'kugou' | 'migu' | 'qianqian'; instrumental?: boolean }
 export function parseLrc(value: string): LyricLine[] {
   const offset = Number(/\[offset:([+-]?\d+)\]/i.exec(value)?.[1] || 0) / 1000;
   const lines: LyricLine[] = [];
