@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { musicCaption, sendMusic, TelegramRequestError, coverUrl, type MusicUpload } from '../src/lib/server/bot-media.js';
+import { musicCaption, sendMusic, TelegramRequestError, coverUrl, thumbnailUrl, type MusicUpload } from '../src/lib/server/bot-media.js';
 
 const upload: MusicUpload = {
   chatId: 7, replyTo: 90, filename: '張卡斯 - 人是貓.flac', duration: 136, bytes: new Uint8Array([102, 76, 97, 67]), thumbnail: new Uint8Array([255, 216, 255]),
@@ -66,6 +66,8 @@ test('thumbnail rejection retries audio without a cover; network failures never 
 test('caption respects Telegram limits and cover downloads are restricted to platform image CDNs', () => {
   assert.ok(musicCaption({ ...upload.track, title: '貓'.repeat(2000), album: '曲'.repeat(2000) }, upload.job).length <= 1024);
   assert.equal(coverUrl('https://p1.music.126.net/cover.jpg').hostname, 'p1.music.126.net');
+  assert.equal(thumbnailUrl('https://p3.music.126.net/a.jpg?param=800y800').searchParams.get('param'),'320y320');
+  assert.equal(thumbnailUrl('https://i.scdn.co/image/abc').href,'https://i.scdn.co/image/abc');
   for (const raw of ['https://127.0.0.1/cover', 'https://music.126.net.evil.example/a', 'http://p1.music.126.net/a', 'https://user:pass@i.scdn.co/a']) assert.throws(() => coverUrl(raw));
 });
 
@@ -91,7 +93,7 @@ test('caption keeps platform and real format compact without spacer lines', () =
   const job = { id:'fixture', track, format:'original' as const, status:'completed' as const, stage:'', createdAt:'', updatedAt:'', bytes:1000, audioSource:'netease' as const, audio:{ codec:'FLAC', lossless:true } };
   const caption = musicCaption(track,job,'en');
   const quote=caption.match(/<blockquote expandable>([\s\S]*?)<\/blockquote>/)![1]!;
-  assert.deepEqual(quote.split('\n'),['Album：Album','#NetEase #flac 0.00MB','via @muismbot']);
+  assert.deepEqual(quote.split('\n'),['Album：Album','Source：NetEase','via @muismbot','#flac 0.00MB']);
 });
 
 test('fallback audio points album, source and sharing actions at the actual platform recording', async () => {
@@ -102,5 +104,5 @@ test('fallback audio points album, source and sharing actions at the actual plat
   const rows = JSON.parse(String(form.get('reply_markup'))).inline_keyboard;
   assert.equal(rows[0][0].callback_data,'browse:netease:album:66');
   assert.equal(rows.at(-1).length,2); assert.equal(rows.at(-1)[0].url,actual.sourceUrl); assert.equal(rows.at(-1)[1].switch_inline_query,actual.sourceUrl);
-  assert.match(String(form.get('caption')), /#網易雲音樂 #flac/);
+  assert.match(String(form.get('caption')), /來源：網易雲音樂/); assert.match(String(form.get('caption')), /#flac/);
 });

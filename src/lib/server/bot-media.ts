@@ -34,16 +34,17 @@ export function musicCaption(track: Track, job: DownloadJob, language: BotLangua
     job.bytes ? `${(job.bytes / 1024 / 1024).toFixed(2)}MB` : '',
     audio?.bitrate ? `${(audio.bitrate / 1000).toFixed(2)}kbps` : '',
   ].filter(Boolean).join(' ');
-  // Build the full details without spacers. BotCaptionDetails supplies compact
-  // and expanded captions with explicit controls, independent of client layout.
+  // Keep three useful preview lines, then the complete audio facts. Telegram
+  // supplies the native quote arrow; no blank spacer or extra Details button.
   const details = [
     `${escapeHtml(botText(language, 'album'))}：${album}`,
-    escapeHtml(technical),
-    job.presentation === 'telegram-playback' ? escapeHtml(botText(language, 'playbackVersion')) : '',
+    `${escapeHtml(botText(language, 'source'))}：${escapeHtml(source)}`,
     `via @${escapeHtml(botUsername)}`,
+    escapeHtml(technical.split(' ').slice(1).join(' ')),
   ].filter(Boolean).join('\n');
   return [recipient?.id ? `<a href="tg://user?id=${recipient.id}">${escapeHtml(shortText(recipient.name || String(recipient.id), 40))}</a>` : '',
     `<b>「${title}」</b> — ${artists}`,
+    job.presentation === 'telegram-playback' ? escapeHtml(botText(language, 'playbackVersion')) : '',
     `<blockquote expandable>${details}</blockquote>`].filter(Boolean).join('\n');
 }
 export function musicTrack(track: Track, job: Pick<DownloadJob, 'audioTrack'>): Track {
@@ -72,8 +73,13 @@ export function coverUrl(raw: string): URL {
   }
   return url;
 }
+export function thumbnailUrl(raw: string): URL {
+  const url = coverUrl(raw);
+  if (url.hostname.endsWith('.music.126.net') || url.hostname === 'music.126.net') url.searchParams.set('param', '320y320');
+  return url;
+}
 async function fetchCover(raw: string): Promise<Uint8Array> {
-  let url = coverUrl(raw);
+  let url = thumbnailUrl(raw);
   for (let i = 0; i < 4; i++) {
     const response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(10_000) });
     if ([301, 302, 303, 307, 308].includes(response.status)) {
@@ -98,22 +104,41 @@ async function fetchCover(raw: string): Promise<Uint8Array> {
   }
   throw new Error('Cover redirect limit');
 }
+export async function musicThumbnail(track: Track, embedded?: Uint8Array): Promise<Uint8Array | undefined> {
+  let directory: string | undefined;
+  try {
+    let picture: Uint8Array | undefined;
+    if (track.cover) {
+      // A transient CDN failure must not permanently poison a reusable file ID.
+      picture = await fetchCover(track.cover).catch(() => fetchCover(track.cover)).catch(() => undefined);
+    }
+    if (!picture && track.provider === 'netease') {
+      // Fast search enrichment is bounded; recover this exact song's artwork
+      // before an otherwise coverless Telegram file becomes a permanent cache.
+      const { neteaseTracks } = await import('./providers/netease.js');
+      const detail = (await neteaseTracks([track.id]).catch(() => []))[0];
+      if (detail?.cover && detail.cover !== track.cover) picture = await fetchCover(detail.cover).catch(() => undefined);
+    }
+    picture ||= embedded;
+    if (!picture?.length) return;
+    directory = await mkdtemp(join(tmpdir(), 'ismusicnow-cover-'));
+    const input = join(directory, 'cover'), output = join(directory, 'thumbnail.jpg');
+    for (const candidate of [picture, ...(embedded && embedded !== picture ? [embedded] : [])]) {
+      try {
+        await writeFile(input, candidate, { mode: 0o600 });
+        await runCommand('ffmpeg', ['-nostdin', '-y', '-threads', '1', '-i', input, '-frames:v', '1', '-filter_threads', '1', '-vf', 'scale=320:320:force_original_aspect_ratio=decrease', '-q:v', '5', '-threads', '1', output], { timeout: 10_000 });
+        const thumbnail = new Uint8Array(await readFile(output));
+        if (thumbnail.length < 200_000) return thumbnail;
+      } catch { /* A broken upstream image may still have a valid embedded cover. */ }
+    }
+  } catch { /* Keep playable audio available when neither cover can be decoded. */ }
+  finally { if (directory) await rm(directory, { recursive: true, force: true }); }
+}
 export async function audioPresentation(path: string, track: Track): Promise<{ duration: number; thumbnail?: Uint8Array }> {
   const metadata = await parseFile(path, { duration: true });
   const duration = Math.round(metadata.format.duration || track.durationMs / 1000);
-  let directory: string | undefined;
-  try {
-    const embedded = metadata.common.picture?.[0]?.data;
-    const picture = track.cover ? await fetchCover(track.cover).catch(() => embedded) : embedded;
-    if (!picture?.length) return { duration };
-    directory = await mkdtemp(join(tmpdir(), 'ismusicnow-cover-'));
-    const input = join(directory, 'cover'), output = join(directory, 'thumbnail.jpg');
-    await writeFile(input, picture, { mode: 0o600 });
-    await runCommand('ffmpeg', ['-nostdin', '-y', '-i', input, '-frames:v', '1', '-vf', 'scale=320:320:force_original_aspect_ratio=decrease', '-q:v', '5', output], { timeout: 10_000 });
-    const thumbnail = new Uint8Array(await readFile(output));
-    return { duration, ...(thumbnail.length < 200_000 ? { thumbnail } : {}) };
-  } catch { return { duration }; }
-  finally { if (directory) await rm(directory, { recursive: true, force: true }); }
+  const thumbnail = await musicThumbnail(track, metadata.common.picture?.[0]?.data);
+  return { duration, ...(thumbnail ? { thumbnail } : {}) };
 }
 
 type Telegram = (method: string, form: FormData) => Promise<unknown>;

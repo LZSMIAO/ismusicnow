@@ -1,55 +1,49 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BotCaptionDetails } from '../src/lib/server/bot-caption-details.js';
-import { botLanguages } from '../src/lib/server/bot-i18n.js';
-
-const caption = '<b>「Song」</b> — Artist\n<blockquote expandable>專輯：Album\n#網易雲音樂 #flac 21.90MB 909.06kbps\nvia @muismbot</blockquote>';
+import { botLanguages, botText } from '../src/lib/server/bot-i18n.js';
+import { musicCaption } from '../src/lib/server/bot-media.js';
 const markup = { inline_keyboard: [[{text:'專輯',callback_data:'browse:netease:album:66'}, {text:'歌手',callback_data:'browse:netease:artist:88'}], [{text:'來源 ↗',url:'https://music.163.com/song?id=123'}, {text:'分享至聊天',switch_inline_query:'https://music.163.com/song?id=123'}]] };
-test('caption details survive restarts, hide technical data without blank rows and preserve footer actions', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'muism-caption-details-'));
-  try {
-    for (const language of botLanguages) {
-      const details = new BotCaptionDetails('123', root), form = new FormData();
-      form.set('caption', caption); form.set('reply_markup', JSON.stringify(markup)); form.set('muism_caption_language', language);
-      const prepared = await details.prepare('sendAudio', form) as FormData;
-      assert.equal(prepared.has('muism_caption_language'), false);
-      assert.doesNotMatch(String(prepared.get('caption')), /#flac|21.90MB|909.06kbps|\n\n|expandable/);
-      assert.match(String(prepared.get('caption')), /#網易雲音樂\nvia @muismbot/);
-      const rows = JSON.parse(String(prepared.get('reply_markup'))).inline_keyboard;
-      assert.deepEqual(rows.at(-1), markup.inline_keyboard.at(-1));
-      const button = rows[0].at(-1); assert.ok(Buffer.byteLength(button.callback_data) <= 64);
-      const restarted = new BotCaptionDetails('123', root);
-      const expanded = await restarted.toggle(button.callback_data);
-      assert.match(expanded!.caption, /#flac 21.90MB 909.06kbps/);
-      assert.doesNotMatch(expanded!.caption, /\n\n|expandable/);
-      const collapse = expanded!.reply_markup.inline_keyboard[0]!.at(-1)!;
-      assert.notEqual(collapse.text, button.text);
-      assert.equal((await restarted.toggle(String(collapse.callback_data)))!.caption, prepared.get('caption'));
-      assert.equal(await new BotCaptionDetails('456', root).toggle(button.callback_data), undefined);
-      assert.equal(await restarted.toggle('md:../../private:1'), undefined);
-    }
-  } finally { await rm(root, {recursive:true,force:true}); }
-});
-test('cached Inline answers, media edits and channel cache uploads all receive functional caption controls', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'muism-caption-paths-'));
-  try {
-    const details = new BotCaptionDetails('123', root);
-    const input = {type:'audio',audio_file_id:'cached',caption,muism_caption_language:'en',reply_markup:markup};
-    const answer = await details.prepare('answerInlineQuery', {results:[input]}) as any;
-    const item = answer.results[0]; assert.equal(item.muism_caption_language, undefined);
-    assert.equal(item.reply_markup.inline_keyboard[0].at(-1).text, 'Details ▾');
-    const edit = await details.prepare('editMessageMedia', {inline_message_id:'same',media:{type:'audio',media:'cached',caption,muism_caption_language:'en'},reply_markup:markup}) as any;
-    assert.equal(edit.media.caption,item.caption); assert.equal(edit.media.reply_markup,undefined); assert.equal(edit.media.muism_caption_language,undefined);
-    assert.deepEqual(edit.reply_markup,item.reply_markup);
-    const form = new FormData(); form.set('caption', caption.replace('via @muismbot','Telegram playback copy (MP3 conversion)\nvia @muismbot'));
+const track={id:'123',provider:'netease' as const,title:'Song',artists:['Artist'],album:'Album',cover:'',durationMs:1000,sourceUrl:'https://music.163.com/song?id=123'};
+const job={id:'fixture',track,format:'original' as const,status:'completed' as const,stage:'',createdAt:'',updatedAt:'',bytes:22964263,audioSource:'netease' as const,audio:{codec:'FLAC',lossless:true,bitrate:909060}};
+test('new cards retain the native quote and all measured audio facts without extra buttons or spacer rows',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'muism-native-caption-'));
+  try {for(const language of botLanguages){
+    const details=new BotCaptionDetails('123',root),caption=musicCaption(track,job,language),form=new FormData();
+    form.set('caption',caption);form.set('reply_markup',JSON.stringify(markup));form.set('muism_caption_language',language);
     await details.prepare('sendAudio',form);
-    assert.match(String(form.get('caption')),/MP3 conversion/);
-    const rows = JSON.parse(String(form.get('reply_markup'))).inline_keyboard;
-    assert.equal(rows.length,1); assert.match(rows[0][0].callback_data,/^md:/);
-    const expanded = await details.toggle(rows[0][0].callback_data);
-    assert.equal(await details.prepare('editMessageCaption',expanded!),expanded);
-  } finally { await rm(root,{recursive:true,force:true}); }
+    assert.equal(form.has('muism_caption_language'),false);assert.equal(form.get('caption'),caption);
+    assert.match(caption,/<blockquote expandable>/);assert.match(caption,/#flac 21.90MB 909.06kbps/);assert.doesNotMatch(caption,/\n\n/);
+    const lines=caption.match(/<blockquote expandable>([^]*?)<\/blockquote>/)![1]!.split('\n');
+    assert.equal(lines.length,4);assert.equal(lines[2],'via @muismbot');assert.match(lines[1]!,new RegExp(botText(language,'source')));
+    assert.deepEqual(JSON.parse(String(form.get('reply_markup'))),markup);
+    const result={type:'audio',caption,muism_caption_language:language,reply_markup:markup};
+    const inline=await details.prepare('answerInlineQuery',{results:[result]}) as any;
+    assert.equal(inline.results[0].muism_caption_language,undefined);assert.equal(inline.results[0].caption,caption);assert.deepEqual(inline.results[0].reply_markup,markup);
+    const edit=await details.prepare('editMessageMedia',{media:result,reply_markup:markup}) as any;
+    assert.equal(edit.media.muism_caption_language,undefined);assert.equal(edit.media.caption,caption);assert.deepEqual(edit.reply_markup,markup);
+    const converted=musicCaption(track,{...job,presentation:'telegram-playback'},language);
+    assert.ok(converted.indexOf(botText(language,'playbackVersion'))<converted.indexOf('<blockquote expandable>'));
+  }}finally{await rm(root,{recursive:true,force:true});}
+});
+test('legacy buttons restore full native quotes, remove their own controls and preserve album, artist, source and share actions after restart',async()=>{
+  const root=await mkdtemp(join(tmpdir(),'muism-legacy-caption-'));
+  try {
+    const id='a'.repeat(32),path=join(root,'caption-details','123');await mkdir(path,{recursive:true});
+    await writeFile(join(path,id+'.json'),JSON.stringify({collapsed:'missing facts',expanded:'<b>Song</b>\n<blockquote>Album：Album\n#NetEase #mp3 6.52MB 320.00kbps\nvia @muismbot</blockquote>',markup,language:'en'}));
+    const details=new BotCaptionDetails('123',root);
+    for(const action of ['0','1']){
+      const restored=await details.toggle(`md:${id}:${action}`);
+      assert.match(restored!.caption,/<blockquote expandable>Album：Album\nSource：NetEase\nvia @muismbot\n#mp3 6.52MB 320.00kbps<\/blockquote>/);
+      assert.deepEqual(restored!.reply_markup,markup);assert.doesNotMatch(restored!.caption,/\n\n/);
+    }
+    await details.remember(`md:${id}:1`,{chat_id:-100123,message_id:66});
+    const files=await readdir(join(path,'deliveries'));
+    assert.deepEqual(JSON.parse(await readFile(join(path,'deliveries',files[0]!),'utf8')),{chat_id:-100123,message_id:66,data:`md:${id}:1`});
+    assert.equal(await new BotCaptionDetails('456',root).toggle(`md:${id}:1`),undefined);
+    assert.equal(await details.toggle('md:../../private:1'),undefined);
+  }finally{await rm(root,{recursive:true,force:true});}
 });

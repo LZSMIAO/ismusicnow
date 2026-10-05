@@ -37,8 +37,8 @@ test('real handler routes inline queries without chat IDs, deep-link onboarding 
     const promptId = nextMessage;
     await handle({ update_id: 4, callback_query: { id: 'choose', from: { id: 42 }, data: 'lang:42:original', message: { message_id: promptId, chat: { id: 42, type: 'private' } } } });
     const audio = calls.findLast(c => c.method === 'sendAudio')!;
-    assert.equal(audio.body.audio, 'existing-file-id'); assert.match(audio.body.caption, /<blockquote>/);
-    assert.doesNotMatch(audio.body.caption, /#mp3|\n\n/);
+    assert.equal(audio.body.audio, 'existing-file-id'); assert.match(audio.body.caption, /<blockquote expandable>/);
+    assert.match(audio.body.caption, /#mp3/); assert.doesNotMatch(audio.body.caption, /\n\n/);
     assert.equal(audio.body.reply_parameters, undefined);
     assert.equal(audio.body.reply_markup.inline_keyboard.at(-1)[1].switch_inline_query, 'https://music.163.com/song?id=123');
     assert.ok(calls.some(c => c.method === 'deleteMessage' && c.body.message_id === promptId));
@@ -48,18 +48,19 @@ test('real handler routes inline queries without chat IDs, deep-link onboarding 
     await handle({ update_id: 6, callback_query: { id: 'insert', from: { id: 42 }, inline_message_id: 'opaque-inline-message', data: 'ix:42:n:123' } });
     assert.equal(calls.at(-1)!.method, 'editMessageMedia'); assert.equal(calls.at(-1)!.body.inline_message_id, 'opaque-inline-message');
     assert.ok(!calls.slice(before).some(c => c.method === 'deleteMessage'));
-    const details = calls.at(-1)!.body.reply_markup.inline_keyboard.flat().find((button:any) => button.callback_data?.startsWith('md:'));
-    const beforeDetails = calls.length;
-    now += 4000;
-    await handle({ update_id: 61, callback_query: { id:'expand-caption', from:{id:42}, inline_message_id:'opaque-inline-message', data:details.callback_data } });
-    const expanded = calls.at(-1)!;
-    assert.equal(expanded.method,'editMessageCaption'); assert.equal(expanded.body.inline_message_id,'opaque-inline-message');
-    assert.match(expanded.body.caption,/#mp3/);
-    const collapse = expanded.body.reply_markup.inline_keyboard.flat().find((button:any) => button.callback_data?.startsWith('md:'));
-    now += 4000;
-    await handle({ update_id: 62, callback_query: { id:'collapse-caption', from:{id:42}, data:collapse.callback_data, message:{message_id:888,chat:{id:42,type:'private'}} } });
-    assert.equal(calls.at(-1)!.body.message_id,888); assert.doesNotMatch(calls.at(-1)!.body.caption,/#mp3/);
-    assert.ok(calls.slice(beforeDetails).every(call=>['answerCallbackQuery','editMessageCaption'].includes(call.method)), 'caption toggles cannot acquire, send, delete or edit the media');
+    assert.ok(!calls.at(-1)!.body.reply_markup.inline_keyboard.flat().some((button:any)=>button.callback_data?.startsWith('md:')));
+    const {mkdir,writeFile}=await import('node:fs/promises');
+    const legacy='a'.repeat(32),directory=join(root,'caption-details','999222');
+    await mkdir(directory,{recursive:true});
+    const legacyMarkup=calls.at(-1)!.body.reply_markup;
+    await writeFile(join(directory,legacy+'.json'),JSON.stringify({collapsed:'missing',expanded:'<b>床</b>\n<blockquote>Album：瓦合\n#NetEase #mp3 0.00MB\nvia @muismbot</blockquote>',markup:legacyMarkup,language:'en'}));
+    const beforeDetails=calls.length;
+    for(const target of [{inline_message_id:'opaque-inline-message'},{message:{message_id:888,chat:{id:-10042,type:'channel'}}}]){
+      await handle({update_id:61,callback_query:{id:'repair-caption',from:{id:42},data:`md:${legacy}:1`,...target}});
+      assert.equal(calls.at(-1)!.method,'editMessageCaption');assert.match(calls.at(-1)!.body.caption,/<blockquote expandable>/);assert.match(calls.at(-1)!.body.caption,/#mp3/);
+      assert.deepEqual(calls.at(-1)!.body.reply_markup,legacyMarkup);
+    }
+    assert.ok(calls.slice(beforeDetails).every(call=>['answerCallbackQuery','editMessageCaption'].includes(call.method)));
     now += 4000;
     await handle({ update_id: 7, message: { message_id: 7, chat: { id: 42, type: 'private' }, from: { id: 42 }, text: '/help' } });
     const beforeShare = calls.length;

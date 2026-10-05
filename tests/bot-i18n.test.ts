@@ -45,7 +45,7 @@ test('localized music captions and buttons never change source names, file names
     const caption = String(form.get('caption'));
     const details = /<blockquote expandable>([\s\S]+)<\/blockquote>/.exec(caption)?.[1];
     assert.ok(details && !details.includes('\n\n'), 'compact metadata must not add spacer rows');
-    assert.match(details!, /#Spotify/);
+    assert.match(details!, /Spotify/);
     assert.doesNotMatch(caption, /tg-spoiler/);
     const cached = musicReferencePayload({ chatId: upload.chatId, track, job: upload.job, fileId: 'cached-audio', kind: 'audio', duration: upload.duration, uiLanguage: language });
     assert.equal(cached.get('caption'), caption);

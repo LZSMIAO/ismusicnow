@@ -307,9 +307,12 @@ async function handleUpdate(update: Update): Promise<void> {
     const payload = await captionDetails.toggle(callback.data!);
     if (payload) {
       const address = callback.inline_message_id ? { inline_message_id: callback.inline_message_id } : callback.message ? { chat_id: callback.message.chat.id, message_id: callback.message.message_id } : undefined;
-      if (address) await telegram('editMessageCaption', { ...address, ...payload }).catch(error => {
-        if (!(error instanceof TelegramRequestError && /message is not modified/i.test(error.description))) throw error;
-      });
+      if (address) {
+        await captionDetails.remember(callback.data!, address).catch(() => console.error('音樂卡片位置保存失敗。'));
+        await telegram('editMessageCaption', { ...address, ...payload }).catch(error => {
+          if (!(error instanceof TelegramRequestError && /message is not modified/i.test(error.description))) throw error;
+        });
+      }
     }
     return;
   }
