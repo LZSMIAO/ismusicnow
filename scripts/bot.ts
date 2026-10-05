@@ -51,8 +51,9 @@ let botUsername = 'muismbot';
 const statePath = resolve(process.env.DATA_DIR || '.data', 'bot-offset', `${token.split(':')[0]}.json`);
 
 interface User { id: number; language_code?: string; is_bot?: boolean; first_name?: string; username?: string }
-interface Message { message_id: number; message_thread_id?: number; sender_chat?: { id: number }; via_bot?: { id: number; is_bot?: boolean }; chat: { id: number; type?: string }; audio?: { duration: number }; from?: User; text?: string; entities?: { type: string; offset: number; url?: string; user?: { id: number } }[]; reply_to_message?: { message_id: number; from?: { username?: string } } }
+interface Message { message_id: number; message_thread_id?: number; is_topic_message?: boolean; sender_chat?: { id: number }; via_bot?: { id: number; is_bot?: boolean }; chat: { id: number; type?: string }; audio?: { duration: number }; from?: User; text?: string; entities?: { type: string; offset: number; url?: string; user?: { id: number } }[]; reply_to_message?: { message_id: number; from?: { username?: string } } }
 interface Update { update_id: number; message?: Message; callback_query?: { id: string; from: User; data?: string; message?: Message; inline_message_id?: string }; inline_query?: InlineQuery; chosen_inline_result?: { result_id: string; from: User; inline_message_id?: string; query: string } }
+const topicThread = (message: Message) => message.is_topic_message ? message.message_thread_id : undefined;
 
 const captionDetails = new BotCaptionDetails(token.split(':')[0]!);
 const groupReplies = new BotGroupReplies(token.split(':')[0]!);
@@ -316,7 +317,7 @@ export async function handle(update: Update): Promise<void> {
   const message = update.message || update.callback_query?.message;
   if (!message) return handleUpdate(update);
   const user = update.callback_query?.from || message.from;
-  return replyContext.run({ chatId: message.chat.id, messageId: message.message_id, messageThreadId: message.message_thread_id, userId: user?.id, userName: user?.first_name, userUsername: user?.username }, () => handleUpdate(update));
+  return replyContext.run({ chatId: message.chat.id, messageId: message.message_id, messageThreadId: topicThread(message), userId: user?.id, userName: user?.first_name, userUsername: user?.username }, () => handleUpdate(update));
 }
 
 async function handleUpdate(update: Update): Promise<void> {
@@ -357,7 +358,7 @@ async function handleUpdate(update: Update): Promise<void> {
   }
   const message = update.message || update.callback_query?.message;
   if (!message) return;
-  const chatId = message.chat.id;
+  const chatId = message.chat.id, messageThreadId = topicThread(message);
   const ui = await preferences.locale(userId);
   try {
     if (update.callback_query) await telegram('answerCallbackQuery', { callback_query_id: update.callback_query.id });
@@ -381,7 +382,7 @@ async function handleUpdate(update: Update): Promise<void> {
     const original = update.callback_query?.data?.match(/^raw:(netease|spotify|ytm|qq|kuwo|kugou|migu|qianqian):([a-zA-Z0-9_-]{1,32})$/);
     if (original) {
       const track = await getTrack(original[1] as Provider, original[2]!);
-      await sendTrack(chatId, userId, track, (await settingsStore.get(userId)).language || 'original', message.message_id, message.message_thread_id, true, false, true); return;
+      await sendTrack(chatId, userId, track, (await settingsStore.get(userId)).language || 'original', message.message_id, messageThreadId, true, false, true); return;
     }
     if (update.callback_query && /^(lang|ui|setting):/.test(update.callback_query.data || '')) {
       const own = Number(update.callback_query.data?.split(':')[1]) === userId;
@@ -398,7 +399,7 @@ async function handleUpdate(update: Update): Promise<void> {
     const close = update.callback_query?.data?.match(/^close:([a-f0-9]{16})(?::\d{1,16}:[a-f0-9]{16})?$/);
     if (close) {
       let session: MusicSelection | undefined;
-      try { session = selections.get(chatId, userId, close[1]!, message.message_id, message.message_thread_id); }
+      try { session = selections.callback(chatId, userId, close[1]!, message.message_id); }
       catch (error) {
         if (!(error instanceof ServiceError && error.code === 'SELECTION_EXPIRED')) throw error;
         if (!canCloseSelection(message, userId, update.callback_query!.data!, Number(token!.split(':')[0]), token!)) throw new ServiceError('SELECTION_OWNER', 'Wrong close owner', 403);
@@ -408,7 +409,7 @@ async function handleUpdate(update: Update): Promise<void> {
     }
     const layout = update.callback_query?.data?.match(/^layout:([a-f0-9]{16}):(buttons|rich)$/);
     if (layout) {
-      const session = selections.get(chatId, userId, layout[1]!, message.message_id, message.message_thread_id);
+      const session = selections.callback(chatId, userId, layout[1]!, message.message_id);
       if (session.busy) return;
       const previous = session.rich;
       session.busy = true; session.rich = layout[2] === 'rich';
@@ -419,7 +420,7 @@ async function handleUpdate(update: Update): Promise<void> {
     }
     const back = update.callback_query?.data?.match(/^back:([a-f0-9]{16})$/);
     if (back) {
-      const session = selections.get(chatId, userId, back[1]!, message.message_id, message.message_thread_id);
+      const session = selections.callback(chatId, userId, back[1]!, message.message_id);
       if (session.busy) return;
       session.busy = true;
       try {
@@ -430,7 +431,7 @@ async function handleUpdate(update: Update): Promise<void> {
     }
     const category = update.callback_query?.data?.match(/^(type|view):([a-f0-9]{16}):(track|album|artist|playlist)$/);
     if (category) {
-      const session = selections.get(chatId, userId, category[2]!, message.message_id, message.message_thread_id);
+      const session = selections.callback(chatId, userId, category[2]!, message.message_id);
       if (session.busy) return;
       session.busy = true;
       try {
@@ -452,7 +453,7 @@ async function handleUpdate(update: Update): Promise<void> {
     const panel = update.callback_query?.data?.match(/^(filter|list):([a-f0-9]{16})$/);
     const sourcePanel = update.callback_query?.data?.match(/^sources:([a-f0-9]{16}):(\d{1,3})$/);
     if (panel || sourcePanel) {
-      const session = selections.get(chatId, userId, (panel?.[2] || sourcePanel?.[1])!, message.message_id, message.message_thread_id);
+      const session = selections.callback(chatId, userId, (panel?.[2] || sourcePanel?.[1])!, message.message_id);
       if (session.busy) return;
       if (panel?.[1] === 'filter' && session.collection.kind !== 'search') throw new ServiceError('SELECTION_NUMBER', 'No source filter');
       if (sourcePanel) selections.sources(session, Number(sourcePanel[2]));
@@ -463,7 +464,7 @@ async function handleUpdate(update: Update): Promise<void> {
     }
     const sourceScope = update.callback_query?.data?.match(/^scope:([a-f0-9]{16}):([a-z]+)$/);
     if (sourceScope) {
-      const session = selections.get(chatId, userId, sourceScope[1]!, message.message_id, message.message_thread_id);
+      const session = selections.callback(chatId, userId, sourceScope[1]!, message.message_id);
       if (session.busy) return;
       const source = sourceScope[2] as BotSource, kind = session.collection.searchType || 'track';
       if (session.collection.kind !== 'search' || source !== 'all' && !searchableProviders(kind).some(provider => provider.id === source)) throw new ServiceError('SELECTION_NUMBER', 'Invalid search source');
@@ -478,7 +479,7 @@ async function handleUpdate(update: Update): Promise<void> {
     const selectionCallback = update.callback_query?.data?.match(/^(pick|page):([a-f0-9]{16}):(\d{1,3})$/);
     const explicitSource = update.callback_query?.data?.match(/^from:([a-f0-9]{16}):(\d{1,3}):(\d{1,3})$/);
     if (selectionCallback?.[1] === 'page') {
-      const session = selections.get(chatId, userId, selectionCallback[2]!, message.message_id, message.message_thread_id);
+      const session = selections.callback(chatId, userId, selectionCallback[2]!, message.message_id);
       const page = Number(selectionCallback[3]);
       if (session.busy) return;
       if (page >= Math.ceil(selectionCount(session) / selectionPageSize)) throw new ServiceError('SELECTION_NUMBER', '頁碼無效。');
@@ -487,16 +488,16 @@ async function handleUpdate(update: Update): Promise<void> {
       try { await showSelection(session, ui, true); } finally { session.busy = false; }
       return;
     }
-    const numberChoice = !update.callback_query && !cmd?.startsWith('/') && (isPrivate || replyToBot) ? selections.number(chatId, userId, text, message.reply_to_message?.message_id, message.message_thread_id) : undefined;
+    const numberChoice = !update.callback_query && !cmd?.startsWith('/') && (isPrivate || replyToBot) ? selections.number(chatId, userId, text, message.reply_to_message?.message_id, messageThreadId) : undefined;
     if (Date.now() - (lastRequest.get(userId) || 0) < (selectionCallback || explicitSource || numberChoice ? 500 : 3000)) { await notice(chatId, botText(ui, 'rateLimited'), message.message_id); return; }
     lastRequest.set(userId, Date.now());
     for (const [id, time] of lastRequest) if (Date.now() - time > 60_000) lastRequest.delete(id);
     if (update.callback_query) {
       if (selectionCallback?.[1] === 'pick') {
-        const session = selections.get(chatId, userId, selectionCallback[2]!, message.message_id, message.message_thread_id);
+        const session = selections.callback(chatId, userId, selectionCallback[2]!, message.message_id);
         await chooseSelection(session, Number(selectionCallback[3]), ui);
       } else if (explicitSource) {
-        const session = selections.get(chatId, userId, explicitSource[1]!, message.message_id, message.message_thread_id);
+        const session = selections.callback(chatId, userId, explicitSource[1]!, message.message_id);
         await chooseSelection(session, Number(explicitSource[2]), ui, session.requestId, Number(explicitSource[3]));
       } else if (/^dl:/.test(update.callback_query.data || '')) {
         // Old cards lack a request/owner context. Ask for a fresh list rather
@@ -540,7 +541,7 @@ async function handleUpdate(update: Update): Promise<void> {
       const lyric = track.provider === 'netease' ? await neteaseLyrics(track.id) : await myhkLyrics(track.provider, track.id);
       if (!lyric) { await notice(chatId, botText(ui, 'noLyric'), message.message_id); return; }
       const form = new FormData(); form.set('chat_id', String(chatId)); form.set('document', new Blob([lyric], { type: 'text/plain' }), `${safeFilename(`${track.artists.join(' - ')} - ${track.title}`)}.lrc`);
-      if (message.message_thread_id !== undefined) form.set('message_thread_id', String(message.message_thread_id));
+      if (messageThreadId !== undefined) form.set('message_thread_id', String(messageThreadId));
       if (chatId < 0) { form.set('reply_parameters', JSON.stringify(replyParameters(message.message_id))); form.set('caption', ''); form.set('parse_mode', 'HTML'); }
       await telegram('sendDocument', form);
       if (chatId > 0) await removeNow(chatId, message.message_id);

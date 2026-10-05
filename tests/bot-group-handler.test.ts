@@ -33,15 +33,15 @@ test('group commands, mentions, member languages, owned reply selection and conc
     for (const song of songs) await cache.put({ provider: 'netease', id: String(song.id), quality: 'original-lossless' }, { fileId: `cached:${song.id}`, kind: 'audio', duration: 150, bytes: 1234, audioSource: 'netease' });
     for (const user of [90, 91]) await settings.choose(user, 'original');
     const { handle } = await import('../scripts/bot.js');
-    const message = async (id: number, text: string, user = 90, thread?: number, replyTo?: number, chat = -100, language = 'en') => {
+    const message = async (id: number, text: string, user = 90, thread?: number, replyTo?: number, chat = -100, language = 'en', topic = thread !== undefined) => {
       now += 3100;
-      await handle({ update_id: id, message: { message_id: id, message_thread_id: thread, chat: { id: chat, type: chat === -101 ? 'group' : 'supergroup' }, from: { id: user, language_code: language }, text,
+      await handle({ update_id: id, message: { message_id: id, message_thread_id: thread, is_topic_message: topic || undefined, chat: { id: chat, type: chat === -101 ? 'group' : 'supergroup' }, from: { id: user, language_code: language }, text,
         ...(replyTo === undefined ? {} : { reply_to_message: { message_id: replyTo, from: { username: 'muismbot' } } }) } });
     };
-    const callback = async (data: string, menu: number, user = 90, thread?: number, language = 'en') => {
+    const callback = async (data: string, menu: number, user = 90, thread?: number, language = 'en', topic = thread !== undefined) => {
       now += 1000;
       await handle({ update_id: 900, callback_query: { id: 'stub', from: { id: user, language_code: language }, data,
-        message: { message_id: menu, message_thread_id: thread, chat: { id: -100, type: 'supergroup' } } } });
+        message: { message_id: menu, message_thread_id: thread, is_topic_message: topic || undefined, chat: { id: -100, type: 'supergroup' } } } });
     };
     const sent = () => calls.findLast((call) => call.method === 'sendMessage')!;
     const audioCount = () => calls.filter((call) => call.method === 'sendAudio').length;
@@ -88,7 +88,8 @@ test('group commands, mentions, member languages, owned reply selection and conc
     await message(42, '9', 91, 10, choices.id); assert.equal(audioCount(), before);
     await message(43, '9', 90, 20, choices.id); assert.equal(audioCount(), before);
     await callback(choices.pick, choices.id, 91, 10); assert.equal(audioCount(), before);
-    await callback(choices.pick, choices.id, 90, 20); assert.equal(audioCount(), before);
+    // A session token copied to a different menu cannot select across topics.
+    await callback(choices.pick, choices.id + 1, 90, 20); assert.equal(audioCount(), before);
     await message(44, '9', 90, 10, choices.id);
     const audio = calls.findLast((call) => call.method === 'sendAudio')!;
     assert.equal(audio.body.audio, 'cached:10008'); assert.equal(audio.body.message_thread_id, '10');
@@ -123,6 +124,28 @@ test('group commands, mentions, member languages, owned reply selection and conc
     const promptCount = prompts();
     await message(71, '/netease@muismbot 10000', 92, 20);
     assert.equal(prompts(), promptCount, 'Chinese choice is only asked once');
+
+    // Ordinary reply chains may carry a thread ID without being forum topics.
+    await message(80, '/search@muismbot 荒唐謠');
+    const ordinary = selector(), beforeOrdinary = audioCount();
+    await callback(ordinary.pick, ordinary.id, 90, 80, 'en', false);
+    assert.equal(audioCount(), beforeOrdinary + 1, 'the requester can pick their own replied menu');
+    assert.equal(calls.findLast(call => call.method === 'sendAudio')!.body.message_thread_id, undefined);
+    assert.equal(calls.findLast(call => call.method === 'sendAudio')!.body.reply_parameters.message_id, 80);
+    await message(81, '/search@muismbot 荒唐謠');
+    const numbered = selector();
+    await message(82, '1', 90, 81, numbered.id, -100, 'en', false);
+    assert.equal(audioCount(), beforeOrdinary + 2, 'ordinary numbered replies use the same owner binding');
+
+    // Callback messages can omit optional topic metadata: exact menu identity
+    // still identifies the owner's session and the original delivery topic.
+    await message(83, '/search@muismbot 荒唐謠', 90, 10);
+    const forum = selector();
+    await callback(forum.page, forum.id, 90);
+    assert.match(calls.findLast(call => call.method === 'editMessageText')!.body.text, /9–10 \/ 10/);
+    await callback(forum.pick, forum.id, 90);
+    assert.equal(audioCount(), beforeOrdinary + 3);
+    assert.equal(calls.findLast(call => call.method === 'sendAudio')!.body.message_thread_id, '10');
   } finally {
     globalThis.fetch = realFetch; Date.now = realNow; process.env = env;
     await rm(root, { recursive: true, force: true });

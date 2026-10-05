@@ -3,24 +3,29 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createHmac } from 'node:crypto';
 import { selectionCloseData, canCloseSelection } from '../src/lib/server/bot-close.js';
 import { botTransport, botUploadFile, checkBotUpload, botRequestTimeout } from '../src/lib/server/bot-transport.js';
 import { BotSelections } from '../src/lib/server/bot-selection.js';
 import { BotSettingsStore } from '../src/lib/server/bot-settings.js';
 import { botError, botLanguages } from '../src/lib/server/bot-i18n.js';
 
-test('signed close survives missing search state but is bound to actor, bot, chat and topic', () => {
+test('signed close survives missing search/topic metadata and stays bound to actor, bot and chat', () => {
   const target = { id: '1234567890abcdef', chatId: -100123, userId: 42, messageThreadId: 8 };
   const data = selectionCloseData(target, 'secret');
   const message = { from: { id: 999 }, chat: { id: target.chatId, type: 'supergroup' }, message_thread_id: 8 };
   assert.ok(canCloseSelection(message, 42, data, 999, 'secret'));
   assert.ok(!canCloseSelection(message, 43, data, 999, 'secret'));
   assert.ok(!canCloseSelection({ ...message, chat: { id: -100124 } }, 42, data, 999, 'secret'));
-  assert.ok(!canCloseSelection({ ...message, message_thread_id: 9 }, 42, data, 999, 'secret'));
+  assert.ok(canCloseSelection({ ...message, message_thread_id: undefined }, 42, data, 999, 'secret'));
+  assert.ok(canCloseSelection({ ...message, message_thread_id: 9 }, 42, data, 999, 'secret'));
   assert.ok(!canCloseSelection({ ...message, from: { id: 998 } }, 42, data, 999, 'secret'));
   assert.ok(!canCloseSelection(message, 42, data, 999, 'other-secret'));
   assert.ok(!canCloseSelection(message, 42, data.slice(0,-1) + (data.endsWith('0') ? '1' : '0'), 999, 'secret'));
   assert.ok(Buffer.byteLength(selectionCloseData({ ...target, userId: 4503599627370495 }, 'secret')) <= 64);
+  const oldData = `close:${target.id}:42:` + createHmac('sha256', 'secret').update(JSON.stringify([target.id, target.chatId, null, 42])).digest('hex').slice(0, 16);
+  assert.ok(canCloseSelection(message, 42, oldData, 999, 'secret'), 'already-sent ordinary reply menus remain closeable');
+  assert.ok(!canCloseSelection({ ...message, is_topic_message: true }, 42, oldData, 999, 'secret'));
   const legacy = 'close:' + target.id;
   assert.ok(canCloseSelection({ from: { id: 999 }, chat: { id: 42, type: 'private' } }, 42, legacy, 999, 'secret'));
   assert.ok(!canCloseSelection(message, 42, legacy, 999, 'secret'));
