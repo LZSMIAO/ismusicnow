@@ -1,4 +1,4 @@
-# ismusicnow Design
+# MUISM Design
 
 ## Direction
 

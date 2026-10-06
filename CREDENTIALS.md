@@ -14,7 +14,7 @@
 ## Spotify API
 
 1. 開啟 [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)，用自己的 Spotify 帳號登入。
-2. 點「Create app」，名稱填 `ismusicnow`，描述填音樂收藏工具，選擇 Web API。若表單要求 Redirect URI，可填 `http://127.0.0.1:3000`；目前程式的 Client Credentials 流程不使用回呼。這個值不代表網站已有 OAuth 回呼功能。
+2. 點「Create app」，名稱填 `MUISM`，描述填音樂收藏工具，選擇 Web API。若表單要求 Redirect URI，可填 `http://127.0.0.1:3000`；目前程式的 Client Credentials 流程不使用回呼。這個值不代表網站已有 OAuth 回呼功能。
 3. 建立後開啟 App → Settings，取得 Client ID 與 View client secret 中的 Client Secret。
 4. 在 VPS `.env` 填：
 
